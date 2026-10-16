@@ -1065,27 +1065,37 @@ Scope {
                 opacity: mus.sz === "s" ? 0 : 1
                 visible: opacity > 0.01
                 Behavior on opacity { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
-                y: mus.sz === "l" ? 236 : 80
+                y: mus.sz === "l" ? 232 : 74
                 Behavior on y { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
-                width: 324; height: 16
+                width: 324; height: 28
                 readonly property real len: mus.pl && mus.pl.lengthSupported ? mus.pl.length : 0
                 readonly property real pos: root.mPosBase
                 readonly property real frac: len > 0 ? Math.max(0, Math.min(1, pos / len)) : 0
                 function fmt(v) { v = Math.max(0, Math.floor(v)); var m = Math.floor(v / 60), r = v % 60; return m + ":" + (r < 10 ? "0" : "") + r; }
-                Text { id: sL; anchors.verticalCenter: parent.verticalCenter; text: scrub.fmt(scrub.pos); color: mus.fg2; font.family: root.fam; font.pixelSize: 10; font.features: { "tnum": 1 } }
-                Text { id: sR; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: scrub.len > 0 ? "-" + scrub.fmt(scrub.len - scrub.pos) : "--:--"; color: mus.fg2; font.family: root.fam; font.pixelSize: 10; font.features: { "tnum": 1 } }
+                Text { id: sL; y: 13; text: scrub.fmt(scrub.pos); color: mus.fg2; font.family: root.fam; font.pixelSize: 10; font.features: { "tnum": 1 } }
+                Text { id: sR; anchors.right: parent.right; y: 13; text: scrub.len > 0 ? "-" + scrub.fmt(scrub.len - scrub.pos) : "--:--"; color: mus.fg2; font.family: root.fam; font.pixelSize: 10; font.features: { "tnum": 1 } }
                 Item {
                     id: sBar
-                    anchors.left: sL.right; anchors.right: sR.left; anchors.leftMargin: 8; anchors.rightMargin: 8
-                    anchors.verticalCenter: parent.verticalCenter
+                    // the bar runs the full width, with the times tucked under its ends
+                    anchors.left: parent.left; anchors.right: parent.right
+                    y: 2
                     height: sMa.containsMouse || sMa.pressed ? 7 : 4
                     Behavior on height { NumberAnimation { duration: 220; easing.type: Easing.OutQuint } }
                     Rectangle { anchors.fill: parent; radius: height / 2; color: Qt.rgba(1, 1, 1, 0.22) }
                     Rectangle {
+                        id: sFill
                         height: parent.height; radius: height / 2
                         width: Math.max(height, parent.width * scrub.frac)
                         color: mus.fg; opacity: 0.88
                         Behavior on width { NumberAnimation { duration: 480; easing.type: Easing.Linear } }
+                    }
+                    Rectangle {
+                        // playhead
+                        x: Math.max(0, sFill.width - width / 2); anchors.verticalCenter: parent.verticalCenter
+                        width: sMa.containsMouse || sMa.pressed ? 11 : 7; height: width; radius: width / 2
+                        color: mus.fg
+                        visible: scrub.len > 0
+                        Behavior on width { NumberAnimation { duration: 200; easing.type: Easing.OutQuint } }
                     }
                     MouseArea {
                         id: sMa
@@ -1101,7 +1111,7 @@ Scope {
             // controls: shuffle · prev · play · next · repeat (Small: just play / pause)
             Item {
                 id: ctl
-                y: mus.sz === "l" ? 274 : (mus.sz === "m" ? 104 : 104)
+                y: mus.sz === "l" ? 272 : 100
                 Behavior on y { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
                 width: mus.sz === "s" ? 138 : 324; height: 34
                 Repeater {
@@ -1111,11 +1121,11 @@ Scope {
                         required property string modelData
                         required property int index
                         readonly property bool isSR: modelData === "shuffle" || modelData === "repeat"
-                        readonly property bool shown: modelData === "play" || (mus.sz === "m" && !isSR) || mus.sz === "l"
+                        readonly property bool shown: modelData === "play" || mus.sz !== "s"
                         // positions: transport centred, shuffle / repeat at the edges; Small: play at the bottom-right
-                        readonly property real cx: mus.sz === "s" ? (modelData === "play" ? 138 - 17 : 138 - 17)
-                                                 : (modelData === "shuffle" ? (mus.big ? 22 : 92) : modelData === "repeat" ? (mus.big ? 324 - 22 : 232)
-                                                 : 162 + (index - 2) * (mus.big ? 66 : 70))
+                        readonly property real cx: mus.sz === "s" ? 138 - 17
+                                                 : (modelData === "shuffle" ? 17 : (modelData === "repeat" ? 324 - 17
+                                                 : 162 + (index - 2) * (mus.big ? 66 : 62)))
                         x: cx - width / 2
                         Behavior on x { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
                         width: 34; height: 34
@@ -1156,7 +1166,7 @@ Scope {
                             anchors.centerIn: parent
                             anchors.horizontalCenterOffset: cb.shift
                             opacity: cb.shiftOp
-                            width: cb.modelData === "play" ? 22 : (cb.isSR ? 16 : 18); height: width
+                            width: cb.modelData === "play" ? 23 : (cb.isSR ? 15 : 19); height: width
                             kind: cb.modelData === "play" ? (mus.pl && mus.pl.isPlaying ? "pause" : "play")
                                 : (cb.modelData === "repeat" && mus.pl && mus.pl.loopState === MprisLoopState.Track ? "repeat1" : cb.modelData)
                             color: cb.isSR && cb.on ? (mus.tinted ? Qt.lighter(root.musicEdge, 1.35) : root.accent) : mus.fg
