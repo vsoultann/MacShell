@@ -3758,7 +3758,7 @@ Scope {
             PanelWindow {
                 id: tearWin
                 screen: win.modelData
-                visible: ui.tearing || tearLaunch.running || tearHome.running
+                visible: ui.tearing || tearLaunch.running || tearHome.running || tearPlace.running
                 anchors { left: true; right: true; top: true; bottom: true }
                 exclusionMode: ExclusionMode.Ignore
                 color: "transparent"
@@ -3771,14 +3771,21 @@ Scope {
                     property real zoom: 1
                     property real wob: 0
                     readonly property bool isWin: ui.tearItem !== null && ui.tearItem.kind === "win"
-                    readonly property real ar: (gsv.implicitWidth > 0 && gsv.implicitHeight > 0) ? gsv.implicitWidth / gsv.implicitHeight : 16 / 10
-                    width: isWin ? 300 : root.iconSize * 1.12
-                    height: isWin ? width / ar : width
-                    // pointer is in the Dock surface's coordinates: shift by where that surface sits on the screen
-                    x: ui.tearX - width / 2
-                    y: (tearWin.height - win.height) + ui.tearY - height / 2
+                    // a window preview is picked up like the window itself: the higher it's pulled out of the Dock the
+                    // closer it gets to the window's real size, held near its title bar (no wiggle — it's a window)
+                    readonly property real liftRaw: isWin ? Math.max(0, Math.min(1, (ui.activeTop - ui.tearY) / 240)) : 0
+                    property real lift: 1 - Math.pow(1 - liftRaw, 3)
+                    Behavior on lift { enabled: !ui.placing; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                    readonly property real thumbW: 170
+                    readonly property real liftW: thumbW + (ui.tearW - thumbW) * lift
+                    readonly property real grabFy: 0.5 + (0.035 - 0.5) * lift
+                    readonly property real offY: tearWin.height - win.height   // Dock surface → screen coordinates
+                    width: ui.placing ? ui.placeW : (isWin ? liftW : root.iconSize * 1.12)
+                    height: ui.placing ? ui.placeH : (isWin ? liftW * ui.tearH / ui.tearW : width)
+                    x: ui.placing ? ui.placeX : ui.tearX - width / 2
+                    y: ui.placing ? ui.placeY : offY + ui.tearY - height * (isWin ? grabFy : 0.5)
                     scale: zoom
-                    rotation: wob
+                    rotation: isWin ? 0 : wob
                     Image {
                         visible: !tearGhost.isWin
                         anchors.fill: parent
@@ -3786,10 +3793,18 @@ Scope {
                         sourceSize: Qt.size(256, 256)
                         smooth: true; mipmap: true
                     }
+                    RectangularShadow {
+                        visible: tearGhost.isWin
+                        anchors.fill: parent; radius: 10
+                        offset.y: 6 + 14 * tearGhost.lift; blur: 18 + 32 * tearGhost.lift; spread: 0
+                        color: Qt.rgba(0, 0, 0, 0.30 + 0.15 * tearGhost.lift)
+                    }
+                    // translucent windows (terminals) get Hyprland's blur behind them; the lifted copy can't, so it gets a
+                    // dark backing instead — otherwise it reads as a faint see-through ghost, not the window
                     Rectangle {
                         visible: tearGhost.isWin
-                        x: 0; y: 6; width: parent.width; height: parent.height
-                        radius: 10; color: Qt.rgba(0, 0, 0, 0.35)
+                        anchors.fill: parent; radius: 10
+                        color: Qt.rgba(0.09, 0.08, 0.09, 0.88)
                     }
                     ScreencopyView {
                         id: gsv
@@ -3849,12 +3864,65 @@ Scope {
                 property real tearY: 0
                 property real tearHomeX: 0
                 property real tearHomeY: 0
+                // window being dragged: its real size and Hyprland address; placing = the ghost settling into its new spot
+                property real tearW: 900
+                property real tearH: 600
+                property string tearAddr: ""
+                property bool placing: false
+                property real placeX: 0
+                property real placeY: 0
+                property real placeW: 0
+                property real placeH: 0
+                function hyprOf(tl) {
+                    var v = Hyprland.toplevels.values;
+                    for (var i = 0; i < v.length; i++) if (v[i].wayland === tl) return v[i];
+                    return null;
+                }
                 function beginTear(item, src, homeX, homeY) {
                     if (dragging) { dragTarget = dragIndex; endDrag(); }
                     menuItem = null;
                     tearItem = item; tearSrc = src; tearHomeX = homeX; tearHomeY = homeY;
                     tearGhost.opacity = 1; tearGhost.zoom = 1;
+                    placing = false;
+                    if (item.kind === "win") {
+                        var h = hyprOf(item.tl), o = h ? h.lastIpcObject : null;
+                        tearAddr = h ? ("0x" + h.address.replace(/^0x/, "")) : "";
+                        var sw = win.modelData.width, sh = win.modelData.height;
+                        var w = (o && o.size) ? o.size[0] : (gsv.implicitWidth || 900);
+                        var hh = (o && o.size) ? o.size[1] : (gsv.implicitHeight || 600);
+                        // a fullscreen / huge window comes off as a comfortable floating size, like macOS restoring it
+                        var k = Math.min(1, (sw * 0.78) / w, (sh * 0.78) / hh);
+                        tearW = Math.round(w * k); tearH = Math.round(hh * k);
+                    }
                     tearing = true;
+                }
+                // dropped on the desktop: the ghost settles exactly where the window will be, the real window is moved
+                // there (this monitor's workspace, floating, same size), focused, and the ghost fades off on top of it
+                function placeWindow() {
+                    var sw = tearWin.width, sh = tearWin.height, top = root.bar ? root.bar.barHeight : 34;
+                    var w = tearW, h = tearH;
+                    var cx = tearX, ty = tearGhost.offY + tearY - h * 0.035;
+                    var x = Math.round(Math.max(8, Math.min(sw - w - 8, cx - w / 2)));
+                    var y = Math.round(Math.max(top + 6, Math.min(sh - h - 8, ty)));
+                    placeX = tearGhost.x; placeY = tearGhost.y; placeW = tearGhost.width; placeH = tearGhost.height;
+                    placing = true;
+                    tearPlace.toX = x; tearPlace.toY = y; tearPlace.toW = w; tearPlace.toH = h;
+                    tearPlace.item = tearItem;
+                    tearPlace.restart();
+                    if (!tearAddr) return;
+                    var mon = Hyprland.monitorFor(win.modelData);
+                    var ws = (mon && mon.activeWorkspace) ? String(mon.activeWorkspace.name) : "";
+                    var gx = Math.round(win.modelData.x + x), gy = Math.round(win.modelData.y + y);
+                    var sel = 'window = "address:' + tearAddr + '"';
+                    var cmds = [];
+                    if (ws) cmds.push('hl.dsp.window.move({ workspace = "' + ws + '", follow = false, ' + sel + ' })');
+                    cmds.push('hl.dsp.window.fullscreen_state({ internal = 0, client = 0, ' + sel + ' })');
+                    cmds.push('hl.dsp.window.float({ action = "enable", ' + sel + ' })');
+                    cmds.push('hl.dsp.window.resize({ x = ' + w + ', y = ' + h + ', "exact", ' + sel + ' })');
+                    cmds.push('hl.dsp.window.move({ x = ' + gx + ', y = ' + gy + ', "exact", ' + sel + ' })');
+                    var sh2 = "";
+                    for (var i = 0; i < cmds.length; i++) sh2 += "hyprctl dispatch '" + cmds[i] + "' >/dev/null; ";
+                    Quickshell.execDetached(["sh", "-c", sh2]);
                 }
                 function endTear() {
                     if (!tearing) return;
@@ -3862,6 +3930,7 @@ Scope {
                     justDragged = true;
                     Qt.callLater(function () { ui.justDragged = false; });
                     if (tearY < activeTop - 30) {
+                        if (tearItem && tearItem.kind === "win") { placeWindow(); return; }
                         tearLaunch.item = tearItem;
                         tearLaunch.restart();               // enlarge + fade, then open / focus
                     } else {
@@ -3928,6 +3997,24 @@ Scope {
                         NumberAnimation { target: tearGhost; property: "wob"; to: 0; duration: 200 }
                     }
                     ScriptAction { script: { if (tearLaunch.item) root.activate(tearLaunch.item, false); ui.tearItem = null; } }
+                }
+                SequentialAnimation {
+                    id: tearPlace
+                    property var item: null
+                    property real toX: 0
+                    property real toY: 0
+                    property real toW: 0
+                    property real toH: 0
+                    ParallelAnimation {
+                        NumberAnimation { target: ui; property: "placeX"; to: tearPlace.toX; duration: 340; easing.type: Easing.OutQuint }
+                        NumberAnimation { target: ui; property: "placeY"; to: tearPlace.toY; duration: 340; easing.type: Easing.OutQuint }
+                        NumberAnimation { target: ui; property: "placeW"; to: tearPlace.toW; duration: 340; easing.type: Easing.OutQuint }
+                        NumberAnimation { target: ui; property: "placeH"; to: tearPlace.toH; duration: 340; easing.type: Easing.OutQuint }
+                    }
+                    ScriptAction { script: { if (tearPlace.item && tearPlace.item.tl) tearPlace.item.tl.activate(); } }
+                    PauseAnimation { duration: 160 }
+                    NumberAnimation { target: tearGhost; property: "opacity"; to: 0; duration: 200; easing.type: Easing.OutCubic }
+                    ScriptAction { script: { ui.placing = false; ui.tearItem = null; } }
                 }
                 ParallelAnimation {
                     id: tearHome
