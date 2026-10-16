@@ -337,12 +337,42 @@ Item {
                 id: nc
                 required property var modelData
                 required property int index
-                width: rightCol.width; height: 62 * ls.u
+                width: rightCol.width
+                // a swiped card folds its slot away so the ones below glide up
+                height: (gone ? 0 : 62 * ls.u)
+                Behavior on height { NumberAnimation { duration: 380; easing.type: Easing.OutQuint } }
                 property real appear: 0
                 Component.onCompleted: appearAnim.start()
                 NumberAnimation { id: appearAnim; target: nc; property: "appear"; from: 0; to: 1; duration: 560; easing.type: Easing.OutQuint }
-                opacity: appear
-                transform: Translate { x: (1 - nc.appear) * 40 * ls.u }
+                // swipe sideways to clear: the card follows the pointer and fades with distance; past a third of its
+                // width (or flicked) it flies off and MacShell dismisses it, otherwise it springs back
+                property real dragX: 0
+                property bool gone: false
+                readonly property real far: Math.min(1, Math.abs(dragX) / (width * 0.75))
+                opacity: appear * (1 - far)
+                transform: Translate { x: (1 - nc.appear) * 40 * ls.u + nc.dragX }
+                NumberAnimation { id: snapBack; target: nc; property: "dragX"; to: 0; duration: 420; easing.type: Easing.OutBack; easing.overshoot: 1.2 }
+                SequentialAnimation {
+                    id: flyOff
+                    property real to: 0
+                    NumberAnimation { target: nc; property: "dragX"; to: flyOff.to; duration: 260; easing.type: Easing.OutCubic }
+                    ScriptAction { script: { nc.gone = true; Quickshell.execDetached(["qs", "-c", "MacShell", "ipc", "call", "notifications", "dismiss", String(nc.modelData.id)]); } }
+                }
+                DragHandler {
+                    id: swipe
+                    target: null
+                    xAxis.enabled: true; yAxis.enabled: false
+                    property real startX: 0
+                    onActiveChanged: {
+                        if (active) { snapBack.stop(); startX = nc.dragX; ls.st.poke(); return; }
+                        var v = centroid.velocity.x;
+                        if (Math.abs(nc.dragX) > nc.width / 3 || Math.abs(v) > 900) {
+                            var dir = (Math.abs(v) > 900 ? v : nc.dragX) > 0 ? 1 : -1;
+                            flyOff.to = dir * (nc.width + 60 * ls.u); flyOff.restart();
+                        } else snapBack.restart();
+                    }
+                    onTranslationChanged: if (active) nc.dragX = startX + translation.x
+                }
                 Glass { anchors.fill: parent; src: glassTex; frame: ls; cornerR: 20 * ls.u; thickness: 20; tint: 0.40; shadowAmt: 0.3 }
                 Rectangle { anchors.fill: parent; radius: 20 * ls.u; color: "white"; opacity: ncMa.pressed ? 0.12 : (ncMa.containsMouse ? 0.06 : 0); Behavior on opacity { NumberAnimation { duration: 140 } } }
                 Image {

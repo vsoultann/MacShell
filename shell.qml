@@ -273,6 +273,8 @@ ShellRoot {
         function open(): void { macBar.notifPopRequest(true); }
         function close(): void { macBar.notifPopRequest(false); }
         function clear(): void { macBar.notifClearAnimated(); }
+        // the lock screen: a notification swiped away
+        function dismiss(id: int): void { macBar.notifDelete(id); macBar.notifUnread = Math.max(0, macBar.notifUnread - 1); }
     }
     // qs -c MacShell ipc call gaming toggle | on | off
     IpcHandler {
