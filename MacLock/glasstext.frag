@@ -1,13 +1,12 @@
 #version 440
-// Liquid Glass text for the MacLock clock (macOS 26/27 style).
+// Liquid Glass clock digits, the way macOS 26 / iOS 26 draw the lock screen time.
 //
 // Build:  /usr/lib/qt6/bin/qsb --qt6 -o glasstext.frag.qsb glasstext.frag
 //
-// `mask` is the sharp rendered text (alpha = glyph coverage) and `hmap` a blurred copy of it, which serves as
-// a height field: every stroke becomes a rounded glass rod. Its slope gives a surface normal, and from that:
-//   * the backdrop is refracted through the rod (with a little chromatic dispersion)
-//   * Fresnel brightening towards the edges, a specular highlight from the top-left, a soft inner shade bottom-right
-// The body stays clear, so the wallpaper shows through the digits, bent.
+// Not a puffed-up lens: the digits are FLAT, frosted glass. The body shows the (already blurred) wallpaper,
+// lifted and a touch milky, so it reads as light glass on any background; only a thin rim along the edges bends
+// the backdrop and catches light — bright on the side facing the light (top-left), a faint dark line on the
+// far side. `mask` = sharp glyph coverage; `hmap` = a SLIGHTLY blurred copy, used only to find the rim.
 
 layout(location = 0) in vec2 qt_TexCoord0;
 layout(location = 0) out vec4 fragColor;
@@ -18,12 +17,12 @@ layout(std140, binding = 0) uniform buf {
     vec2 itemSize;      // this item in px
     vec2 srcSize;       // backdrop texture size in px (logical)
     vec2 srcOffset;     // this item's top-left inside the backdrop, px
-    float refract;      // backdrop shift at the steepest slope, px
-    float bevel;        // slope scale (bigger = rounder, more pronounced edges)
-    float lift;         // brightness added to the glass body
+    float refract;      // backdrop shift inside the rim, px
+    float bevel;        // rim slope scale
+    float lift;         // brightness added to the body
     float frost;        // 0..1 milky white mixed into the body
-    float specAmt;      // specular highlight strength
-    float fresnelAmt;   // edge brightening strength
+    float specAmt;      // lit rim strength
+    float fresnelAmt;   // all-round rim strength
 };
 
 layout(binding = 1) uniform sampler2D src;
@@ -43,38 +42,36 @@ void main()
     float a = texture(mask, uv).a;
     if (a <= 0.002) { fragColor = vec4(0.0); return; }
 
-    // height-field slope (central differences, 1.5 px)
-    vec2 d = 1.5 / itemSize;
+    // rim: slope of the lightly blurred glyphs (zero in the flat middle of a stroke)
+    vec2 d = 2.0 / itemSize;
     vec2 g = vec2(H(uv + vec2(d.x, 0.0)) - H(uv - vec2(d.x, 0.0)),
-                  H(uv + vec2(0.0, d.y)) - H(uv - vec2(0.0, d.y))) * bevel;
-    // surface normal: up the slope is "out" of the glass, z towards the viewer
-    vec3 N = normalize(vec3(-g, 1.0));
+                  H(uv + vec2(0.0, d.y)) - H(uv - vec2(0.0, d.y)));
+    float slope = length(g);
+    float rim = clamp(slope * bevel, 0.0, 1.0);          // 0 body .. 1 edge
+    vec2 n = slope > 1e-5 ? -g / slope : vec2(0.0);      // outward edge direction (screen space)
 
-    // refraction: the rod bends the backdrop towards its centre line (lens), plus dispersion per channel
+    // body: the frosted wallpaper behind, lifted; only the rim bends it (a few px), with a hint of dispersion
     vec2 p = uv * itemSize + srcOffset;
-    vec2 shift = -N.xy * refract;
+    vec2 shift = n * refract * rim * rim;
     vec3 bg;
-    bg.r = sampleBg(p + shift * 1.12, 0.4).r;
-    bg.g = sampleBg(p + shift, 0.4).g;
-    bg.b = sampleBg(p + shift * 0.88, 0.4).b;
+    bg.r = sampleBg(p - shift * 1.10, 1.2).r;
+    bg.g = sampleBg(p - shift, 1.2).g;
+    bg.b = sampleBg(p - shift * 0.90, 1.2).b;
     float l = dot(bg, vec3(0.299, 0.587, 0.114));
-    bg = mix(vec3(l), bg, 1.3);
-
-    vec3 col = bg * 1.08 + lift;
+    bg = mix(vec3(l), bg, 1.25);                         // vibrancy: a little more colour than the wallpaper
+    vec3 col = bg * 1.06 + lift;
     col = mix(col, vec3(1.0), frost);
+    // glass catches more light at the top of each digit than at the bottom
+    col += (0.5 - uv.y) * 0.08;
 
-    // Fresnel: glancing edges reflect more
-    float fres = pow(1.0 - N.z, 1.6);
-    col += fres * fresnelAmt;
-
-    // specular from the top-left, slightly towards the viewer
-    vec3 L = normalize(vec3(-0.55, -0.75, 0.9));
-    vec3 Hh = normalize(L + vec3(0.0, 0.0, 1.0));
-    float spec = pow(max(dot(N, Hh), 0.0), 28.0) * step(0.02, 1.0 - N.z);
-    col += spec * specAmt;
-
-    // the far side of each stroke catches a little shade
-    col -= max(dot(N.xy, vec2(0.45, 0.85)), 0.0) * 0.18;
+    // light from the top-left: the edge facing it glows, the far edge gets a faint dark line
+    vec2 L = normalize(vec2(-0.6, -0.8));
+    float facing = dot(n, L);
+    // a soft sheen on the edges facing the light (no outline all the way round)
+    float sheen = smoothstep(0.0, 1.0, rim);
+    col += sheen * fresnelAmt;
+    col += sheen * max(facing, 0.0) * specAmt;
+    col -= sheen * max(-facing, 0.0) * 0.05;
 
     fragColor = vec4(clamp(col, 0.0, 1.0) * a, a) * qt_Opacity;
 }

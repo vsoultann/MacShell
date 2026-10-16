@@ -462,22 +462,22 @@ Item {
                 visible: false
             }
             ShaderEffectSource { id: timeMask; sourceItem: timeMaskFx; visible: false; smooth: true }
-            // blurred copy of the digits = height field: each stroke turns into a rounded glass rod
+            // a LIGHTLY blurred copy of the digits: only used to find the thin glass rim along the edges
             MultiEffect {
                 id: timeHeightFx
                 width: timeMaskFx.width; height: timeMaskFx.height
                 source: timeMask
-                blurEnabled: true; blurMax: 40; blur: 0.55
+                blurEnabled: true; blurMax: 10; blur: 0.45
                 autoPaddingEnabled: false
                 visible: false
             }
             ShaderEffectSource { id: timeHeight; sourceItem: timeHeightFx; visible: false; smooth: true }
             // soft shadow under the glass digits so they lift off light wallpapers too
             MultiEffect {
-                x: timeTxt.x - timeItem.mp; y: timeTxt.y - timeItem.mp + 4 * ls.u
+                x: timeTxt.x - timeItem.mp; y: timeTxt.y - timeItem.mp + 8 * ls.u
                 width: timeMaskFx.width; height: timeMaskFx.height
                 source: timeMask
-                blurEnabled: true; blurMax: 32; blur: 0.7
+                blurEnabled: true; blurMax: 64; blur: 1.0
                 colorization: 1.0; colorizationColor: "black"; brightness: -1.0
                 opacity: 0.22
             }
@@ -494,12 +494,13 @@ Item {
                 property vector2d itemSize: Qt.vector2d(width, height)
                 property vector2d srcSize: Qt.vector2d(ls.width, ls.height)
                 property vector2d srcOffset: Qt.vector2d(fp.x, fp.y)
-                property real refract: 26 * ls.u
-                property real bevel: 7.0
-                property real lift: 0.07
-                property real frost: 0.10
-                property real specAmt: 0.95
-                property real fresnelAmt: 0.55
+                // flat frosted glass with a thin lit rim (macOS 26), not a puffed lens
+                property real refract: 2.5 * ls.u
+                property real bevel: 4.5
+                property real lift: 0.14
+                property real frost: 0.50
+                property real specAmt: 0.38
+                property real fresnelAmt: 0.0
                 onStatusChanged: if (status === ShaderEffect.Error) console.log("[maclock] clock shader:", log)
             }
             // fallback when the shader is missing
