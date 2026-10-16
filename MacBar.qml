@@ -3598,6 +3598,32 @@ Scope {
             id: perScreen
             required property var modelData
 
+        // ═════════ the bar's background lives in its OWN layer (namespace "macbarbg") ═════════
+        // Hyprland blurs a whole layer or none of it, and the bar window also carries the popovers, so the bar strip is a separate
+        // layer just under the bar: it paints a translucent fill (Settings → Menu Bar → Bar background) and takes no input.
+        // Blur it with:  layerrule = blur, macbarbg   +   layerrule = ignorealpha 0.05, macbarbg
+        PanelWindow {
+            id: barBgWin
+            screen: perScreen.modelData
+            visible: root.barBgOpacity > 0.001
+            anchors { left: true; right: true; top: true }
+            implicitHeight: root.barHeight
+            color: "transparent"
+            exclusionMode: ExclusionMode.Ignore
+            mask: Region { }
+
+            WlrLayershell.namespace: "macbarbg"
+            // Top, not Bottom: on Bottom it sat under the windows, so it only ever blurred the wallpaper — over a
+            // window there was nothing behind it to blur. It is declared before the bar itself, so it stacks under it.
+            WlrLayershell.layer: WlrLayer.Top
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+            Rectangle {
+                anchors.fill: parent
+                color: root.darkMode ? Qt.rgba(0.10, 0.10, 0.11, root.barBgOpacity) : Qt.rgba(1, 1, 1, root.barBgOpacity)
+            }
+        }
+
         PanelWindow {
             id: win
             property var modelData: perScreen.modelData
@@ -6969,30 +6995,6 @@ Scope {
                         font.family: pal.fam; font.pixelSize: 13
                     }
                 }
-            }
-        }
-
-        // ═════════ the bar's background lives in its OWN layer (namespace "macbarbg") ═════════
-        // Hyprland blurs a whole layer or none of it, and the bar window also carries the popovers, so the bar strip is a separate
-        // layer just under the bar: it paints a translucent fill (Settings → Menu Bar → Bar background) and takes no input.
-        // Blur it with:  layerrule = blur, macbarbg   +   layerrule = ignorealpha 0.05, macbarbg
-        PanelWindow {
-            id: barBgWin
-            screen: perScreen.modelData
-            visible: root.barBgOpacity > 0.001
-            anchors { left: true; right: true; top: true }
-            implicitHeight: root.barHeight
-            color: "transparent"
-            exclusionMode: ExclusionMode.Ignore
-            mask: Region { }
-
-            WlrLayershell.namespace: "macbarbg"
-            WlrLayershell.layer: WlrLayer.Bottom
-            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-
-            Rectangle {
-                anchors.fill: parent
-                color: root.darkMode ? Qt.rgba(0.10, 0.10, 0.11, root.barBgOpacity) : Qt.rgba(1, 1, 1, root.barBgOpacity)
             }
         }
 

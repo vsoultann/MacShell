@@ -999,12 +999,23 @@ Scope {
 
                 // pane list (scrolls; sections separated by a gap, like System Settings)
                 Flickable {
+                    id: navFlick
                     x: 10; y: acct.visible ? 150 : 92
                     width: parent.width - 20
                     height: parent.height - y - 8
                     contentHeight: navCol.height
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
+                    // feathered ends: items fade out as they scroll under the account card (and off the bottom) instead
+                    // of being cut off. Only while there is something to scroll past that edge.
+                    layer.enabled: navFlick.contentHeight > navFlick.height
+                    layer.effect: ShaderEffect {
+                        fragmentShader: Qt.resolvedUrl("fade.frag.qsb")
+                        property real fadeTop: navFlick.contentY > 2 ? Math.min(0.14, 26 / Math.max(1, navFlick.height)) : 0.0015
+                        property real fadeBottom: navFlick.contentY < navFlick.contentHeight - navFlick.height - 2 ? Math.min(0.14, 26 / Math.max(1, navFlick.height)) : 0.0015
+                        Behavior on fadeTop { NumberAnimation { duration: 180 } }
+                        Behavior on fadeBottom { NumberAnimation { duration: 180 } }
+                    }
                 Column {
                     id: navCol
                     width: parent.width
