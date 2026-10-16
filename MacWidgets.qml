@@ -307,21 +307,37 @@ Scope {
     property bool musicTintEnabled: true      // Settings → Desktop & Dock → "Music widget takes the album's colour"
     readonly property bool musicTintOn: musicTintEnabled && musicArt !== "" && musicTintOk
     Behavior on musicEdge { ColorAnimation { duration: 1400; easing.type: Easing.InOutCubic } }
-    NumberAnimation { id: spreadAnim; target: root; property: "musicSpread"; from: 0; to: 1; duration: 1400; easing.type: Easing.InOutCubic
+    NumberAnimation { id: spreadAnim; target: root; property: "musicSpread"; from: 0; to: 1; duration: 1000; easing.type: Easing.InOutCubic
                       onFinished: root.musicTintPrev = root.musicTint }
-    function musicSetTint(c) {
-        if (!musicTintOk) { musicTintPrev = c; musicTint = c; musicSpread = 1; return; }
+    // the colour for a new cover is worked out first, then held until the Music widget starts its cover "burn", so
+    // the colour flows in at the SAME moment as the new cover (never later)
+    property color musicTintNext: "black"
+    property string musicTintUrl: ""          // the cover musicTintNext belongs to
+    property bool musicTintHeld: false
+    function musicSetTint(c, forUrl) {
+        musicTintNext = c;
+        if (!musicTintOk) { musicTintPrev = c; musicTint = c; musicSpread = 1; musicTintHeld = false; musicTintUrl = forUrl; return; }
+        // held FIRST: announcing the url wakes the widget, which commits the colour as its burn starts
+        musicTintHeld = true;
+        tintFallback.restart();               // no widget asking for it (hidden, lyrics…): flow in on its own
+        musicTintUrl = forUrl;
+    }
+    function musicCommitTint() {
+        if (!musicTintHeld) return;
+        musicTintHeld = false; tintFallback.stop();
         // mid-spread: start the next one from what is on screen now (the new colour, mostly)
         musicTintPrev = musicSpread > 0.5 ? musicTint : musicTintPrev;
-        musicTint = c;
+        musicTint = musicTintNext;
         spreadAnim.restart();
     }
+    Timer { id: tintFallback; interval: 1800; onTriggered: root.musicCommitTint() }
     onMusicArtChanged: musicTintLater.restart()
     onWantsMusicChanged: musicTintLater.restart()
     Timer { id: musicTintLater; interval: 120; onTriggered: root.musicTintRun() }
     function musicTintRun() {
         if (musicArt === "" || !wantsMusic) { musicTintOk = false; return; }
         mTintProc.running = false;
+        mTintProc.forUrl = musicArt;
         mTintProc.command = ["sh", "-c",
             'u="$1"; f=$(mktemp); case "$u" in file://*) cp "${u#file://}" "$f";; http*) curl -s --max-time 5 -o "$f" "$u";; *) exit 1;; esac; '
             + 'magick "$f" -resize 24x24\\! -resize 1x1\\! -format "%[fx:r] %[fx:g] %[fx:b]" info: 2>/dev/null; rm -f "$f"', "sh", musicArt];
@@ -329,13 +345,15 @@ Scope {
     }
     Process {
         id: mTintProc
+        property string forUrl: ""
         stdout: StdioCollector {
             onStreamFinished: {
                 var v = text.trim().split(/\s+/).map(parseFloat);
                 if (v.length < 3 || isNaN(v[0])) return;
                 var c = Qt.rgba(v[0], v[1], v[2], 1);
                 var h = c.hslHue < 0 ? 0 : c.hslHue, sat = Math.min(0.55, c.hslSaturation * 0.85);
-                root.musicSetTint(Qt.hsla(h, sat, 0.27, 1));
+                var first = !root.musicTintOk;
+                root.musicSetTint(Qt.hsla(h, sat, 0.27, 1), mTintProc.forUrl);
                 root.musicEdge = Qt.hsla(h, Math.min(0.6, sat + 0.1), 0.62, 0.38);
                 root.musicTintOk = true;
             }
@@ -857,12 +875,17 @@ Scope {
                 if (!pending) return;
                 var t = curIdx === 0 ? imgB : imgA;
                 if (t.status === Image.Loading && burnWait.running) return;
+                // wait for the new colour as well, so cover and colour change together
+                var colourReady = !root.musicTintEnabled || !root.musicTintOk || root.musicTintUrl === url;
+                if (!colourReady && burnWait.running) return;
                 pending = false;
                 burnWait.stop();
                 curIdx = 1 - curIdx;
                 seed = Math.random();
                 burnAnim.restart();
+                root.musicCommitTint();
             }
+            Connections { target: root; function onMusicTintUrlChanged() { mus.tryStart(); } }
             Timer { id: burnWait; interval: 1500; onTriggered: mus.tryStart() }
             NumberAnimation { id: burnAnim; target: mus; property: "prog"; from: 0; to: 1; duration: 950; easing.type: Easing.OutCubic }
 
@@ -1581,6 +1604,26 @@ Scope {
             anchors { top: true; bottom: true; left: true; right: true }
             exclusionMode: ExclusionMode.Ignore
             color: "transparent"
+            // Edit mode lifts the widgets above the windows. Their glass must then show what's really behind them (your
+            // windows), not just the wallpaper: right after the layer rises, the widgets (and the dimming) stay invisible
+            // for an instant, the screen is captured through the empty layer, and the glass refracts that snapshot.
+            property bool snapping: false
+            property bool snapOk: false
+            Connections {
+                target: root
+                function onEditingChanged() {
+                    if (root.editing) {
+                        win.snapOk = false; win.snapping = true;
+                        snapGo.restart();
+                    } else {
+                        snapGo.stop(); snapLift.stop();
+                        win.snapping = false; win.snapOk = false;
+                        wallTex.scheduleUpdate();
+                    }
+                }
+            }
+            Timer { id: snapGo; interval: 50; onTriggered: { if (typeof screenShot.captureFrame === "function") screenShot.captureFrame(); snapLift.restart(); } }
+            Timer { id: snapLift; interval: 90; onTriggered: { win.snapOk = screenShot.hasContent !== false; win.snapping = false; wallTex.scheduleUpdate(); } }
             WlrLayershell.layer: root.editing ? WlrLayer.Top : WlrLayer.Bottom
             WlrLayershell.namespace: "macwidgets"
             WlrLayershell.keyboardFocus: root.editing ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
@@ -1613,6 +1656,15 @@ Scope {
                 }
                 // live wallpaper: the small animated copy, stretched to the screen (it's blurred by the glass anyway);
                 // paused while windows cover this desktop, in Game Mode, or when this screen has no widgets
+                // edit mode: the screen as it really looks (windows included), captured just before the widgets rose
+                ScreencopyView {
+                    id: screenShot
+                    anchors.fill: parent
+                    captureSource: root.editing ? win.modelData : null
+                    live: false
+                    visible: win.snapOk && root.editing
+                    z: 2
+                }
                 Loader {
                     id: liveWall
                     anchors.fill: parent
@@ -1667,7 +1719,7 @@ Scope {
             Rectangle {
                 anchors.fill: parent
                 color: "black"
-                opacity: root.editing ? 0.28 : 0
+                opacity: root.editing && !win.snapping ? 0.28 : 0
                 visible: opacity > 0.01
                 Behavior on opacity { NumberAnimation { duration: 260 } }
                 MouseArea { anchors.fill: parent; enabled: root.editing; onClicked: root.selected = "" }
@@ -1688,6 +1740,9 @@ Scope {
                     readonly property var modelData: ({ id: wid, type: wtype, size: wsize, x: wx, y: wy, screen: wscreen, style: wstyle })
                     // each screen's layer shows only its own widgets (hidden delegates cost nothing)
                     visible: root.screenOf(modelData) === win.sname
+                    // out of the picture for the instant the screen is captured (edit mode), then back with a fade
+                    property real snapHide: win.snapping ? 0 : 1
+                    Behavior on snapHide { enabled: !win.snapping; NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
                     readonly property var d: root.dims(wsize)
                     // resize morph: the card glides to the new size at once; the content blurs + fades out, switches to
                     // the new layout (shownSize) and comes back into focus inside the moving card
@@ -1725,7 +1780,7 @@ Scope {
                     property real pop: 0
                     Component.onCompleted: pop = 1
                     Behavior on pop { NumberAnimation { duration: 450; easing.type: Easing.OutQuint } }
-                    opacity: pop
+                    opacity: pop * snapHide
                     scale: (0.92 + 0.08 * pop) * (wDrag.active ? 1.06 : 1)
                     // light wiggle while dragged (iOS-style), eases back to straight when dropped
                     property real wob: 0
