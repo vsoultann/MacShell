@@ -5796,8 +5796,9 @@ Scope {
                     }
                     opacity: Math.max(0, Math.min(1, openT * 2.2))
                     visible: opacity > 0
-                    scale: root.barPopupScale * (0.86 + 0.14 * openT)
+                    scale: root.barPopupScale
                     transformOrigin: Item.TopRight
+                    transform: Translate { y: (1 - cc.openT) * -26 }
                     onOpeningChanged: if (opening) openSeq++
                     onVisibleChanged: if (visible) { root.refreshWifi(); root.refreshBt(); root.refreshBrightness(); }
 
@@ -6283,9 +6284,9 @@ Scope {
                                         PauseAnimation { duration: ct.slot ? Math.min(220, ct.slot.row * 55 + ct.slot.col * 18) : 0 }
                                         NumberAnimation { target: ct; property: "ap"; from: 0; to: 1; duration: 460; easing.type: Easing.OutBack; easing.overshoot: 1.8 }
                                     }
-                                    transform: Translate { y: (1 - ct.ap) * 14 }
+                                    transform: Translate { y: (1 - ct.ap) * 16 }
                                     opacity: Math.max(0, Math.min(1, ct.ap * 1.6))
-                                    scale: (dragging ? 1.04 : 1) * (0.86 + 0.14 * ct.ap)
+                                    scale: dragging ? 1.04 : 1
                                     Behavior on x { enabled: !ct.dragging; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                                     Behavior on y { enabled: !ct.dragging; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
