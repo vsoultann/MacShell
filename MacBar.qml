@@ -5801,15 +5801,8 @@ Scope {
                     visible: opacity > 0
                     scale: root.barPopupScale
                     transformOrigin: Item.TopRight
-                    transform: Translate { y: (1 - cc.openT) * -26 }
-                    // the top edge is feathered, so while it slides up behind the menu bar it fades out instead of
-                    // crossing over it (and the open panel blends into the bar rather than butting against it)
-                    layer.enabled: true
-                    layer.effect: ShaderEffect {
-                        fragmentShader: Qt.resolvedUrl("fade.frag.qsb")
-                        property real fadeTop: Math.min(0.45, (Math.max(0, (1 - cc.openT) * 26 - 4) + 12) / Math.max(1, cc.height))
-                        property real fadeBottom: 0.0015
-                    }
+                    // the panel itself never moves above the bar (the menu bar is transparent, so anything that did would
+                    // show straight through it). The motion lives in the controls: they slide up into place inside it.
                     onOpeningChanged: if (opening) openSeq++
                     onVisibleChanged: if (visible) { root.refreshWifi(); root.refreshBt(); root.refreshBrightness(); }
 
