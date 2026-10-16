@@ -715,7 +715,7 @@ Scope {
                 Behavior on x { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
                 scale: artTap.pressed ? 0.95 : 1
                 Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutQuint } }
-                Rectangle { anchors.fill: parent; radius: 10; color: Qt.rgba(1, 1, 1, 0.12) }
+                Rectangle { anchors.fill: parent; radius: 10; color: Qt.rgba(1, 1, 1, 0.12); visible: mus.url !== "" }   // only behind real artwork
                 Image { id: imgA; anchors.fill: parent; visible: false; fillMode: Image.PreserveAspectCrop; asynchronous: true; sourceSize: Qt.size(300, 300); onStatusChanged: mus.tryStart() }
                 Image { id: imgB; anchors.fill: parent; visible: false; fillMode: Image.PreserveAspectCrop; asynchronous: true; sourceSize: Qt.size(300, 300); onStatusChanged: mus.tryStart() }
                 ShaderEffectSource { id: srcA; sourceItem: imgA; hideSource: true; visible: false; smooth: true }
@@ -737,7 +737,6 @@ Scope {
                     opacity: mus.url === "" ? 1 : 0
                     visible: opacity > 0.01
                     Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
-                    Rectangle { anchors.fill: parent; radius: mus.big ? 14 : 10; color: Qt.rgba(1, 1, 1, 0.08); border.width: 0.5; border.color: Qt.rgba(1, 1, 1, 0.14) }
                     Image {
                         anchors.centerIn: parent
                         width: Math.round(parent.width * 0.62); height: width
