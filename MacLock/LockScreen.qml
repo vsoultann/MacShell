@@ -295,7 +295,7 @@ Item {
                     c.strokeStyle = Qt.rgba(1, 1, 1, 0.22); c.beginPath(); c.arc(width / 2, height / 2, r, 0, Math.PI * 2); c.stroke();
                     c.strokeStyle = "#FF9F0A"; c.beginPath(); c.arc(width / 2, height / 2, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0.0001, f)); c.stroke();
                 }
-                Text { anchors.centerIn: parent; text: ls.liveKind === "sw" ? "\u23F1" : (ls.liveKind === "ring" ? "\u23F0" : ""); font.pixelSize: 20 * ls.u; color: "white" }
+                ClockGlyph { anchors.centerIn: parent; visible: ls.liveKind === "sw" || ls.liveKind === "ring"; kind: ls.liveKind === "sw" ? "stopwatch" : "alarm"; color: "white"; width: 22 * ls.u; height: width }
             }
             Column {
                 x: 78 * ls.u; y: 14 * ls.u

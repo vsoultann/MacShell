@@ -1034,7 +1034,11 @@ Scope {
                     x: ca.hasTimer ? tring.width + 22 : (ca.size === "s" ? 0 : 6)
                     width: parent.width - x
                     spacing: 2
-                    Text { text: "⏱ Stopwatch"; color: ca.orange; font.family: root.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                    Row {
+                        spacing: 5
+                        ClockGlyph { anchors.verticalCenter: parent.verticalCenter; kind: "stopwatch"; color: ca.orange; width: 14; height: 14 }
+                        Text { text: "Stopwatch"; color: ca.orange; font.family: root.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                    }
                     Text {
                         width: parent.width; fontSizeMode: Text.HorizontalFit; minimumPixelSize: 14
                         text: ca.ck ? ca.ck.fmtSw(ca.ck.swElapsed()).replace(/,\d\d$/, "") : ""
@@ -1052,7 +1056,12 @@ Scope {
                 y: ca.size === "l" && ca.live ? liveBox.height + 12 : 0
                 width: parent.width - x
                 spacing: ca.size === "s" ? 2 : 6
-                Text { visible: ca.size !== "s" || ca.alarmList.length > 0; text: "⏰ Alarms"; color: ca.orange; font.family: root.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                Row {
+                    visible: ca.size !== "s" || ca.alarmList.length > 0
+                    spacing: 5
+                    ClockGlyph { anchors.verticalCenter: parent.verticalCenter; kind: "alarm"; color: ca.orange; width: 14; height: 14 }
+                    Text { text: "Alarms"; color: ca.orange; font.family: root.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                }
                 Repeater {
                     model: ca.alarmList.slice(0, ca.maxAlarms)
                     delegate: Item {
