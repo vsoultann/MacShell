@@ -231,7 +231,7 @@ Scope {
             readonly property color sep: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.09)
             readonly property color pill: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.07)
             readonly property color selRow: dark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(0, 0, 0, 0.09)
-            readonly property color getPill: dark ? Qt.rgba(1, 1, 1, 0.095) : "#E8E8EB"
+            readonly property color getPill: dark ? Qt.rgba(1, 1, 1, 0.12) : "#E8E8EB"
             readonly property color pillHover: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.12)
             readonly property color field: dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06)
             readonly property color border: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.2)
@@ -724,7 +724,10 @@ Scope {
         readonly property bool hasUpdate: { root.tick; return root.updatable[appId] === true && isInstalled; }
         readonly property string working: { root.tick; return root.busy[appId] || ""; }
         readonly property string label: working !== "" ? "" : (hasUpdate ? "UPDATE" : (isInstalled ? "OPEN" : "GET"))
-        width: big ? 92 : 60; height: big ? 30 : 21
+        // the pill grows with its label, so every label keeps the same breathing room; whole pixels, so the
+        // padding is identical on both sides
+        width: 2 * Math.round((Math.max(big ? 92 : 58, lbl.implicitWidth + (big ? 32 : 26))) / 2)
+        height: big ? 30 : 23
         Rectangle {
             anchors.fill: parent
             radius: height / 2
@@ -733,11 +736,16 @@ Scope {
             Behavior on color { ColorAnimation { duration: 140 } }
             scale: gbMa.pressed ? 0.94 : 1
             Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutQuint } }
+            FontMetrics { id: fm; font: lbl.font }
             Text {
+                id: lbl
+                // centred on the pill, then nudged by half the descender: these labels are all caps, so centring the
+                // text box alone leaves them sitting high
                 anchors.centerIn: parent
+                anchors.verticalCenterOffset: 0
                 text: gb.label
                 color: gb.onDark ? "white" : (gbMa.containsMouse ? "white" : root.accent)
-                font.family: root.fam; font.pixelSize: gb.big ? 13 : 11; font.weight: Font.DemiBold; font.letterSpacing: 0.2
+                font.family: root.fam; font.pixelSize: gb.big ? 13 : 11; font.weight: Font.Bold; font.letterSpacing: 0.3
             }
             // working: a spinner, like the App Store's progress ring
             Canvas {
@@ -788,7 +796,7 @@ Scope {
         }
         Column {
             x: 52; anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - 52 - 74
+            width: parent.width - 52 - 96
             spacing: 1
             Text {
                 width: parent.width; elide: Text.ElideRight
@@ -801,7 +809,7 @@ Scope {
                 color: pal.text2; font.family: root.fam; font.pixelSize: 11
             }
         }
-        GetButton { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; appId: rowItem.appId }
+        GetButton { anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter; appId: rowItem.appId }
         MouseArea { id: rowMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; z: -1; onClicked: root.go(root.page, rowItem.appId) }
     }
 
