@@ -93,6 +93,46 @@ Scope {
     property bool ccEnabled: true            // Control Center
     property string ccStyle: "tiles"         // tiles = every control its own glass | macos = one frosted panel behind them
     property bool ccAnimate: true            // false = it just appears, with no slide / stagger
+    // ── one material for the whole shell ──
+    // Settings → Appearance → Material. Sets the menu bar, its popovers, the Dock, Spotlight, the switcher,
+    // notifications, Control Center and the desktop widgets in one go. "custom" = you changed a piece by hand.
+    property string material: "liquid"       // liquid | frosted | blur | opaque | custom
+    property bool applyingMaterial: false
+    onGlassOpacityChanged: materialTouched()
+    onGlassBlurChanged: materialTouched()
+    onGlassLiquidChanged: materialTouched()
+    onSwitcherStyleChanged: materialTouched()
+    onNotifBlurChanged: materialTouched()
+    function applyMaterial(m) {
+        if (m === "custom") { material = "custom"; return; }
+        applyingMaterial = true;
+        var dock = hub ? hub.dock : null, wid = hub ? hub.widgets : null;
+        if (m === "liquid") {
+            barStyle = "liquid"; glassOpacity = 0.42; glassBlur = 5; glassLiquid = 1.0; barBgOpacity = 0.10;
+            switcherStyle = "glass"; notifBlur = 14;
+            if (dock) dock.dockStyle = "liquid";
+            if (wid) { wid.style = "glass"; wid.glassAmt = 0.5; wid.blurAmt = 0.5; }
+        } else if (m === "frosted") {
+            barStyle = "blur"; glassOpacity = 0.55; glassBlur = 26; glassLiquid = 0.0; barBgOpacity = 0.22;
+            switcherStyle = "frosted"; notifBlur = 30;
+            if (dock) dock.dockStyle = "blur";
+            if (wid) { wid.style = "frosted"; wid.blurAmt = 0.8; }
+        } else if (m === "blur") {
+            barStyle = "blur"; glassOpacity = 0.30; glassBlur = 16; glassLiquid = 0.0; barBgOpacity = 0.12;
+            switcherStyle = "frosted"; notifBlur = 18;
+            if (dock) dock.dockStyle = "blur";
+            if (wid) { wid.style = "frosted"; wid.blurAmt = 0.45; }
+        } else if (m === "opaque") {
+            barStyle = "blur"; glassOpacity = 0.96; glassBlur = 0; glassLiquid = 0.0; barBgOpacity = 0.98;
+            switcherStyle = "opaque"; notifBlur = 0;
+            if (dock) dock.dockStyle = "blur";
+            if (wid) { wid.style = "opaque"; }
+        }
+        applyingMaterial = false;
+        material = m;
+    }
+    // changing any single piece by hand means the material is no longer one of the presets
+    function materialTouched() { if (settingsReady && !applyingMaterial && material !== "custom") material = "custom"; }
     property bool notificationsEnabled: true // banners + Notification Center (off = no D-Bus daemon at all, so mako/dunst can take over)
     property bool clockAppEnabled: true      // the Clock app (alarms and timers still ring while it is on)
     readonly property bool barLayerNeeded: barEnabled || spotlightEnabled || ccEnabled || notificationsEnabled
@@ -242,7 +282,7 @@ Scope {
     readonly property var settingKeys: ["barEnabled", "darkMode", "accent", "fontFamily", "barHeight", "glassOpacity",
         "barStyle", "barGlass", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "barBgOpacity", "glassRealtime", "glassDebug", "wallpaperPath", "use24h", "showDate",
         "showSeconds", "showBatteryPercent", "showTray", "showSearch",
-        "spotlightEnabled", "ccEnabled", "notificationsEnabled", "clockAppEnabled", "ccStyle", "ccAnimate", "barLogoMode", "barCustomLogoPath", "barWidgets", "weekStartsMonday", "terminal", "launcher",
+        "spotlightEnabled", "ccEnabled", "notificationsEnabled", "clockAppEnabled", "ccStyle", "ccAnimate", "material", "barLogoMode", "barCustomLogoPath", "barWidgets", "weekStartsMonday", "terminal", "launcher",
         "filesCmd", "clipboardCmd", "appUsage", "clipHistory", "clipAutoPaste", "emojiRecent", "screenshotDir", "screenshotSave", "screenshotClipboard", "screenshotNotify", "nightTemp", "ccControls", "ccMigRec", "wallpaperDir", "wallpaperFavs", "wallpaperCmd", "wallpaperVideo", "uiSounds", "gamingMode", "gamingAuto", "ccMigGame", "lockArtBackground",
         "lockClockStyle", "switcherStyle", "lockClockFont", "lockClockWeight", "lockClockMaterial", "lockClockIntensity", "lockClockTint", "lockClockTall", "lockClockDate", "autoContrast", "wallpaperAppearance", "wpPairLight", "wpPairDark",
         "notifDnd", "dnd", "nightOn", "keepAwake",
@@ -2938,7 +2978,7 @@ Scope {
         darkMode = true; accent = "#0a84ff"; fontFamily = "Inter Variable"; glassOpacity = 0.42; glassBlur = 5; barBgOpacity = 0.10; glassRealtime = false;
         barStyle = "liquid"; use24h = true; showDate = true; showSeconds = false; showBatteryPercent = true;
         showTray = true; showSearch = true;
-        spotlightEnabled = true; ccEnabled = true; notificationsEnabled = true; clockAppEnabled = true; ccStyle = "tiles"; ccAnimate = true;
+        spotlightEnabled = true; ccEnabled = true; notificationsEnabled = true; clockAppEnabled = true; ccStyle = "tiles"; ccAnimate = true; material = "liquid";
         barLogoMode = "arch"; barCustomLogoPath = "";
         barWidgets = ["appleMenu", "appMenus", "workspaces", "volume", "keyboard", "notifications", "wifi", "bluetooth", "privacy", "controlCenter", "clock"];
         ccControls = ccDefault.slice();
@@ -2989,7 +3029,7 @@ Scope {
     readonly property string glassShaderOut: configDir + "/liquidglass.frag.qsb"
     readonly property url glassShaderUrl: "file://" + glassShaderOut
 
-    onBarStyleChanged: if (barStyle === "liquid") startGlass()
+    onBarStyleChanged: { materialTouched(); if (barStyle === "liquid") startGlass(); }
     onGlassStateChanged: console.log("[macbar-glass] state:", glassState)
     function startGlass() {
         if (glassState === "ready" || glassState === "building") return;

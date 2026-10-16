@@ -660,6 +660,7 @@ Scope {
             { id: "notifications", sec: 3, name: "Notifications", wg: "bell",      c1: "#FF5E57", c2: "#E8342A", keys: "alerts banners popups do not disturb" },
             { id: "sound",      sec: 3, name: "Sound",           wg: "speaker",    c1: "#FF5E7E", c2: "#E8344F", keys: "volume output input microphone speakers headphones effects" },
             { id: "focus",      sec: 3, name: "Focus",           wg: "moon",       c1: "#7D7AFF", c2: "#5856D6", keys: "do not disturb keep awake sleep" },
+            { id: "update",     sec: 4, name: "Software Update", wg: "sun",        c1: "#8E8E93", c2: "#5A5A5F", keys: "update version changelog release notes upgrade" },
             { id: "lockscreen", sec: 4, name: "Lock Screen",     wg: "lock",       c1: "#3A3A3C", c2: "#1C1C1E", keys: "lock password album lyrics media clock" },
             { id: "users",      sec: 4, name: "Users & Groups",  wg: "smile",      c1: "#3D9BFF", c2: "#0A6CFF", keys: "account user name picture avatar" },
             { id: "keyboard",   sec: 5, name: "Keyboard",        wg: "keyboard",   c1: "#A7A7AD", c2: "#7C7C82", keys: "repeat rate delay layout typing" },
@@ -1173,7 +1174,7 @@ Scope {
                         general: paneGeneral, appearance: paneAppearance, controlcenter: paneCC, dock: paneDesktopDock,
                         displays: paneDisplays, menubar: paneMenuBar, wallpaper: paneWallpaper,
                         notifications: paneNotif, sound: paneSound, focus: paneFocus,
-                        lockscreen: paneLock, users: paneUsers, keyboard: paneKeyboard, mouse: paneMouse, trackpad: paneTrackpad,
+                        update: paneUpdate, lockscreen: paneLock, users: paneUsers, keyboard: paneKeyboard, mouse: paneMouse, trackpad: paneTrackpad,
                         apps: paneApps, about: paneAbout
                     })[prefsWindow.panes[prefsWindow.cur].id]
                     onLoaded: fadeIn.restart()
@@ -1243,7 +1244,7 @@ Scope {
                             model: ["Glass", "Frosted", "Tinted", "Opaque"]
                             segWidth: 70
                             current: { var st = root.hub && root.hub.widgets ? root.hub.widgets.style : "glass"; return ["glass", "frosted", "tinted", "opaque"].indexOf(st); }
-                            onPicked: i => { if (root.hub && root.hub.widgets) root.hub.widgets.style = ["glass", "frosted", "tinted", "opaque"][i]; }
+                            onPicked: i => { if (root.hub && root.hub.widgets) root.hub.widgets.style = ["glass", "frosted", "tinted", "opaque"][i]; if (root.bar) root.bar.materialTouched(); }
                         }
                     }
                     SRow {
@@ -1884,6 +1885,24 @@ Scope {
                     t: pal
                     SRow {
                         t: pal
+                        title: "Material"
+                        subtitle: "Sets the menu bar, Dock, Spotlight, Control Center, notifications, the switcher and the widgets in one go"
+                        SSegmented {
+                            t: pal
+                            model: ["Liquid Glass", "Frosted", "Blur", "Opaque"]
+                            segWidth: 86
+                            current: { var m = root.bar ? root.bar.material : "liquid"; return ["liquid", "frosted", "blur", "opaque"].indexOf(m); }
+                            onPicked: i => { if (root.bar) root.bar.applyMaterial(["liquid", "frosted", "blur", "opaque"][i]); }
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        visible: root.bar && root.bar.material === "custom"
+                        title: "Material: Custom"
+                        subtitle: "You changed one of the pieces below by hand. Pick a material above to set everything again."
+                    }
+                    SRow {
+                        t: pal
                         title: "Appearance"
                         subtitle: "Applies to the Dock, the Menu Bar and this window"
                         Row {
@@ -2472,7 +2491,7 @@ Scope {
                             model: ["Liquid Glass", "Frosted", "Opaque"]
                             segWidth: 92
                             current: Math.max(0, ["glass", "frosted", "opaque"].indexOf(root.bar ? root.bar.switcherStyle : "glass"))
-                            onPicked: i => { if (root.bar) root.bar.switcherStyle = ["glass", "frosted", "opaque"][i]; }
+                            onPicked: i => { if (root.bar) { root.bar.switcherStyle = ["glass", "frosted", "opaque"][i]; root.bar.materialTouched(); } }
                         }
                     }
                 }
@@ -2734,6 +2753,125 @@ Scope {
                         t: pal; title: "Keep Awake"
                         subtitle: "Stop the computer from going to sleep or locking"
                         SSwitch { t: pal; checked: root.bar ? root.bar.keepAwake : false; onToggled: v => { if (root.bar) root.bar.keepAwake = v; } }
+                    }
+                }
+            }
+        }
+
+        // ── Software Update ──
+        Component {
+            id: paneUpdate
+            Column {
+                id: updPane
+                spacing: 10
+                property string status: ""
+                property var notes: []
+                property string localVer: ""
+                property bool checking: false
+                Component.onCompleted: { verProc.running = true; updPane.check(); }
+                function check() {
+                    if (checking) return;
+                    checking = true; status = "Checking for updates\u2026";
+                    notesProc.running = false; notesProc.running = true;
+                }
+                // what is installed: the commit the shell was installed from
+                Process {
+                    id: verProc
+                    command: ["sh", "-c", "git -C \"$HOME/src/Macshell\" log -1 --format=%h' '%cd --date=format:'%d %b %Y' 2>/dev/null || echo unknown"]
+                    stdout: StdioCollector { onStreamFinished: updPane.localVer = text.trim() }
+                }
+                // what is on GitHub: the latest commits on the tahoe branch, used as the release notes
+                Process {
+                    id: notesProc
+                    command: ["sh", "-c", "curl -sL --max-time 15 'https://api.github.com/repos/vsoultann/MacShell/commits?sha=tahoe&per_page=12'"]
+                    stdout: StdioCollector {
+                        onStreamFinished: {
+                            updPane.checking = false;
+                            var o = null;
+                            try { o = JSON.parse(text); } catch (e) { o = null; }
+                            if (!o || !o.length) { updPane.status = "Couldn't reach GitHub."; return; }
+                            var out = [];
+                            for (var i = 0; i < o.length; i++) {
+                                var m = (o[i].commit && o[i].commit.message) ? o[i].commit.message.split("\n")[0] : "";
+                                var d = (o[i].commit && o[i].commit.committer) ? o[i].commit.committer.date.substring(0, 10) : "";
+                                if (m !== "" && m.indexOf("Merge ") !== 0) out.push({ sha: o[i].sha.substring(0, 7), msg: m, date: d });
+                            }
+                            updPane.notes = out;
+                            var head = out.length ? out[0].sha : "";
+                            updPane.status = (updPane.localVer.indexOf(head) === 0) ? "MacShell is up to date." : "An update is available.";
+                        }
+                    }
+                }
+                SCard {
+                    t: pal
+                    Item {
+                        width: parent.width; height: 92
+                        Image {
+                            x: 18; anchors.verticalCenter: parent.verticalCenter
+                            width: 42; height: 42
+                            source: Qt.resolvedUrl(pal.dark ? "apple-logo-white.svg" : "apple-logo-black.svg")
+                            sourceSize: Qt.size(96, 96); fillMode: Image.PreserveAspectFit; smooth: true
+                        }
+                        Column {
+                            x: 74; anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - 74 - 130
+                            spacing: 3
+                            Text { text: "MacShell \u2014 Tahoe edition"; color: pal.text; font.family: pal.fam; font.pixelSize: 15; font.weight: Font.DemiBold }
+                            Text { text: updPane.status; color: pal.text2; font.family: pal.fam; font.pixelSize: 12 }
+                            Text { text: updPane.localVer !== "" ? "Installed: " + updPane.localVer : ""; color: pal.text3; font.family: pal.fam; font.pixelSize: 11 }
+                        }
+                        SButton {
+                            t: pal
+                            anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
+                            text: updPane.checking ? "Checking\u2026" : "Check Now"
+                            onClicked: updPane.check()
+                        }
+                    }
+                }
+                SCard {
+                    t: pal
+                    SRow {
+                        t: pal
+                        title: "Update MacShell"
+                        subtitle: "Pulls the latest version and reinstalls the shell and lock screen in a terminal. Your settings are kept."
+                        SButton {
+                            t: pal
+                            text: "Update\u2026"
+                            onClicked: {
+                                var inst = Quickshell.env("HOME") + "/.local/share/macshell/install.sh";
+                                var term = root.bar ? root.bar.terminal : "kitty";
+                                Quickshell.execDetached(["sh", "-c", term + " -e sh -c '\"$0\" --update; echo; echo Press Enter to close; read x'", inst]);
+                            }
+                        }
+                    }
+                }
+                SLabel { t: pal; header: true; text: "What's New" }
+                SCard {
+                    t: pal
+                    Repeater {
+                        model: updPane.notes
+                        delegate: Item {
+                            required property var modelData
+                            width: parent.width; height: Math.max(42, noteTxt.implicitHeight + 20)
+                            Rectangle { visible: y > 0.5; x: 14; width: parent.width - 14; height: 1; color: pal.sep }
+                            Text {
+                                id: noteTxt
+                                x: 14; y: 10; width: parent.width - 100
+                                text: modelData.msg; wrapMode: Text.WordWrap
+                                color: pal.text; font.family: pal.fam; font.pixelSize: 12.5 > 0 ? 12 : 12
+                            }
+                            Text {
+                                anchors.right: parent.right; anchors.rightMargin: 14; y: 11
+                                text: modelData.date
+                                color: pal.text3; font.family: pal.fam; font.pixelSize: 11
+                            }
+                        }
+                    }
+                    Text {
+                        visible: updPane.notes.length === 0
+                        x: 14; topPadding: 14; bottomPadding: 14
+                        text: updPane.checking ? "Loading\u2026" : "No notes."
+                        color: pal.text3; font.family: pal.fam; font.pixelSize: 12
                     }
                 }
             }
