@@ -3191,6 +3191,9 @@ Scope {
     readonly property real totalW0: Math.max(0, appCount * (iconSize + spacing) + sepCount * (sepWidth + spacing) - spacing)
     property var launching: ({})
     property var knownKeys: ({})
+    property var leaving: ({})          // key → time it started leaving
+    readonly property int leaveMs: 340
+    Timer { id: leaveTimer; interval: root.leaveMs + 30; onTriggered: root.rebuild() }
     property string lastSig: ""
 
     // ───────────── LOGIC ─────────────
@@ -3534,7 +3537,7 @@ Scope {
 
         var extras = [];
         for (var r = 0; r < runOrder.length; r++) if (!seen[runOrder[r].key]) extras.push(runOrder[r]);
-        if (extras.length > 0 && list.length > 0) list.push({ kind: "sep" });
+        if (extras.length > 0 && list.length > 0) list.push({ kind: "sep", key: "sep:run" });
         for (var x = 0; x < extras.length; x++) {
             var e2 = lookup(extras[x].appId);
             list.push({ kind: "app", key: extras[x].key, appId: e2 ? e2.id : extras[x].appId,
@@ -3566,26 +3569,57 @@ Scope {
         winIdList = keep;
 
         if (showTrash || winItems.length > 0) {
-            list.push({ kind: "sep" });
+            list.push({ kind: "sep", key: "sep:win" });
             for (var wj = 0; wj < winItems.length; wj++) list.push(winItems[wj]);
         }
-        if (showTrash && winItems.length > 0) list.push({ kind: "sep" });
+        if (showTrash && winItems.length > 0) list.push({ kind: "sep", key: "sep:trash" });
         if (showTrash) {
             list.push({ kind: "app", key: "__trash", name: "Trash", icon: "user-trash",
                         entry: null, running: false, pinned: true, special: "trash" });
         }
 
         var firstBuild = (lastSig === "");
+        // closed apps / windows don't vanish: they stay for a moment as "leaving" cells that shrink and fade out —
+        // the opening animation played backwards — then are dropped by leaveTimer's rebuild
+        var liveKeys = {};
+        for (var lq = 0; lq < list.length; lq++) if (list[lq].key) liveKeys[list[lq].key] = true;
+        var LV = {};
+        for (var lk2 in leaving) if (!liveKeys[lk2] && now - leaving[lk2] < leaveMs) LV[lk2] = leaving[lk2];
+        if (!firstBuild) {
+            var prev = items || [];
+            for (var pv = 0; pv < prev.length; pv++) {
+                var po = prev[pv];
+                if (!po.key || liveKeys[po.key]) continue;
+                if (LV[po.key] === undefined) { if (po.leaving) continue; LV[po.key] = now; }
+                // put it back after the item that preceded it last time
+                var at = 0;
+                for (var pb = pv - 1; pb >= 0; pb--) {
+                    var ix = -1;
+                    for (var q = 0; q < list.length; q++) if (list[q].key === prev[pb].key) { ix = q; break; }
+                    if (ix >= 0) { at = ix + 1; break; }
+                }
+                var cp = {};
+                for (var f in po) cp[f] = po[f];
+                cp.leaving = true; cp.leaveAt = LV[po.key]; cp.fresh = false;
+                cp.tl = null;          // the window is gone: never capture a destroyed toplevel (that crashed the shell)
+                list.splice(at, 0, cp);
+            }
+        }
+        leaving = LV;
+        var anyLeaving = false;
+        for (var lk3 in LV) { anyLeaving = true; break; }
+        if (anyLeaving) leaveTimer.restart();
+
         var nowKeys = {}, nA = 0, nS = 0, sig = [];
         for (var n = 0; n < list.length; n++) {
             var it = list[n];
             it.nA = nA; it.nS = nS;
             if (it.kind === "sep") nS++; else nA++;
-            if (it.kind !== "sep") {
+            if (it.key && !it.leaving) {
                 it.fresh = !firstBuild && !knownKeys[it.key];
                 nowKeys[it.key] = true;
             }
-            sig.push(it.kind + ":" + (it.key || "") + ":" + it.running + ":" + (it.icon || ""));
+            sig.push(it.kind + ":" + (it.key || "") + ":" + it.running + ":" + (it.icon || "") + (it.leaving ? ":L" : ""));
         }
         appCount = nA;
         sepCount = nS;
@@ -4310,7 +4344,7 @@ Scope {
                                 readonly property bool isSep: modelData.kind === "sep"
                                 readonly property bool canDrag: !isSep && modelData.pinned === true && !modelData.special
                                 readonly property bool torn: ui.tearing && ui.tearItem && !isSep && ui.tearItem.key === modelData.key
-                                opacity: torn ? 0.3 : (isDragged ? 0.92 : 1)
+                                opacity: (torn ? 0.3 : (isDragged ? 0.92 : 1)) * (leavingCell ? appear : 1)
                                 Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                                 readonly property bool isDragged: ui.dragging && modelData.key === ui.dragKey
 
@@ -4332,9 +4366,12 @@ Scope {
                                 transform: Translate { x: cell.dx }
                                 z: isDragged ? 100 : 0
 
-                                property real appear: modelData.fresh ? 0 : 1
-                                Behavior on appear { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
-                                Component.onCompleted: Qt.callLater(function () { cell.appear = 1; })
+                                readonly property bool leavingCell: modelData.leaving === true
+                                property real appear: modelData.fresh ? 0
+                                    : (leavingCell ? Math.max(0, 1 - (Date.now() - modelData.leaveAt) / root.leaveMs) : 1)
+                                Behavior on appear { NumberAnimation { duration: cell.leavingCell ? root.leaveMs : 320; easing.type: cell.leavingCell ? Easing.InOutCubic : Easing.OutCubic } }
+                                Component.onCompleted: Qt.callLater(function () { cell.appear = cell.leavingCell ? 0 : 1; })
+                                enabled: !leavingCell
 
                                 readonly property real c0: modelData.nA * (root.iconSize + root.spacing)
                                                            + modelData.nS * (root.sepWidth + root.spacing)
@@ -4347,7 +4384,7 @@ Scope {
                                     return 1 + (root.effMag - 1) * f * ui.strength;
                                 }
 
-                                width: isSep ? root.sepWidth : root.iconSize * s * appear
+                                width: isSep ? root.sepWidth * appear : root.iconSize * s * appear
                                 height: root.iconSize
 
                                 Rectangle {
