@@ -60,6 +60,8 @@ Scope {
     property var installed: ({})            // app id → { version, user }
     property var updatable: ({})            // app id → true
     property var busy: ({})                 // app id → "install" | "remove" | "update"
+    property bool searchBusy: false         // a search is on its way: show the spinner, not "No results"
+    property var loadingColl: ({})          // collection key → still fetching
     property string userName: Quickshell.env("USER") || ""
     property string avatar: ""
     Process {
@@ -76,7 +78,11 @@ Scope {
     }
     property int tick: 0                    // bumped so bindings re-read the maps above
 
-    function put(key, val) { var m = {}; for (var k in coll) m[k] = coll[k]; m[key] = val; coll = m; }
+    function put(key, val) {
+        var m = {}; for (var k in coll) m[k] = coll[k]; m[key] = val; coll = m;
+        var l = {}; for (var q in loadingColl) l[q] = loadingColl[q]; delete l[key]; loadingColl = l;
+    }
+    function markLoading(key) { var l = {}; for (var q in loadingColl) l[q] = loadingColl[q]; l[key] = true; loadingColl = l; }
 
     // ── Flathub (curl: no extra dependency, same as the rest of the shell) ──
     function api(url, key) {
@@ -110,34 +116,40 @@ Scope {
     }
     function fetchCollection(key) {
         if (coll[key]) return;
-        put(key, []);                        // marks it as loading
+        coll[key] = [];
+        markLoading(key);
         var base = "https://flathub.org/api/v2/collection/";
         if (key.indexOf("cat:") === 0) api(base + "category/" + key.substring(4) + "?page=1&per_page=40", key);
         else api(base + key + "?page=1&per_page=24", key);
     }
     function fetchDetail(id) { api("https://flathub.org/api/v2/appstream/" + id, "detail:" + id); }
+    property string searchFor: ""           // the query this request was made for
     Process {
         id: searchProc
         stdout: StdioCollector {
             onStreamFinished: {
                 var o = null;
                 try { o = JSON.parse(text); } catch (e) { o = null; }
+                // an answer for something you have already typed past: keep waiting for the current one
+                if (root.searchFor !== root.query.trim()) return;
                 root.put("search", o && o.hits ? o.hits : []);
+                root.searchBusy = false;
             }
         }
     }
     Timer {
         id: searchDelay; interval: 260
         onTriggered: {
-            if (root.query.trim() === "") { root.put("search", []); return; }
+            if (root.query.trim() === "") { root.put("search", []); root.searchBusy = false; return; }
             searchProc.running = false;
+            root.searchFor = root.query.trim();
             searchProc.command = ["curl", "-sL", "--max-time", "20", "-X", "POST", "https://flathub.org/api/v2/search",
                                   "-H", "Content-Type: application/json",
                                   "-d", JSON.stringify({ query: root.query.trim(), filters: [] })];
             searchProc.running = true;
         }
     }
-    onQueryChanged: { if (query.trim() !== "") { if (page !== "search") { back.push({ page: page, appId: appId, query: "" }); page = "search"; appId = ""; } searchDelay.restart(); } }
+    onQueryChanged: { searchBusy = query.trim() !== ""; if (query.trim() !== "") { if (page !== "search") { back.push({ page: page, appId: appId, query: "" }); page = "search"; appId = ""; } searchDelay.restart(); } }
 
     // ── what is installed, and what has an update ──
     Process {
@@ -412,11 +424,11 @@ Scope {
                                 text: "Results for"
                                 color: pal.text2; font.family: root.fam; font.pixelSize: 15
                             }
-                            MorphText {
+                            CharText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: root.query
-                                color: pal.text; font.family: root.fam; font.pixelSize: 15; font.weight: Font.DemiBold
-                                duration: 300
+                                color: pal.text
+                                font.family: root.fam; font.pixelSize: 15; font.weight: Font.DemiBold
                             }
                         }
                         MorphText {
@@ -521,9 +533,10 @@ Scope {
                 width: parent.width
                 AppSection {
                     title: ""
-                    apps: root.page === "search" ? (root.coll["search"] || [])
-                        : (root.page.indexOf("coll:") === 0 ? (root.coll[root.page.substring(5)] || []) : (root.coll[root.page] || []))
-                    empty: root.page === "search" ? (root.query.trim() === "" ? "Type to search Flathub." : "No results.") : "Loading…"
+                    readonly property string key: root.page.indexOf("coll:") === 0 ? root.page.substring(5) : root.page
+                    apps: root.page === "search" ? (root.coll["search"] || []) : (root.coll[key] || [])
+                    loading: root.page === "search" ? root.searchBusy : root.loadingColl[key] === true
+                    empty: root.page === "search" ? (root.query.trim() === "" ? "Type to search Flathub." : "No results found.") : "Nothing here."
                 }
             }
         }
@@ -818,6 +831,7 @@ Scope {
         property string title: ""
         property var apps: []
         property string empty: ""
+        property bool loading: false
         property string seeAll: ""               // page "See All" opens
         readonly property real colW: (width - 48 - 36) / 2
         width: parent ? parent.width : 0
@@ -833,10 +847,32 @@ Scope {
                 MouseArea { anchors.fill: parent; anchors.margins: -6; cursorShape: Qt.PointingHandCursor; onClicked: root.go(sec.seeAll, "") }
             }
         }
-        Text {
-            visible: sec.apps.length === 0 && sec.empty !== ""
-            x: 24; topPadding: 20
-            text: sec.empty; color: pal.text3; font.family: root.fam; font.pixelSize: 13
+        Item {
+            visible: sec.apps.length === 0 && (sec.empty !== "" || sec.loading)
+            width: parent.width; height: 90
+            Row {
+                x: 24; anchors.verticalCenter: parent.verticalCenter
+                spacing: 9
+                Canvas {
+                    id: spinner
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: sec.loading
+                    width: 15; height: 15
+                    property real a: 0
+                    NumberAnimation on a { running: spinner.visible; loops: Animation.Infinite; from: 0; to: Math.PI * 2; duration: 850 }
+                    onAChanged: requestPaint()
+                    onPaint: {
+                        var c = getContext("2d"); c.reset();
+                        c.lineWidth = 2; c.lineCap = "round"; c.strokeStyle = pal.text3;
+                        c.beginPath(); c.arc(width / 2, height / 2, width / 2 - 1, a, a + 2.1); c.stroke();
+                    }
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: sec.loading ? "Searching\u2026" : sec.empty
+                    color: pal.text3; font.family: root.fam; font.pixelSize: 13
+                }
+            }
         }
         // two columns, like the App Store's lists
         Grid {

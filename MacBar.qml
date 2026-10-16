@@ -932,7 +932,8 @@ Scope {
         property string text: ""
         property bool strong: false
         signal clicked()
-        width: plText.implicitWidth + 32; height: 28
+        // whole, even pixels so the padding is identical on both sides
+        width: 2 * Math.round((plText.implicitWidth + 34) / 2); height: 28
         GGlass { anchors.fill: parent; gx: pl.gx; cornerR: 14; thickness: 14; strengthMul: 0.6; shadowAmt: 0.4 }
         Rectangle {
             anchors.fill: parent; radius: 14
