@@ -47,6 +47,8 @@ Item {
         y: -(6 + pu.current * rowH)
         padding: 6
         modal: false; focus: true
+        // its own popup window: like a real macOS menu it can extend past the edges of the Settings window
+        popupType: Popup.Window
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         enter: Transition {
             ParallelAnimation {
