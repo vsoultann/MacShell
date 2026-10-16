@@ -321,6 +321,26 @@ Scope {
     Behavior on dk { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
     function mixc(l, d) { return Qt.rgba(l.r + (d.r - l.r) * dk, l.g + (d.g - l.g) * dk, l.b + (d.b - l.b) * dk, l.a + (d.a - l.a) * dk); }
     QtObject {
+        id: bpal
+        readonly property bool dark: root.darkMode
+        readonly property string fam: root.fontFamily
+        readonly property color accent: root.accent
+        readonly property color fg: dark ? "#FFFFFF" : "#1D1D1F"
+        readonly property color fg2: dark ? Qt.rgba(1, 1, 1, 0.62) : Qt.rgba(0, 0, 0, 0.55)
+        readonly property color fg3: dark ? Qt.rgba(1, 1, 1, 0.34) : Qt.rgba(0, 0, 0, 0.32)
+        readonly property color tile: dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.42)
+        readonly property color tileBorder: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.70)
+        readonly property color btnOff: dark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.10)
+        readonly property color btnHover: dark ? Qt.rgba(1, 1, 1, 0.30) : Qt.rgba(0, 0, 0, 0.16)
+        readonly property color hover: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.09)
+        readonly property color sep: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
+        readonly property color track: dark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.12)
+        readonly property color content: dark ? "#1E1E1E" : "#F5F5F7"
+        readonly property color card: dark ? "#2B2B2D" : "#FFFFFF"
+        readonly property color cardBorder: dark ? Qt.rgba(1, 1, 1, 0.07) : Qt.rgba(0, 0, 0, 0.08)
+        readonly property color switchOff: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.16)
+    }
+    QtObject {
         id: pal
         readonly property bool dark: root.effDark
         readonly property string fam: root.fontFamily
@@ -4030,14 +4050,14 @@ Scope {
                                     width: parent.width - 2
                                     height: parent.height - 6
                                     radius: 6
-                                    color: mt.open ? pal.hover : "transparent"
+                                    color: mt.open ? bpal.hover : "transparent"
                                 }
                                 Glyph {
                                     visible: mt.modelData.id === "apple" && root.barLogoMode === "arch"
                                     anchors.centerIn: parent
                                     width: 15; height: 15
                                     kind: "arch"
-                                    color: pal.fg
+                                    color: bpal.fg
                                 }
                                 Image {
                                     visible: mt.modelData.id === "apple" && root.barLogoMode === "apple"
@@ -4066,15 +4086,15 @@ Scope {
                                     anchors.centerIn: parent
                                     width: 15; height: 15
                                     kind: "arch"
-                                    color: pal.fg
+                                    color: bpal.fg
                                 }
                                 Text {
                                     id: tl
                                     visible: mt.modelData.id !== "apple"
                                     anchors.centerIn: parent
                                     text: mt.modelData.label
-                                    color: pal.fg
-                                    font.family: pal.fam
+                                    color: bpal.fg
+                                    font.family: bpal.fam
                                     font.pixelSize: 13
                                     font.weight: mt.modelData.bold ? Font.Bold : Font.Normal
                                 }
@@ -4113,15 +4133,15 @@ Scope {
                                     width: parent.width - 2
                                     height: parent.height - 6
                                     radius: 6
-                                    color: wsi.cur ? pal.hover : "transparent"
+                                    color: wsi.cur ? bpal.hover : "transparent"
                                     opacity: wsi.cur || wsMa.containsMouse ? 1 : 0
                                     Behavior on opacity { NumberAnimation { duration: 140 } }
                                 }
                                 Text {
                                     anchors.centerIn: parent
                                     text: "" + wsi.modelData
-                                    color: wsi.cur ? pal.fg : (wsi.busy ? pal.fg2 : pal.fg3)
-                                    font.family: pal.fam
+                                    color: wsi.cur ? bpal.fg : (wsi.busy ? bpal.fg2 : bpal.fg3)
+                                    font.family: bpal.fam
                                     font.pixelSize: 13
                                     font.weight: wsi.cur ? Font.DemiBold : Font.Normal
                                     Behavior on color { ColorAnimation { duration: 140 } }
@@ -4163,7 +4183,7 @@ Scope {
                                     width: parent.width - 2
                                     height: parent.height - 6
                                     radius: 6
-                                    color: (ui.pop === "tray" && ui.trayItem === tray.modelData) ? pal.hover : "transparent"
+                                    color: (ui.pop === "tray" && ui.trayItem === tray.modelData) ? bpal.hover : "transparent"
                                 }
                                 Image {
                                     anchors.centerIn: parent
@@ -4193,7 +4213,7 @@ Scope {
                         Item {
                             visible: root.barWidgetEnabled("bluetooth")
                             width: root.barWidgetEnabled("bluetooth") ? 26 : 0; height: 28
-                            Glyph { anchors.centerIn: parent; width: 15; height: 15; kind: "bluetooth"; color: root.btOn && root.btConnected > 0 ? pal.fg : pal.fg2 }
+                            Glyph { anchors.centerIn: parent; width: 15; height: 15; kind: "bluetooth"; color: root.btOn && root.btConnected > 0 ? bpal.fg : bpal.fg2 }
                             MouseArea { anchors.fill: parent; onClicked: ui.openPop("cc", 0) }
                         }
                         // volume (opens a popover with just the volume slider)
@@ -4204,9 +4224,9 @@ Scope {
                             Rectangle {
                                 anchors.centerIn: parent
                                 width: parent.width - 2; height: parent.height - 6; radius: 6
-                                color: ui.pop === "vol" ? pal.hover : "transparent"
+                                color: ui.pop === "vol" ? bpal.hover : "transparent"
                             }
-                            Glyph { anchors.centerIn: parent; width: 16; height: 16; kind: "speaker"; level: root.volLevel; color: pal.fg }
+                            Glyph { anchors.centerIn: parent; width: 16; height: 16; kind: "speaker"; level: root.volLevel; color: bpal.fg }
                             MouseArea {
                                 anchors.fill: parent
                                 onClicked: ui.openPop("vol", volBtn.mapToItem(ui, 0, 0).x + volBtn.width / 2)
@@ -4221,13 +4241,13 @@ Scope {
                             Rectangle {
                                 anchors.centerIn: parent
                                 width: parent.width - 2; height: parent.height - 6; radius: 6
-                                color: (ui.pop === "kb" || kbMouse.containsMouse) ? pal.hover : "transparent"
+                                color: (ui.pop === "kb" || kbMouse.containsMouse) ? bpal.hover : "transparent"
                             }
                             Text {
                                 anchors.centerIn: parent
                                 text: root.keyboardLayout
-                                color: pal.fg
-                                font.family: pal.fam; font.pixelSize: 12; font.weight: Font.DemiBold
+                                color: bpal.fg
+                                font.family: bpal.fam; font.pixelSize: 12; font.weight: Font.DemiBold
                             }
                             MouseArea {
                                 id: kbMouse
@@ -4253,8 +4273,8 @@ Scope {
                                     visible: root.showBatteryPercent
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: root.batPct + "%"
-                                    color: pal.fg
-                                    font.family: pal.fam; font.pixelSize: 12
+                                    color: bpal.fg
+                                    font.family: bpal.fam; font.pixelSize: 12
                                 }
                                 Item {
                                     anchors.verticalCenter: parent.verticalCenter
@@ -4264,22 +4284,22 @@ Scope {
                                         width: 22; height: 12; radius: 3.5
                                         color: "transparent"
                                         border.width: 1
-                                        border.color: pal.fg2
+                                        border.color: bpal.fg2
                                         Rectangle {
                                             x: 1.5; y: 1.5
                                             width: Math.max(2, (parent.width - 3) * Math.min(1, root.batPct / 100))
                                             height: parent.height - 3
                                             radius: 2
-                                            color: root.charging ? "#30D158" : (root.batPct <= 15 ? "#FF453A" : pal.fg)
+                                            color: root.charging ? "#30D158" : (root.batPct <= 15 ? "#FF453A" : bpal.fg)
                                         }
                                     }
-                                    Rectangle { x: 23; y: 4; width: 2; height: 4; radius: 1; color: pal.fg2 }
+                                    Rectangle { x: 23; y: 4; width: 2; height: 4; radius: 1; color: bpal.fg2 }
                                     Glyph {
                                         visible: root.charging
                                         anchors.centerIn: bbody
                                         width: 9; height: 9
                                         kind: "bolt"
-                                        color: pal.dark ? "#111" : "#fff"
+                                        color: bpal.dark ? "#111" : "#fff"
                                     }
                                 }
                             }
@@ -4293,9 +4313,9 @@ Scope {
                             Rectangle {
                                 anchors.centerIn: parent
                                 width: parent.width - 2; height: parent.height - 6; radius: 6
-                                color: ui.pop === "notif" ? pal.hover : "transparent"
+                                color: ui.pop === "notif" ? bpal.hover : "transparent"
                             }
-                            Glyph { anchors.centerIn: parent; width: 16; height: 16; kind: "bell"; color: root.notifDnd ? pal.fg2 : pal.fg }
+                            Glyph { anchors.centerIn: parent; width: 16; height: 16; kind: "bell"; color: root.notifDnd ? bpal.fg2 : bpal.fg }
                             Rectangle {
                                 visible: root.notifUnread > 0 && !root.notifDnd
                                 x: parent.width / 2 + 2; y: parent.height / 2 - 8
@@ -4312,16 +4332,16 @@ Scope {
                             Rectangle {
                                 anchors.centerIn: parent
                                 width: parent.width - 2; height: parent.height - 6; radius: 6
-                                color: ui.pop === "wifi" ? pal.hover : "transparent"
+                                color: ui.pop === "wifi" ? bpal.hover : "transparent"
                             }
-                            Glyph { anchors.centerIn: parent; width: 16; height: 16; kind: root.showEthernet ? "ethernet" : "wifi"; level: root.wifiOn ? (root.wifiLevel || 1) : 3; flag: !root.wifiOn && !root.showEthernet; color: (root.wifiOn || root.showEthernet) ? pal.fg : pal.fg2 }
+                            Glyph { anchors.centerIn: parent; width: 16; height: 16; kind: root.showEthernet ? "ethernet" : "wifi"; level: root.wifiOn ? (root.wifiLevel || 1) : 3; flag: !root.wifiOn && !root.showEthernet; color: (root.wifiOn || root.showEthernet) ? bpal.fg : bpal.fg2 }
                             MouseArea { anchors.fill: parent; onClicked: ui.openPop("wifi", wifiBtn.mapToItem(ui, 0, 0).x) }
                         }
                         // search
                         Item {
                             visible: root.showSearch
                             width: root.showSearch ? 28 : 0; height: 28
-                            Glyph { anchors.centerIn: parent; width: 15; height: 15; kind: "search"; color: pal.fg }
+                            Glyph { anchors.centerIn: parent; width: 15; height: 15; kind: "search"; color: bpal.fg }
                             MouseArea { anchors.fill: parent; onClicked: { if (root.launcher !== "") { ui.pop = ""; root.search(); } else ui.openPop("spot", 0); } }
                         }
                         // control center
@@ -4335,9 +4355,9 @@ Scope {
                             Rectangle {
                                 anchors.centerIn: parent
                                 width: parent.width - 2; height: parent.height - 6; radius: 6
-                                color: ui.pop === "cc" ? pal.hover : "transparent"
+                                color: ui.pop === "cc" ? bpal.hover : "transparent"
                             }
-                            Glyph { x: 7; anchors.verticalCenter: parent.verticalCenter; width: 16; height: 16; kind: "cc"; color: pal.fg }
+                            Glyph { x: 7; anchors.verticalCenter: parent.verticalCenter; width: 16; height: 16; kind: "cc"; color: bpal.fg }
                             // privacy dots like macOS: orange = microphone, green = camera, purple = screen sharing / recording
                             Row {
                                 id: ccDots
@@ -4367,14 +4387,14 @@ Scope {
                             Rectangle {
                                 anchors.centerIn: parent
                                 width: parent.width - 2; height: parent.height - 6; radius: 6
-                                color: ui.pop === "cal" ? pal.hover : "transparent"
+                                color: ui.pop === "cal" ? bpal.hover : "transparent"
                             }
                             Text {
                                 id: clockText
                                 anchors.centerIn: parent
                                 text: root.clockText
-                                color: pal.fg
-                                font.family: pal.fam
+                                color: bpal.fg
+                                font.family: bpal.fam
                                 font.pixelSize: 13
                             }
                             MouseArea { anchors.fill: parent; onClicked: ui.openPop("cal", 0) }

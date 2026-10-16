@@ -42,7 +42,8 @@ Item {
         id: menu
         readonly property real rowH: 26
         width: Math.max(pu.width, 180)
-        x: pu.width - width
+        // as its own window Qt anchors it at the button's right edge: shift back so it opens ON the button, right-aligned
+        x: pu.width - width - pu.width
         // the current item sits right on the button
         y: -(6 + pu.current * rowH)
         padding: 6
