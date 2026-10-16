@@ -134,7 +134,16 @@ Scope {
     property int cornerRadius: 18
     property int margin: 6
     property bool darkMode: true
-    property string dockStyle: "blur"   // "blur" = Normal Blur, "liquid" = Apple Liquid Glass
+    property string dockStyle: "liquid" // "liquid" = Apple Liquid Glass, "blur" = Normal Blur
+    // new windows open floating (macOS-like) instead of tiling; written to a Lua file the session config reads
+    property bool windowsFloat: true
+    onWindowsFloatChanged: if (settingsReady) applyWindowsFloat()
+    function applyWindowsFloat() {
+        var rule = windowsFloat ? "hl.window_rule({ match = { class = \".*\" }, float = true })\n" : "";
+        Quickshell.execDetached(["sh", "-c",
+            "mkdir -p \"$HOME/.config/macshell\"; printf '%s' \"$1\" > \"$HOME/.config/macshell/windows.lua\"; "
+            + "if [ -n \"$1\" ]; then hyprctl eval \"$1\" >/dev/null 2>&1; else hyprctl reload >/dev/null 2>&1; fi", "sh", rule]);
+    }
     // Liquid Glass tuning (settings.json): rim = edge highlight, grain = noise, liquid = refraction depth
     property real glassRim: 0.45
     property real glassGrain: 0.03
@@ -2440,6 +2449,17 @@ Scope {
             Column {
                 spacing: 18
                 Loader { width: parent.width; sourceComponent: paneDock }
+                SLabel { t: pal; header: true; text: "Windows" }
+                SCard {
+                    t: pal
+                    SRow {
+                        t: pal
+                        title: "Open windows floating"
+                        subtitle: "New windows float like on macOS instead of tiling. Takes effect for windows opened from now on."
+                        SSwitch { t: pal; checked: root.windowsFloat; onToggled: v => root.windowsFloat = v }
+                    }
+                }
+
                 SLabel { t: pal; header: true; text: "App Switcher (Alt + Tab)" }
                 SCard {
                     t: pal
@@ -3502,6 +3522,7 @@ Scope {
     property int sepCount: 0
     readonly property real totalW0: Math.max(0, appCount * (iconSize + spacing) + sepCount * (sepWidth + spacing) - spacing)
     property var launching: ({})
+    Timer { id: floatOnce; interval: 1200; onTriggered: root.applyWindowsFloat() }
     property var sysInfo: ({ os: "", kernel: "", cpu: "", mem: "", gpu: "", hypr: "", qs: "" })
     property var knownKeys: ({})
     // the Dock's cells live in a keyed ListModel updated in place: a cell is only created when its item appears and
@@ -3541,7 +3562,7 @@ Scope {
     }
 
     function resetSettings() {
-        dockEnabled = true;
+        dockEnabled = true; windowsFloat = true;
         if (bar) {
             bar.resetSettings();
             bar.uiSounds = true; bar.gamingMode = false; bar.gamingAuto = true; bar.lockArtBackground = true;
@@ -3554,13 +3575,13 @@ Scope {
         Quickshell.execDetached(["sh", "-c", "rm -f \"$HOME/.config/maclock/settings.json\""]);
         iconSize = 52; magnification = 1.7; magnificationEnabled = true;
         spacing = 6; margin = 6; cornerRadius = 18;
-        darkMode = true; glassOpacity = 0.42; glassBlur = 5; glassLiquid = 1.0; dockStyle = "blur"; accent = "#0a84ff"; fontFamily = "Inter Variable";
+        darkMode = true; glassOpacity = 0.42; glassBlur = 5; glassLiquid = 1.0; dockStyle = "liquid"; accent = "#0a84ff"; fontFamily = "Inter Variable";
         hideMode = "smart"; hideDelay = 450; monitor = "";
         showTrash = true; showLabels = true; showIndicators = true; bounceOnLaunch = true; showThumbs = true; windowCapture = true;
     }
 
     // ── settings persistence (~/.config/macdock/settings.json) ──
-    readonly property string settingsSig: [dockEnabled, iconSize, magnification, magnificationEnabled, spacing, margin,
+    readonly property string settingsSig: [dockEnabled, windowsFloat, iconSize, magnification, magnificationEnabled, spacing, margin,
         cornerRadius, darkMode, glassOpacity, glassBlur, glassLiquid, dockStyle, wallpaperPath, String(accent), fontFamily, hideMode, hideDelay, monitor,
         showTrash, showLabels, showIndicators, bounceOnLaunch, showThumbs, windowCapture].join("|")
     property bool settingsReady: false
@@ -3571,7 +3592,7 @@ Scope {
 
     function saveSettings() {
         var o = {
-            dockEnabled: dockEnabled, iconSize: iconSize, magnification: magnification, magnificationEnabled: magnificationEnabled,
+            dockEnabled: dockEnabled, windowsFloat: windowsFloat, iconSize: iconSize, magnification: magnification, magnificationEnabled: magnificationEnabled,
             spacing: spacing, margin: margin, cornerRadius: cornerRadius,
             darkMode: darkMode, glassOpacity: glassOpacity, dockStyle: dockStyle, wallpaperPath: wallpaperPath, glassDebug: glassDebug,
             glassRim: glassRim, glassGrain: glassGrain, glassLiquid: glassLiquid, glassBlur: glassBlur,
@@ -3585,7 +3606,7 @@ Scope {
 
     function applySettings(o) {
         if (!o || typeof o !== "object") return;
-        var keys = ["dockEnabled", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
+        var keys = ["dockEnabled", "windowsFloat", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
                     "darkMode", "glassOpacity", "dockStyle", "wallpaperPath", "glassDebug", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "accent", "fontFamily", "hideMode", "hideDelay", "monitor",
                     "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture"];
         for (var i = 0; i < keys.length; i++) {
@@ -3601,9 +3622,10 @@ Scope {
         onLoaded: {
             try { root.applySettings(JSON.parse(text())); } catch (err) { }
             root.settingsReady = true;
+            floatOnce.restart();            // make sure the Lua file matches the setting at least once per session
             if (root.dockStyle === "liquid") root.startGlass();
         }
-        onLoadFailed: root.settingsReady = true
+        onLoadFailed: { root.settingsReady = true; floatOnce.restart(); }
     }
     Timer { id: saveTimer; interval: 400; onTriggered: root.saveSettings() }
 
@@ -4879,7 +4901,12 @@ Scope {
                                 }
 
                                 Rectangle {
-                                    visible: !cell.isSep && cell.modelData.running && root.showIndicators
+                                    readonly property bool lit: !cell.isSep && cell.modelData.running && root.showIndicators
+                                    opacity: lit ? 1 : 0
+                                    scale: lit ? 1 : 0.2
+                                    visible: opacity > 0.01
+                                    Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+                                    Behavior on scale { NumberAnimation { duration: 420; easing.type: Easing.OutBack; easing.overshoot: 2.2 } }
                                     width: 4; height: 4; radius: 2
                                     color: root.darkMode ? Qt.rgba(1, 1, 1, 0.85) : Qt.rgba(0, 0, 0, 0.6)
                                     anchors.horizontalCenter: parent.horizontalCenter

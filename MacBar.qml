@@ -3548,7 +3548,10 @@ Scope {
             // Hyprland 0.55+ is Lua: `hyprctl dispatch` takes a Lua expression, the old "focuswindow ..." strings fail.
             var lua = "";
             if (t.ws > 0) lua += "hl.dispatch(hl.dsp.focus({ workspace = \"" + t.ws + "\" })); ";
-            lua += "hl.dispatch(hl.dsp.focus({ window = \"" + (t.addr !== "" ? "address:" + t.addr : "class:^(" + t.cls + ")$") + "\" }))";
+            var sel = t.addr !== "" ? "address:" + t.addr : "class:^(" + t.cls + ")$";
+            lua += "hl.dispatch(hl.dsp.focus({ window = \"" + sel + "\" })); ";
+            // and bring it to the front: a floating window buried under another one used to stay buried
+            lua += "hl.dispatch(hl.dsp.window.bring_to_top({ window = \"" + sel + "\" }))";
             console.log("[switcher] hyprctl eval '" + lua + "'");
             Quickshell.execDetached(["hyprctl", "eval", lua]);
         }
@@ -7032,7 +7035,8 @@ Scope {
             exclusionMode: ExclusionMode.Ignore
 
             WlrLayershell.namespace: "macspot"
-            WlrLayershell.layer: WlrLayer.Top
+            // Overlay while it is open: a fullscreen window covers the Top layer, so Spotlight opened but stayed hidden
+            WlrLayershell.layer: spotWin.openish ? WlrLayer.Overlay : WlrLayer.Top
             WlrLayershell.keyboardFocus: ui.pop === "spot" ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
             Item {
@@ -7925,6 +7929,15 @@ Scope {
                             contentHeight: appsCol.height + 8
                             clip: true
                             boundsBehavior: Flickable.StopAtBounds
+                            // feathered ends: apps fade out as they scroll past, instead of being sliced
+                            layer.enabled: appsFlick.contentHeight > appsFlick.height
+                            layer.effect: ShaderEffect {
+                                fragmentShader: Qt.resolvedUrl("fade.frag.qsb")
+                                property real fadeTop: appsFlick.contentY > 2 ? Math.min(0.12, 30 / Math.max(1, appsFlick.height)) : 0.0015
+                                property real fadeBottom: appsFlick.contentY < appsFlick.contentHeight - appsFlick.height - 2 ? Math.min(0.12, 30 / Math.max(1, appsFlick.height)) : 0.0015
+                                Behavior on fadeTop { NumberAnimation { duration: 180 } }
+                                Behavior on fadeBottom { NumberAnimation { duration: 180 } }
+                            }
 
                             Column {
                                 id: appsCol

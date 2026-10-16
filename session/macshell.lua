@@ -41,3 +41,6 @@ hl.layer_rule({ name = "macshot",  match = { namespace = "macshot"  }, no_anim =
 hl.window_rule({ match = { title = "^macshell Settings$" }, float = true })
 hl.window_rule({ match = { class = "^org\\.quickshell$", title = "^Clock$" }, float = true, size = "780 540", center = true })
 hl.window_rule({ match = { class = "^org\\.quickshell$", title = "^App Store$" }, float = true, size = "1080 720", center = true })
+
+-- Settings → Desktop & Dock → "Open windows floating": MacShell writes this file
+pcall(dofile, os.getenv("HOME") .. "/.config/macshell/windows.lua")
