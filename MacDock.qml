@@ -148,7 +148,8 @@ Scope {
     // "always" = always auto-hide, "never" = always visible and reserves space
     property string hideMode: "smart"
     property bool showTrash: true
-    property string fontFamily: "Inter"  // falls back to the system font if missing
+    property string fontFamily: "Inter Variable"  // "Inter" (one variable font file; falls back to the system font if missing)
+    onFontFamilyChanged: if (fontFamily === "Inter" || fontFamily === "Inter Display") fontFamily = "Inter Variable"
     property bool magnificationEnabled: true
     property bool showLabels: true       // hover tooltips
     property bool showIndicators: true   // dots under running apps
@@ -1142,6 +1143,8 @@ Scope {
 
                 Loader {
                     id: paneLoader
+                    // nothing of Settings stays built while the window is closed
+                    active: prefsWindow.visible
                     x: 22
                     y: 6
                     width: flick.width - 44
@@ -2003,8 +2006,8 @@ Scope {
                             t: pal
                             model: ["Inter", "Noto Sans", "System"]
                             segWidth: 76
-                            current: root.fontFamily === "Inter" ? 0 : (root.fontFamily === "Noto Sans" ? 1 : 2)
-                            onPicked: i => root.setLook("fontFamily", ["Inter", "Noto Sans", "sans-serif"][i])
+                            current: root.fontFamily.indexOf("Inter") === 0 ? 0 : (root.fontFamily === "Noto Sans" ? 1 : 2)
+                            onPicked: i => root.setLook("fontFamily", ["Inter Variable", "Noto Sans", "sans-serif"][i])
                         }
                     }
                 }
@@ -3302,36 +3305,100 @@ Scope {
                     }
                 }
 
+                // ── Credits ──
+                SLabel { t: pal; header: true; text: "Credits" }
+                SCard {
+                    t: pal
+                    Repeater {
+                        model: [
+                            { img: "assets/credits/vsoultann.png", name: "vSuol", gh: "vsoultann",
+                              role: "MacShell Tahoe edition — the lock screen, widgets, Clock, Settings, and every bug you will ever find" },
+                            { img: "assets/credits/0-ss.jpg", name: "Rickky", gh: "0-ss",
+                              role: "Original MacShell — the menu bar, the Dock and the Liquid Glass. The one who actually knew what he was doing" }
+                        ]
+                        delegate: Item {
+                            id: cr
+                            required property var modelData
+                            width: parent.width; height: 72
+                            Rectangle { visible: cr.y > 0.5; x: 14; width: parent.width - 14; height: 1; color: pal.sep }
+                            Item {
+                                id: crPic
+                                x: 14; anchors.verticalCenter: parent.verticalCenter
+                                width: 44; height: 44
+                                Item { id: crMask; anchors.fill: parent; visible: false; layer.enabled: true; Rectangle { anchors.fill: parent; radius: width / 2; color: "black" } }
+                                Image {
+                                    anchors.fill: parent
+                                    source: Qt.resolvedUrl(cr.modelData.img)
+                                    sourceSize: Qt.size(96, 96)
+                                    fillMode: Image.PreserveAspectCrop; smooth: true; mipmap: true
+                                    layer.enabled: true
+                                    layer.effect: MultiEffect { maskEnabled: true; maskSource: crMask; maskThresholdMin: 0.5; maskSpreadAtMin: 1.0 }
+                                }
+                                Rectangle { anchors.fill: parent; radius: width / 2; color: "transparent"; border.width: 1; border.color: pal.cardBorder }
+                            }
+                            Column {
+                                x: 70; anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width - 70 - 90
+                                spacing: 2
+                                Text { text: cr.modelData.name; color: pal.text; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                Text { width: parent.width; text: cr.modelData.role; wrapMode: Text.WordWrap; color: pal.text2; font.family: pal.fam; font.pixelSize: 11 }
+                            }
+                            Text {
+                                anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter
+                                text: "@" + cr.modelData.gh
+                                color: pal.accent; font.family: pal.fam; font.pixelSize: 12
+                                font.underline: crMa.containsMouse
+                                MouseArea { id: crMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: Quickshell.execDetached(["xdg-open", "https://github.com/" + cr.modelData.gh]) }
+                            }
+                        }
+                    }
+                }
+                Text {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    topPadding: 4
+                    text: "Designed by Apple in California.\nRebuilt on Linux by two people who could not afford the Mac."
+                    color: pal.text3; font.family: pal.fam; font.pixelSize: 11
+                }
+
+                // (keep scrolling…)
+                Item { width: 1; height: 900 }
+
+                // ── AppleCare+ — nobody asked. The button does nothing. ──
                 SCard {
                     t: pal
                     Item {
-                        width: parent.width
-                        height: 64
-                        Text {
-                            x: 14
-                            y: 12
-                            text: "Made by Rickky"
-                            color: pal.text
-                            font.family: pal.fam
-                            font.pixelSize: 13
-                            font.weight: Font.Medium
+                        width: parent.width; height: 214
+                        Image {
+                            anchors.horizontalCenter: parent.horizontalCenter; y: 16
+                            width: 36; height: 36
+                            source: Qt.resolvedUrl(pal.dark ? "apple-logo-white.svg" : "apple-logo-black.svg")
+                            sourceSize: Qt.size(72, 72); fillMode: Image.PreserveAspectFit; smooth: true
                         }
                         Text {
-                            id: ghLink
-                            x: 14
-                            y: 33
-                            text: "https://github.com/0-ss"
-                            color: pal.accent
-                            font.family: pal.fam
-                            font.pixelSize: 12
-                            font.underline: ghMa.containsMouse
-                            MouseArea {
-                                id: ghMa
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: Quickshell.execDetached(["xdg-open", "https://github.com/0-ss"])
-                            }
+                            anchors.horizontalCenter: parent.horizontalCenter; y: 64
+                            text: "Protect your MacShell with AppleCare+"
+                            color: pal.text; font.family: pal.fam; font.pixelSize: 17; font.weight: Font.DemiBold
+                        }
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter; y: 90
+                            width: parent.width - 60; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
+                            text: "Unlimited repairs for accidental damage, 24/7 priority access to Apple experts, and battery service coverage. Same price as for a MacBook Pro."
+                            color: pal.text2; font.family: pal.fam; font.pixelSize: 12
+                        }
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter; y: 136
+                            text: "$279.00 for 3 years or $99.99/yr."
+                            color: pal.text; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.Medium
+                        }
+                        Rectangle {
+                            anchors.horizontalCenter: parent.horizontalCenter; y: 166
+                            width: 150; height: 32; radius: 16
+                            color: careMa.pressed ? Qt.darker(pal.accent, 1.15) : pal.accent
+                            scale: careMa.pressed ? 0.96 : 1
+                            Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutQuint } }
+                            Text { anchors.centerIn: parent; text: "Add AppleCare+"; color: "white"; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                            MouseArea { id: careMa; anchors.fill: parent; cursorShape: Qt.PointingHandCursor }
                         }
                     }
                 }
@@ -3403,7 +3470,7 @@ Scope {
         Quickshell.execDetached(["sh", "-c", "rm -f \"$HOME/.config/maclock/settings.json\""]);
         iconSize = 52; magnification = 1.7; magnificationEnabled = true;
         spacing = 6; margin = 6; cornerRadius = 18;
-        darkMode = true; glassOpacity = 0.42; glassBlur = 5; glassLiquid = 1.0; dockStyle = "blur"; accent = "#0a84ff"; fontFamily = "Inter";
+        darkMode = true; glassOpacity = 0.42; glassBlur = 5; glassLiquid = 1.0; dockStyle = "blur"; accent = "#0a84ff"; fontFamily = "Inter Variable";
         hideMode = "smart"; hideDelay = 450; monitor = "";
         showTrash = true; showLabels = true; showIndicators = true; bounceOnLaunch = true; showThumbs = true; windowCapture = true;
     }
@@ -4368,8 +4435,16 @@ Scope {
                                     sourceComponent: ScreencopyView {
                                         id: sc
                                         captureSource: gw.tl
-                                        live: !root.glassHold && (root.glassRT || !ui.tucked)
-                                        onCaptureSourceChanged: { if (captureSource !== null && !live && !root.glassHold) firstShot.restart(); }
+                                        // 15 fps, not the window's own rate: the glass only shows a blurred, refracted copy, and
+                                        // copying every frame of a busy window (a terminal, a video) cost several % CPU
+                                        live: false
+                                        readonly property bool wantFrames: !root.glassHold && (root.glassRT || !ui.tucked)
+                                        Timer {
+                                            interval: 66; repeat: true
+                                            running: sc.wantFrames && sc.captureSource !== null
+                                            onTriggered: if (typeof sc.captureFrame === "function") sc.captureFrame()
+                                        }
+                                        onCaptureSourceChanged: { if (captureSource !== null && !root.glassHold) firstShot.restart(); }
                                         Timer {
                                             id: firstShot
                                             interval: 90

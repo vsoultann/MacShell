@@ -104,6 +104,7 @@ ShellRoot {
         // Fast (90 ms, exactly as before) while windows are opening / moving / being dragged, relaxed (250 ms) once
         // nothing has changed for 1.5 s. Every poll spawns three processes, so an idle desktop now costs ~1/4 of before.
         property bool geoHot: true
+        property string lastActive: ""
         property string geoLast: ""
         Timer { id: geoCool; interval: 1500; onTriggered: sharedHub.geoHot = false }
         Connections {
@@ -117,6 +118,13 @@ ShellRoot {
                     sharedHub.closingWins = cw;
                     closingForget.restart();
                 }
+                // titles changing (terminals, browsers, players do it all the time) move nothing on screen
+                var en = event.name;
+                if (en === "windowtitle" || en === "windowtitlev2" || en === "activewindow") return;
+                // our own window previews / screen captures announce themselves as "screencast": not a change
+                if (en === "screencast" || en === "screencastv2") return;
+                // focus only matters when it moves to ANOTHER window (titles changing re-send the same one)
+                if (en === "activewindowv2") { if (event.data === sharedHub.lastActive) return; sharedHub.lastActive = event.data; }
                 sharedHub.geoHot = true; geoCool.restart(); tlDebounce.restart();
             }
         }
@@ -180,7 +188,16 @@ ShellRoot {
             } catch (err) { ipcBroken = true; ipcOk = false; return; }
             if (mo.length === 0 || (ts.length > 0 && cl.length === 0)) { ipcOk = false; return; }
             ipcOk = true;
-            var key = JSON.stringify([mo, cl]);
+            // fingerprint the GEOMETRY only: a window retitling itself (a terminal, a browser tab, a player) is no
+            // reason to wake the 60 Hz path — that kept it hot (and the main thread busy) the whole time
+            var gk = [], j, c;
+            for (j = 0; j < cl.length; j++) {
+                c = cl[j];
+                gk.push([c.address, c.at, c.size, c.workspace ? c.workspace.id : 0, c.monitor, c.floating, c.fullscreen, c.mapped, c.hidden]);
+            }
+            var mk = [];
+            for (j = 0; j < mo.length; j++) mk.push([mo[j].name, mo[j].x, mo[j].y, mo[j].width, mo[j].height, mo[j].scale, mo[j].activeWorkspace ? mo[j].activeWorkspace.id : 0, mo[j].specialWorkspace ? mo[j].specialWorkspace.id : 0]);
+            var key = JSON.stringify([mk, gk]);
             if (key === geoLast) return;
             geoLast = key;
             geoHot = true; geoCool.restart();

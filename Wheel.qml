@@ -8,7 +8,7 @@ ListView {
     property int fontPx: 24
     property int align: Text.AlignHCenter
     property color ink: "white"
-    property string fam: "Inter"
+    property string fam: "Inter Variable"
     readonly property int value: currentIndex
     readonly property real rowH: 36
     width: 70; height: rowH * 5

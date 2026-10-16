@@ -23,7 +23,7 @@ Scope {
     readonly property var dock: hub ? hub.dock : null
     readonly property bool dark: bar ? bar.darkMode : true
     readonly property color accent: bar ? bar.accent : "#0a84ff"
-    readonly property string fam: bar ? bar.fontFamily : "Inter"
+    readonly property string fam: bar ? bar.fontFamily : "Inter Variable"
     readonly property url shaderUrl: dock ? dock.glassShaderUrl : ""
     readonly property bool shaderOk: dock ? dock.glassState === "ready" : false
     readonly property bool gaming: bar ? bar.gaming : false
@@ -1608,6 +1608,7 @@ Scope {
             // windows), not just the wallpaper: right after the layer rises, the widgets (and the dimming) stay invisible
             // for an instant, the screen is captured through the empty layer, and the glass refracts that snapshot.
             property bool snapping: false
+            readonly property bool covered: root.bar ? root.bar.screenCovered[win.sname] === true : false
             property bool snapOk: false
             Connections {
                 target: root
@@ -1693,19 +1694,23 @@ Scope {
                 textureSize: liveWall.active ? Qt.size(Math.max(1, Math.round(win.width / 2)), Math.max(1, Math.round(win.height / 2)))
                                              : Qt.size(Math.max(1, win.width), Math.max(1, win.height))
             }
+            // only the copies some widget actually uses are kept (Liquid Glass → the clear one, the other styles →
+            // the blurred one); the blurred copy is half resolution — it's a heavy blur, nobody can tell
+            readonly property bool needClear: win.mine.some(function (w) { return (w.style || root.style) === "glass"; })
+            readonly property bool needBlur: win.mine.some(function (w) { return (w.style || root.style) !== "glass"; })
             MultiEffect {
                 id: wallBlurFx
-                source: wallTex
-                width: wallTex.textureSize.width; height: wallTex.textureSize.height
+                source: win.needBlur ? wallTex : null
+                width: Math.max(1, Math.round(wallTex.textureSize.width / 2)); height: Math.max(1, Math.round(wallTex.textureSize.height / 2))
                 blurEnabled: true; blurMax: 64; blur: 0.25 + root.blurAmt * 0.75
                 autoPaddingEnabled: false
                 visible: false
             }
-            ShaderEffectSource { id: wallBlur; sourceItem: wallBlurFx; live: true; mipmap: true; visible: false }
+            ShaderEffectSource { id: wallBlur; sourceItem: win.needBlur ? wallBlurFx : null; live: true; mipmap: true; visible: false }
             // Liquid Glass refracts a nearly clear copy (light ~5 px blur): real glass bends the wallpaper, it doesn't fog it
             MultiEffect {
                 id: wallClearFx
-                source: wallTex
+                source: win.needClear ? wallTex : null
                 width: wallTex.textureSize.width; height: wallTex.textureSize.height
                 // slider: Clear → (middle = the default look) → very blurred
                 blurEnabled: true; blurMax: 64
@@ -1713,7 +1718,7 @@ Scope {
                 autoPaddingEnabled: false
                 visible: false
             }
-            ShaderEffectSource { id: wallClear; sourceItem: wallClearFx; live: true; mipmap: true; visible: false }
+            ShaderEffectSource { id: wallClear; sourceItem: win.needClear ? wallClearFx : null; live: true; mipmap: true; visible: false }
 
             // dim the desktop a little while editing (like macOS)
             Rectangle {
@@ -1738,8 +1743,9 @@ Scope {
                     required property real wy
                     // same shape the rest of the code (and the content components) read
                     readonly property var modelData: ({ id: wid, type: wtype, size: wsize, x: wx, y: wy, screen: wscreen, style: wstyle })
-                    // each screen's layer shows only its own widgets (hidden delegates cost nothing)
-                    visible: root.screenOf(modelData) === win.sname
+                    // each screen's layer shows only its own widgets (hidden delegates cost nothing); culled while
+                    // windows cover this whole desktop — nobody can see them, so nothing is drawn (clock ticks, music…)
+                    visible: root.screenOf(modelData) === win.sname && (root.editing || !win.covered)
                     // out of the picture for the instant the screen is captured (edit mode), then back with a fade
                     property real snapHide: win.snapping ? 0 : 1
                     Behavior on snapHide { enabled: !win.snapping; NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
@@ -1868,8 +1874,8 @@ Scope {
                         opacity: wd.wtype === "music" && root.musicTintOn ? 1 : 0
                         visible: opacity > 0.01
                         Behavior on opacity { NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
-                        // a translucent glaze: the Liquid Glass (rim, refraction) still shows through, like Apple's tinted glass
-                        readonly property real alpha: wd.st === "opaque" ? 0.85 : 0.56
+                        // the album colour as a solid card
+                        readonly property real alpha: 0.92                 // opaque album colour by default (the colour change reads best on a solid card)
                         // the cover's centre on this card (content starts 16 px in)
                         readonly property real cx: wd.shownSize === "l" ? width / 2 : 16 + (wd.shownSize === "s" ? 36 : 33)
                         readonly property real cy: 16 + (wd.shownSize === "l" ? 84 : (wd.shownSize === "s" ? 36 : 33))

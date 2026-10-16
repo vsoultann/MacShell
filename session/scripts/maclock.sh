@@ -12,6 +12,8 @@ export QT_FFMPEG_DECODING_HW_DEVICE_TYPES=vaapi
 trap '"$HOME/.config/hypr-macshell/scripts/macshell-wallpause.sh" all resume' EXIT
 # animations at each screen's own refresh rate (Qt otherwise paces them to the first, 60 Hz, screen)
 export QSG_USE_SIMPLE_ANIMATION_DRIVER=1
+# fewer malloc arenas: Qt runs ~50 threads, each would get its own heap arena (RAM that never comes back)
+export MALLOC_ARENA_MAX=2
 n=0
 while [ "$n" -lt 5 ]; do
     qs -c MacLock && exit 0

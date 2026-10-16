@@ -19,7 +19,7 @@ Scope {
     readonly property var dock: hub ? hub.dock : null
     readonly property var bar: hub ? hub.bar : null
     readonly property bool darkMode: dock ? dock.darkMode : true
-    readonly property string fam: dock ? dock.fontFamily : "Inter"
+    readonly property string fam: dock ? dock.fontFamily : "Inter Variable"
     readonly property color accent: dock ? dock.accent : "#0A84FF"
     readonly property bool use24h: bar ? bar.use24h : true
     readonly property string home: Quickshell.env("HOME")
@@ -460,7 +460,7 @@ Scope {
                         required property int index
                         anchors.fill: parent
                         sourceComponent: modelData
-                        active: win.tab === index || opacity > 0
+                        active: win.visible && (win.tab === index || opacity > 0)
                         opacity: win.tab === index ? 1 : 0
                         scale: win.tab === index ? 1 : 0.985
                         visible: opacity > 0

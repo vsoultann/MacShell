@@ -90,7 +90,9 @@ Scope {
     property bool barEnabled: true           // false = no menu bar / Spotlight / Control Center at all
     property bool darkMode: true
     property color accent: "#0A84FF"
-    property string fontFamily: "Inter"
+    // "Inter" renders with the single variable file: the static Inter.ttc got mapped once per face (~25×13 MB of RSS)
+    property string fontFamily: "Inter Variable"
+    onFontFamilyChanged: if (fontFamily === "Inter" || fontFamily === "Inter Display") fontFamily = "Inter Variable"
     property int barHeight: 28
     property string barLogoMode: "arch"       // "arch", "apple", or "custom"
     property string barCustomLogoPath: ""     // absolute path, ~/path, or file URL for the custom menu-bar logo
@@ -2797,7 +2799,10 @@ Scope {
     // When windows cover a monitor's desktop (or one is fullscreen) its video pauses; it resumes as soon as the desktop
     // shows again. One check per window event (open / close / move / workspace / fullscreen), nothing in between.
     readonly property bool videoWall: wallpaperVideo !== ""
-    property var wallPaused: ({})          // output → paused
+    property var wallPaused: ({})          // output → paused (video wallpaper)
+    // output → its desktop is completely hidden behind windows (or one is fullscreen). Always tracked: the desktop
+    // widgets stop drawing on covered screens (culling), and a video wallpaper pauses there.
+    property var screenCovered: ({})
     readonly property string wallPauseScript: Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-wallpause.sh"
     Process {
         id: coverProbe
@@ -2817,18 +2822,22 @@ Scope {
                     }
                     next[m.name] = full || area >= mw * mh * 0.86;
                 }
+                var same = true;
+                for (var q in next) if (next[q] !== (root.screenCovered[q] === true)) same = false;
+                if (!same) root.screenCovered = next;
+                if (!root.videoWall) return;
                 for (var k in next) if (next[k] !== (root.wallPaused[k] === true))
                     Quickshell.execDetached([root.wallPauseScript, k, next[k] ? "pause" : "resume"]);
                 root.wallPaused = next;
             }
         }
     }
-    Timer { id: coverDelay; interval: 300; onTriggered: if (root.videoWall && !coverProbe.running) coverProbe.running = true }
+    Timer { id: coverDelay; interval: 300; onTriggered: if (!coverProbe.running) coverProbe.running = true }
+    Timer { interval: 1500; running: true; onTriggered: coverDelay.restart() }      // first check after start-up
     onVideoWallChanged: { wallPaused = ({}); if (videoWall) coverDelay.restart(); }
     Connections {
         target: Hyprland
         function onRawEvent(event) {
-            if (!root.videoWall) return;
             var n = event.name;
             if (n === "openwindow" || n === "closewindow" || n === "movewindowv2" || n === "workspacev2" || n === "fullscreen"
                 || n === "changefloatingmode" || n === "focusedmonv2" || n === "activespecialv2") coverDelay.restart();
@@ -2899,7 +2908,7 @@ Scope {
     }
     function resetSettings() {
         barEnabled = true;
-        darkMode = true; accent = "#0a84ff"; fontFamily = "Inter"; glassOpacity = 0.42; glassBlur = 5; barBgOpacity = 0.10; glassRealtime = false;
+        darkMode = true; accent = "#0a84ff"; fontFamily = "Inter Variable"; glassOpacity = 0.42; glassBlur = 5; barBgOpacity = 0.10; glassRealtime = false;
         barStyle = "liquid"; use24h = true; showDate = true; showSeconds = false; showBatteryPercent = true;
         showTray = true; showSearch = true;
         barLogoMode = "arch"; barCustomLogoPath = "";
@@ -3472,10 +3481,13 @@ Scope {
         for (var k = 0; k < order.length; k++) {
             var t = order[k], id = t.appId || "";
             if (id === "") continue;
+            // MacShell's own windows (all "org.quickshell") are separate apps: Clock, System Settings
+            if (id === "org.quickshell") id = t.title === "Clock" ? "macshell-clock" : (t.title === "macshell Settings" ? "systemsettings" : id);
             if (seen[id] !== undefined) { apps[seen[id]].count++; continue; }
             var e = root.lookup(id);
             seen[id] = apps.length;
-            apps.push({ appId: id, name: e ? e.name : id, icon: e ? e.icon : "", win: t, count: 1 });
+            apps.push({ appId: id, cls: t.appId, name: id === "systemsettings" ? "System Settings" : (e ? e.name : id),
+                        icon: id === "systemsettings" ? "preferences-system" : (e ? e.icon : ""), win: t, count: 1 });
         }
         return apps;
     }
@@ -3517,7 +3529,7 @@ Scope {
         var ts = Hyprland.toplevels.values, hit = null, i;
         for (i = 0; i < ts.length; i++) if (ts[i].wayland === a.win) { hit = ts[i]; break; }
         if (!hit) {                                   // handle did not match: fall back to class (+ title)
-            var cls = (a.appId || "").toLowerCase(), ttl = a.win.title || "", loose = null;
+            var cls = (a.cls || a.appId || "").toLowerCase(), ttl = a.win.title || "", loose = null;
             for (i = 0; i < ts.length; i++) {
                 var o = ts[i].lastIpcObject || {};
                 if (("" + (o["class"] || "")).toLowerCase() !== cls) continue;
@@ -3536,7 +3548,7 @@ Scope {
         }
         console.log("[switcher] app=" + a.appId + " matched=" + (hit ? "yes" : "no") + " addr=" + addr + " ws=" + ws);
         if (!hit && !a.appId) { try { a.win.activate(); } catch (e2) {} return; }
-        root.swPending = { addr: addr, ws: ws, cls: (a.appId || "").replace(/[\\"']/g, "") };
+        root.swPending = { addr: addr, ws: ws, cls: (a.cls || a.appId || "").replace(/[\\"']/g, "") };
         swFocusTimer.restart();
     }
     function swCancel() { root.swOpen = false; }

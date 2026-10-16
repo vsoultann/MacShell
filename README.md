@@ -4,6 +4,33 @@ A macOS 26/27-style desktop for **Hyprland**, built on **Quickshell**: Liquid Gl
 Spotlight, desktop widgets, notifications and a full lock screen. This is a fork of
 [0-ss/Macshell](https://github.com/0-ss/Macshell) with a lot added on top (see below). The original README follows.
 
+![Desktop](docs/desktop.png)
+
+| Music widget: cover "burns" over while the album colour spreads | App switcher (Alt + Tab): gliding highlight, morphing name |
+|---|---|
+| ![Music widget](docs/music-widget.gif) | ![App switcher](docs/app-switcher.gif) |
+
+| Lock screen | Clock app |
+|---|---|
+| ![Lock screen](docs/lock-screen.gif) | ![Clock](docs/clock.png) |
+
+![Lock screen clock settings](docs/settings-clock.png)
+
+## Performance
+
+Measured on an Intel laptop (Hyprland 0.56, Quickshell 0.3, two monitors, 60 Hz + 164 Hz, Liquid Glass on):
+
+| | RAM (resident) | CPU at idle |
+|---|---|---|
+| MacShell (menu bar, Dock, widgets, everything) | ~550 MB after start (was ~1.1 GB) | ~2.8 % of one core (was ~7.6 %) |
+| Lock screen while locked | ~360 MB | ~0 % |
+
+What made the difference: one variable Inter font file instead of a 13 MB collection mapped once per weight, `MALLOC_ARENA_MAX=2`,
+Settings and Clock content only built while open, blurred backdrops at half resolution, desktop widgets culled while windows
+cover the desktop, the Dock's glass refreshing nearby windows at 15 fps instead of every frame, window-title changes and the
+shell's own captures no longer waking the 60 Hz geometry poll, and animations at each monitor's real refresh rate
+(`QSG_USE_SIMPLE_ANIMATION_DRIVER=1`, otherwise Qt paced everything to the 60 Hz panel).
+
 ## Install
 
 ```sh
@@ -13,20 +40,21 @@ cd MacShell
 ./install.sh --all -y   # everything, no questions
 ```
 
-| Option | What it does |
+Run it with no options for the interactive menu: it notices an existing install (the original MacShell or this edition)
+and offers to update it or install everything, or lets you tick exactly the features you want.
+
+| Command | What it does |
 |---|---|
-| `--deps` | Installs dependencies (Arch-based: pacman, plus paru/yay for AUR packages) |
-| `--shell` | Installs / updates the shell (`~/.config/quickshell/MacShell`, `MacLock`, `~/.config/hypr-macshell`) |
-| `--session` | Adds **"Hyprland (MacShell)"** to your login screen as a separate session — your own Hyprland config is untouched (sudo) |
-| `--existing` | Starts MacShell from your *current* Hyprland config instead (Lua or hyprlang) |
-| `--icons` | Installs the [MacTahoe](https://github.com/vinceliuice/MacTahoe-icon-theme) icon theme |
-| `--fonts` | Installs Inter + Roboto Flex |
-| `--apply` | Sets the icons + font for GTK, Qt and KDE apps |
-| `--wallpapers` | Downloads the macOS 27 Golden Gate light & dark wallpapers |
-| `--sounds` | Generates the UI sound effects (and the Clock's alarm / timer tones) |
-| `--update` | Pulls the latest version of this repo and reinstalls the shell (keeps every setting) |
-| `--check` | Shows what's installed and what's missing, changes nothing |
-| `--uninstall` | Removes the shell (keeps your settings) |
+| `./install.sh` | Interactive: Install / Update / Check / Uninstall, then a checklist of features |
+| `./install.sh --all` | Everything |
+| `./install.sh --only shell,lock` | Just the features you name |
+| `./install.sh --update [features]` | Pull the latest version, then update (default: shell, lock, config) |
+| `./install.sh --uninstall [features]` | Remove everything, or just some features (settings are kept) |
+| `./install.sh --check` | What's installed and what's missing |
+
+Features: `shell` (menu bar, Dock, Spotlight, Control Center, notifications, widgets, Clock, Settings), `lock` (lock screen),
+`config` (session config + scripts), `session` (separate "Hyprland (MacShell)" login), `existing` (start from your own Hyprland
+config instead), `deps`, `icons`, `fonts`, `apply`, `wallpapers`, `sounds`.
 
 Settings live in the shell itself: Apple menu → **System Settings…** (Install dependencies and Reset MacShell are in About / General).
 
