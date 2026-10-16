@@ -949,13 +949,14 @@ Scope {
             Item {
                 id: lyrBtn
                 visible: mus.sz !== "s" && mus.pl !== null
-                x: 324 - width + 4; y: -4
-                width: 30; height: 30
+                // fully inside the content area (the widget clips anything past it)
+                x: 324 - width; y: 0
+                width: 28; height: 28
                 readonly property bool active: root.musicLyrics
                 Rectangle {
                     anchors.centerIn: parent
                     width: 28; height: 28; radius: 8
-                    color: lyrBtn.active ? Qt.rgba(1, 1, 1, 0.92) : Qt.rgba(1, 1, 1, lbMa.containsMouse ? 0.14 : 0)
+                    color: lyrBtn.active ? Qt.rgba(1, 1, 1, 0.9) : Qt.rgba(1, 1, 1, lbMa.containsMouse ? 0.14 : 0)
                     scale: lbMa.pressed ? 0.88 : 1
                     Behavior on color { ColorAnimation { duration: 220 } }
                     Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutQuint } }
