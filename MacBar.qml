@@ -156,19 +156,28 @@ Scope {
     property string lockClockStyle: "glass"   // preset last picked: glass | classic | serif | liquid | thin | custom
     property string lockClockFont: "condensed"   // condensed | rounded | serif | inter
     property int lockClockWeight: 680
-    property string lockClockMaterial: "frosted" // frosted | liquid
+    property string lockClockMaterial: "glass"   // solid (Apple's vibrancy) | glass (Liquid Glass)
+    property real lockClockIntensity: 0.6        // solid: how bright / opaque; glass: clear (0) … frosted (1)
+    property string lockClockTint: "#FFFFFF"
     property bool lockClockTall: true
     property string lockClockDate: "long"        // long ("Friday, October 16") | short ("Fri Oct 16")
     readonly property var lockClockPresets: ({
-        glass:   { f: "condensed", w: 680, m: "frosted", t: true,  d: "long" },
-        classic: { f: "rounded",   w: 640, m: "frosted", t: false, d: "long" },
-        serif:   { f: "serif",     w: 560, m: "frosted", t: false, d: "short" },
-        liquid:  { f: "condensed", w: 560, m: "liquid",  t: true,  d: "short" },
-        thin:    { f: "rounded",   w: 220, m: "liquid",  t: false, d: "short" }
+        glass:   { f: "condensed", w: 680, m: "glass", i: 0.6,  t: true,  d: "long" },
+        classic: { f: "rounded",   w: 600, m: "solid", i: 0.8,  t: false, d: "long" },
+        serif:   { f: "serif",     w: 560, m: "solid", i: 0.85, t: false, d: "short" },
+        liquid:  { f: "condensed", w: 560, m: "glass", i: 0.12, t: true,  d: "short" },
+        thin:    { f: "rounded",   w: 200, m: "solid", i: 0.6,  t: false, d: "short" }
+    })
+    // settings saved before Solid / Glass existed: move them over (presets keep their name, the rest map across)
+    onLockClockMaterialChanged: Qt.callLater(function () {
+        if (lockClockMaterial !== "frosted" && lockClockMaterial !== "liquid") return;
+        if (lockClockPresets[lockClockStyle]) { applyLockClockPreset(lockClockStyle); return; }
+        lockClockIntensity = lockClockMaterial === "liquid" ? 0.12 : 0.6;
+        lockClockMaterial = "glass";
     })
     function applyLockClockPreset(name) {
         var p = lockClockPresets[name]; if (!p) return;
-        lockClockFont = p.f; lockClockWeight = p.w; lockClockMaterial = p.m; lockClockTall = p.t; lockClockDate = p.d;
+        lockClockFont = p.f; lockClockWeight = p.w; lockClockMaterial = p.m; lockClockIntensity = p.i; lockClockTall = p.t; lockClockDate = p.d;
         lockClockStyle = name;
     }
     property bool uiSounds: true              // Apple-style UI sounds (volume pop, notification, screenshot, charger, lock)
@@ -224,7 +233,7 @@ Scope {
         "barStyle", "barGlass", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "barBgOpacity", "glassRealtime", "glassDebug", "wallpaperPath", "use24h", "showDate",
         "showSeconds", "showBatteryPercent", "showTray", "showSearch", "barLogoMode", "barCustomLogoPath", "barWidgets", "weekStartsMonday", "terminal", "launcher",
         "filesCmd", "clipboardCmd", "appUsage", "clipHistory", "clipAutoPaste", "emojiRecent", "screenshotDir", "screenshotSave", "screenshotClipboard", "screenshotNotify", "nightTemp", "ccControls", "ccMigRec", "wallpaperDir", "wallpaperFavs", "wallpaperCmd", "wallpaperVideo", "uiSounds", "gamingMode", "gamingAuto", "ccMigGame", "lockArtBackground",
-        "lockClockStyle", "lockClockFont", "lockClockWeight", "lockClockMaterial", "lockClockTall", "lockClockDate", "autoContrast", "wallpaperAppearance", "wpPairLight", "wpPairDark",
+        "lockClockStyle", "lockClockFont", "lockClockWeight", "lockClockMaterial", "lockClockIntensity", "lockClockTint", "lockClockTall", "lockClockDate", "autoContrast", "wallpaperAppearance", "wpPairLight", "wpPairDark",
         "notifDnd", "dnd", "nightOn", "keepAwake",
         "kbRepeatRate", "kbRepeatDelay", "mouseSens", "mouseNatural", "tpNatural", "tpTap", "tpDwt", "tpScroll"]
     // Optional bar widgets; tray and Spotlight use their existing showTray/showSearch settings.

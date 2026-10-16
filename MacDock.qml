@@ -2771,12 +2771,42 @@ Scope {
                         }
                     }
                     SRow {
-                        t: pal; title: "Material"
-                        subtitle: "Liquid Glass is clear with a bright rim; Frosted is soft, milky glass"
+                        t: pal; title: "Style"
+                        subtitle: "Solid glows with a hint of the wallpaper; Glass is Liquid Glass that catches the light"
                         SSegmented {
-                            t: pal; model: ["Liquid Glass", "Frosted"]; segWidth: 96
-                            current: root.bar && root.bar.lockClockMaterial === "liquid" ? 0 : 1
-                            onPicked: i => { if (root.bar) { root.bar.lockClockMaterial = i === 0 ? "liquid" : "frosted"; root.bar.lockClockStyle = "custom"; } }
+                            t: pal; model: ["Solid", "Glass"]; segWidth: 80
+                            current: root.bar && root.bar.lockClockMaterial === "solid" ? 0 : 1
+                            onPicked: i => { if (root.bar) { root.bar.lockClockMaterial = i === 0 ? "solid" : "glass"; root.bar.lockClockStyle = "custom"; } }
+                        }
+                    }
+                    SRow {
+                        t: pal; title: root.bar && root.bar.lockClockMaterial === "solid" ? "Brightness" : "Glass"
+                        SSlider {
+                            t: pal; width: 220; from: 0; to: 1
+                            leftLabel: root.bar && root.bar.lockClockMaterial === "solid" ? "Subtle" : "Clear"
+                            rightLabel: root.bar && root.bar.lockClockMaterial === "solid" ? "Bright" : "Frosted"
+                            value: root.bar ? root.bar.lockClockIntensity : 0.6
+                            onMoved: v => { if (root.bar) { root.bar.lockClockIntensity = v; root.bar.lockClockStyle = "custom"; } }
+                        }
+                    }
+                    SRow {
+                        t: pal; title: "Color"
+                        Row {
+                            spacing: 8
+                            Repeater {
+                                model: ["#FFFFFF", "#FFE7C2", "#FFC2D6", "#D9C8FF", "#BFE3FF", "#C6F2D6", "#FFF3A8"]
+                                delegate: Rectangle {
+                                    required property string modelData
+                                    readonly property bool sel: root.bar && root.bar.lockClockTint.toUpperCase() === modelData
+                                    width: 22; height: 22; radius: 11
+                                    color: modelData
+                                    border.width: sel ? 2.5 : 1
+                                    border.color: sel ? pal.accent : Qt.rgba(0, 0, 0, 0.2)
+                                    scale: swMa.pressed ? 0.88 : 1
+                                    Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutQuint } }
+                                    MouseArea { id: swMa; anchors.fill: parent; anchors.margins: -3; cursorShape: Qt.PointingHandCursor; onClicked: if (root.bar) root.bar.lockClockTint = parent.modelData }
+                                }
+                            }
                         }
                     }
                     SRow {
@@ -2805,7 +2835,7 @@ Scope {
                         t: pal; text: "Preview"
                         onClicked: {
                             var b = root.bar;
-                            var cfg = JSON.stringify({ f: b.lockClockFont, w: b.lockClockWeight, m: b.lockClockMaterial, t: b.lockClockTall, d: b.lockClockDate });
+                            var cfg = JSON.stringify({ f: b.lockClockFont, w: b.lockClockWeight, m: b.lockClockMaterial, i: b.lockClockIntensity, c: b.lockClockTint, t: b.lockClockTall, d: b.lockClockDate });
                             Quickshell.execDetached(["sh", "-c", "MACLOCK_PREVIEW=1 MACLOCK_CLOCK=\"$1\" timeout 6 qs -c MacLock >/dev/null 2>&1", "sh", cfg]);
                         }
                     }

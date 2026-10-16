@@ -295,12 +295,24 @@ Scope {
     // ── Music widget: album tint (the cover's average colour, darker and calmer — close to the art, not the same) ──
     readonly property bool wantsMusic: widgets.some(function (w) { return w.type === "music"; })
     readonly property string musicArt: player && player.trackArtUrl ? player.trackArtUrl : ""
+    // song change: the new colour (musicTint) spreads out from the cover over the old one (musicTintPrev), soft-edged,
+    // like ink in water — musicSpread runs 0 → 1, then the old colour is retired
     property color musicTint: Qt.rgba(0.16, 0.16, 0.18, 1)
+    property color musicTintPrev: Qt.rgba(0.16, 0.16, 0.18, 1)
+    property real musicSpread: 1
     property color musicEdge: Qt.rgba(1, 1, 1, 0.22)
     property bool musicTintOk: false
     readonly property bool musicTintOn: musicArt !== "" && musicTintOk
-    Behavior on musicTint { ColorAnimation { duration: 650; easing.type: Easing.OutQuint } }
-    Behavior on musicEdge { ColorAnimation { duration: 650; easing.type: Easing.OutQuint } }
+    Behavior on musicEdge { ColorAnimation { duration: 1400; easing.type: Easing.InOutCubic } }
+    NumberAnimation { id: spreadAnim; target: root; property: "musicSpread"; from: 0; to: 1; duration: 1400; easing.type: Easing.InOutCubic
+                      onFinished: root.musicTintPrev = root.musicTint }
+    function musicSetTint(c) {
+        if (!musicTintOk) { musicTintPrev = c; musicTint = c; musicSpread = 1; return; }
+        // mid-spread: start the next one from what is on screen now (the new colour, mostly)
+        musicTintPrev = musicSpread > 0.5 ? musicTint : musicTintPrev;
+        musicTint = c;
+        spreadAnim.restart();
+    }
     onMusicArtChanged: musicTintLater.restart()
     onWantsMusicChanged: musicTintLater.restart()
     Timer { id: musicTintLater; interval: 120; onTriggered: root.musicTintRun() }
@@ -320,7 +332,7 @@ Scope {
                 if (v.length < 3 || isNaN(v[0])) return;
                 var c = Qt.rgba(v[0], v[1], v[2], 1);
                 var h = c.hslHue < 0 ? 0 : c.hslHue, sat = Math.min(0.55, c.hslSaturation * 0.85);
-                root.musicTint = Qt.hsla(h, sat, 0.27, 1);
+                root.musicSetTint(Qt.hsla(h, sat, 0.27, 1));
                 root.musicEdge = Qt.hsla(h, Math.min(0.6, sat + 0.1), 0.62, 0.38);
                 root.musicTintOk = true;
             }
@@ -818,35 +830,38 @@ Scope {
             Behavior on lyrT { NumberAnimation { duration: 560; easing.type: Easing.OutQuint } }
 
             // ── layout (content area: S 138×138, M 324×138, L 324×324); everything glides between sizes / modes ──
-            readonly property real artW: sz === "s" ? 66 : (sz === "m" ? 56 : (lyr ? 64 : 176))
-            readonly property real artX: sz === "l" && !lyr ? (324 - 176) / 2 : 0
-            readonly property real artR: artW > 120 ? 16 : 11
+            readonly property real artW: sz === "s" ? 72 : (sz === "m" ? 66 : (lyr ? 66 : 168))
+            readonly property real artX: sz === "l" && !lyr ? (324 - 168) / 2 : 0
+            readonly property real artR: artW > 120 ? 16 : 12
 
-            // ── cover with a real hand-over: the old art blurs, shrinks and fades while the new one comes into focus ──
+            // ── cover hand-over: "burning paper" (burn.frag) — the new cover shows through ragged, spreading holes in
+            //    the old one. Two picture slots; waits for the new picture to load (never longer than 1.5 s). ──
             readonly property string url: pl && pl.trackArtUrl ? pl.trackArtUrl : ""
-            property int front: 0            // slot showing the current cover
-            property string pendingUrl: ""
-            property real xf: 1              // 0 → 1 during a hand-over
+            property int curIdx: 0
+            property real prog: 1
+            property real seed: 0
+            property bool pending: false
             onUrlChanged: {
-                if (url === "" || !slotA || !slotB) return;
-                var back = front === 0 ? slotB : slotA;
-                if (back.src === url && xf >= 1) return;
-                pendingUrl = url;
-                back.src = url;
-                xfWait.restart();
+                if (url === "") return;
+                var cur = curIdx === 0 ? imgA : imgB;
+                if (cur.source.toString() === url) return;
+                (curIdx === 0 ? imgB : imgA).source = url;
+                pending = true;
+                burnWait.restart();
                 tryStart();
             }
             function tryStart() {
-                if (pendingUrl === "" || !slotA || !slotB) return;
-                var back = front === 0 ? slotB : slotA;
-                if (back.status === Image.Loading && xfWait.running) return;
-                pendingUrl = "";
-                xfWait.stop();
-                front = 1 - front;
-                xfAnim.restart();
+                if (!pending) return;
+                var t = curIdx === 0 ? imgB : imgA;
+                if (t.status === Image.Loading && burnWait.running) return;
+                pending = false;
+                burnWait.stop();
+                curIdx = 1 - curIdx;
+                seed = Math.random();
+                burnAnim.restart();
             }
-            Timer { id: xfWait; interval: 1500; onTriggered: mus.tryStart() }   // never wait forever for a slow cover
-            NumberAnimation { id: xfAnim; target: mus; property: "xf"; from: 0; to: 1; duration: 700; easing.type: Easing.OutQuint }
+            Timer { id: burnWait; interval: 1500; onTriggered: mus.tryStart() }
+            NumberAnimation { id: burnAnim; target: mus; property: "prog"; from: 0; to: 1; duration: 950; easing.type: Easing.OutCubic }
 
             Item {
                 id: mArt
@@ -867,32 +882,23 @@ Scope {
                     opacity: mus.url !== "" ? 1 : 0
                     Behavior on opacity { NumberAnimation { duration: 400 } }
                 }
-                Item { id: artMask; anchors.fill: parent; visible: false; layer.enabled: true; Rectangle { anchors.fill: parent; radius: mus.artR; color: "black" } }
-                Repeater {
-                    model: 2
-                    delegate: Image {
-                        id: slot
-                        required property int index
-                        property string src: ""
-                        readonly property bool isFront: mus.front === index
-                        anchors.fill: parent
-                        source: src
-                        fillMode: Image.PreserveAspectCrop
-                        asynchronous: true; smooth: true; mipmap: true
-                        sourceSize: Qt.size(400, 400)
-                        onStatusChanged: mus.tryStart()
-                        Component.onCompleted: { if (index === 0) { mus.slotA = slot; src = mus.url; } else mus.slotB = slot; }
-                        // the new cover: in from a little bigger and soft; the old one: out a little smaller and soft
-                        readonly property real t: isFront ? mus.xf : 1 - mus.xf
-                        opacity: status === Image.Ready && mus.url !== "" ? t : 0
-                        scale: isFront ? 1.06 - 0.06 * mus.xf : 1 - 0.06 * mus.xf
-                        z: isFront ? 1 : 0
-                        layer.enabled: true; layer.smooth: true
-                        layer.effect: MultiEffect {
-                            maskEnabled: true; maskSource: artMask; maskThresholdMin: 0.5; maskSpreadAtMin: 1.0
-                            blurEnabled: mus.xf < 0.999; blurMax: 40; blur: 1 - slot.t
-                        }
-                    }
+                // (no binding to the track's art here: the slots only change when a hand-over starts)
+                Image { id: imgA; anchors.fill: parent; visible: false; Component.onCompleted: source = mus.url; fillMode: Image.PreserveAspectCrop; asynchronous: true; mipmap: true; sourceSize: Qt.size(400, 400); onStatusChanged: mus.tryStart() }
+                Image { id: imgB; anchors.fill: parent; visible: false; fillMode: Image.PreserveAspectCrop; asynchronous: true; mipmap: true; sourceSize: Qt.size(400, 400); onStatusChanged: mus.tryStart() }
+                ShaderEffectSource { id: srcA; sourceItem: imgA; hideSource: true; visible: false; smooth: true }
+                ShaderEffectSource { id: srcB; sourceItem: imgB; hideSource: true; visible: false; smooth: true }
+                ShaderEffect {
+                    anchors.fill: parent
+                    visible: mus.url !== ""
+                    opacity: (mus.curIdx === 0 ? imgA : imgB).status === Image.Ready ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
+                    fragmentShader: Qt.resolvedUrl("burn.frag.qsb")
+                    property variant oldTex: mus.curIdx === 0 ? srcB : srcA
+                    property variant newTex: mus.curIdx === 0 ? srcA : srcB
+                    property real progress: mus.prog
+                    property vector2d itemSize: Qt.vector2d(width, height)
+                    property real radius: mus.artR
+                    property real seed: mus.seed
                 }
                 Rectangle { anchors.fill: parent; radius: mus.artR; color: "transparent"; border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.14); opacity: mus.url !== "" ? 1 : 0 }
                 // nothing playing: the Music note, translucent, on a soft tile
@@ -915,16 +921,14 @@ Scope {
                 }
                 MouseArea { id: artTap; anchors.fill: parent; enabled: !root.editing && mus.pl !== null; cursorShape: Qt.PointingHandCursor; onClicked: { if (mus.pl && mus.pl.canRaise) mus.pl.raise(); } }
             }
-            property var slotA: null
-            property var slotB: null
 
             // title / "Artist — Album" (blur + morph); in Medium they give way to the lyrics too
             Column {
                 id: mTxt
                 readonly property real away: mus.sz === "m" ? mus.lyrT : 0
-                x: mus.sz === "s" ? 0 : (mus.sz === "m" ? 68 : (mus.lyr ? 76 : 0))
-                y: mus.sz === "s" ? 76 : (mus.sz === "m" ? (56 - height) / 2 : (mus.lyr ? (64 - height) / 2 : 190))
-                width: mus.sz === "s" ? 138 : (mus.sz === "m" ? 324 - 68 - 36 : (mus.lyr ? 324 - 76 - 36 : 324))
+                x: mus.sz === "s" ? 0 : (mus.lyr || mus.sz === "m" ? 80 : 0)
+                y: mus.sz === "s" ? 82 : (mus.sz === "m" || mus.lyr ? (66 - height) / 2 : 180)
+                width: mus.sz === "s" ? 138 - 38 : (mus.sz === "m" || mus.lyr ? 324 - 80 - 34 : 324)
                 Behavior on x { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
                 Behavior on y { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
                 Behavior on width { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
@@ -980,9 +984,9 @@ Scope {
             Item {
                 id: lyrBox
                 x: 0
-                y: mus.sz === "m" ? -2 : 74
+                y: mus.sz === "m" ? -2 : 78
                 width: mus.sz === "m" ? 324 - 40 : 324
-                height: mus.sz === "m" ? 64 : 166
+                height: mus.sz === "m" ? 72 : 150
                 opacity: mus.lyrT
                 visible: opacity > 0.01
                 scale: 0.96 + 0.04 * mus.lyrT
@@ -1034,7 +1038,7 @@ Scope {
                 opacity: mus.sz === "s" ? 0 : 1
                 visible: opacity > 0.01
                 Behavior on opacity { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
-                y: mus.sz === "l" ? 252 : 70
+                y: mus.sz === "l" ? 236 : 80
                 Behavior on y { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
                 width: 324; height: 16
                 readonly property real len: mus.pl && mus.pl.lengthSupported ? mus.pl.length : 0
@@ -1070,7 +1074,7 @@ Scope {
             // controls: shuffle · prev · play · next · repeat (Small: just play / pause)
             Item {
                 id: ctl
-                y: mus.sz === "l" ? 280 : (mus.sz === "m" ? 96 : 104)
+                y: mus.sz === "l" ? 274 : (mus.sz === "m" ? 104 : 104)
                 Behavior on y { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
                 width: mus.sz === "s" ? 138 : 324; height: 34
                 Repeater {
@@ -1080,11 +1084,11 @@ Scope {
                         required property string modelData
                         required property int index
                         readonly property bool isSR: modelData === "shuffle" || modelData === "repeat"
-                        readonly property bool shown: modelData === "play" || mus.sz !== "s"
+                        readonly property bool shown: modelData === "play" || (mus.sz === "m" && !isSR) || mus.sz === "l"
                         // positions: transport centred, shuffle / repeat at the edges; Small: play at the bottom-right
                         readonly property real cx: mus.sz === "s" ? (modelData === "play" ? 138 - 17 : 138 - 17)
-                                                 : (modelData === "shuffle" ? 15 : modelData === "repeat" ? 324 - 15
-                                                 : 162 + (index - 2) * (mus.big ? 62 : 54))
+                                                 : (modelData === "shuffle" ? (mus.big ? 22 : 92) : modelData === "repeat" ? (mus.big ? 324 - 22 : 232)
+                                                 : 162 + (index - 2) * (mus.big ? 66 : 70))
                         x: cx - width / 2
                         Behavior on x { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
                         width: 34; height: 34
@@ -1799,14 +1803,34 @@ Scope {
                     }
 
                     // Music: the card takes the album's colour (close to the cover, not the same) with a subtle brighter edge
-                    Rectangle {
+                    Item {
+                        id: tintCard
                         anchors.fill: parent
-                        radius: 22
                         opacity: wd.wtype === "music" && root.musicTintOn ? 1 : 0
                         visible: opacity > 0.01
                         Behavior on opacity { NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
-                        color: Qt.rgba(root.musicTint.r, root.musicTint.g, root.musicTint.b, 0.80)
-                        border.width: 1; border.color: root.musicEdge
+                        // the cover's centre on this card (content starts 16 px in)
+                        readonly property real cx: wd.shownSize === "l" ? width / 2 : 16 + (wd.shownSize === "s" ? 36 : 33)
+                        readonly property real cy: 16 + (wd.shownSize === "l" ? 84 : (wd.shownSize === "s" ? 36 : 33))
+                        Item {
+                            anchors.fill: parent
+                            layer.enabled: true
+                            layer.effect: MultiEffect { maskEnabled: true; maskSource: tintMask; maskThresholdMin: 0.5; maskSpreadAtMin: 1.0 }
+                            Rectangle { anchors.fill: parent; color: Qt.rgba(root.musicTintPrev.r, root.musicTintPrev.g, root.musicTintPrev.b, 0.80) }
+                            // the new colour: a soft-edged disc growing from the cover until it covers the card
+                            Rectangle {
+                                readonly property real reach: 2.3 * Math.sqrt(tintCard.width * tintCard.width + tintCard.height * tintCard.height)
+                                width: reach * root.musicSpread; height: width; radius: width / 2
+                                x: tintCard.cx - width / 2; y: tintCard.cy - height / 2
+                                visible: root.musicSpread < 1
+                                color: Qt.rgba(root.musicTint.r, root.musicTint.g, root.musicTint.b, 0.80)
+                                layer.enabled: visible
+                                layer.effect: MultiEffect { blurEnabled: true; blurMax: 64; blur: 1.0; autoPaddingEnabled: true }
+                            }
+                            Rectangle { anchors.fill: parent; visible: root.musicSpread >= 1; color: Qt.rgba(root.musicTint.r, root.musicTint.g, root.musicTint.b, 0.80) }
+                        }
+                        Item { id: tintMask; anchors.fill: parent; visible: false; layer.enabled: true; Rectangle { anchors.fill: parent; radius: 22; color: "black" } }
+                        Rectangle { anchors.fill: parent; radius: 22; color: "transparent"; border.width: 1; border.color: root.musicEdge }
                     }
 
                     // ── content ──

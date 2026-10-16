@@ -89,25 +89,24 @@ Item {
             opacity: ls.st.artBg ? ls.clamp01(ls.artT) : 0
             visible: opacity > 0.003
             Rectangle { anchors.fill: parent; color: "#0c0c10" }
-            Image {
-                id: artBgImg
-                anchors.fill: parent
-                source: media.pl && media.pl.trackArtUrl ? media.pl.trackArtUrl : ""
-                fillMode: Image.PreserveAspectCrop
-                sourceSize: Qt.size(192, 192)          // it gets blurred anyway: tiny texture, cheap
-                asynchronous: true; smooth: true
-                visible: false
-            }
-            MultiEffect {
-                anchors.fill: parent
-                scale: 1.25                            // pushes the blur's soft edges off-screen
-                source: artBgImg
-                autoPaddingEnabled: false
-                blurEnabled: true; blurMax: 64; blur: 1.0
-                saturation: 0.25
-                brightness: -0.16
-                opacity: artBgImg.status === Image.Ready ? 1 : 0
-                Behavior on opacity { NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
+            // old and new album, each blurred; the new one fades in over the old one during a hand-over
+            Repeater {
+                model: 2
+                delegate: MultiEffect {
+                    required property int index
+                    readonly property Item img: index === 0 ? ls.coverOld : ls.coverNew
+                    anchors.fill: parent
+                    scale: 1.25                            // pushes the blur's soft edges off-screen
+                    source: img
+                    autoPaddingEnabled: false
+                    blurEnabled: true; blurMax: 64; blur: 1.0
+                    saturation: 0.25
+                    brightness: -0.16
+                    // new: fades in with the hand-over; old: only there while it's being covered
+                    opacity: index === 1 ? ls.coverProg : (ls.coverProg < 1 ? 1 : 0)
+                    visible: img.status === Image.Ready && opacity > 0.003
+                    z: index
+                }
             }
         }
         // top/bottom vignette so white text always reads, like the macOS lock screen
@@ -349,7 +348,8 @@ Item {
                 Image {
                     x: 14 * ls.u; anchors.verticalCenter: parent.verticalCenter
                     width: 34 * ls.u; height: width
-                    source: nc.modelData.icon || ""
+                    // apps without an icon (MacShell's own, notify-send…) get the system notifications icon
+                    source: nc.modelData.icon && status !== Image.Error ? nc.modelData.icon : "image://icon/preferences-system-notifications"
                     sourceSize: Qt.size(96, 96)
                     smooth: true; mipmap: true
                 }
@@ -470,7 +470,9 @@ Item {
                 id: timeHeightFx
                 width: timeMaskFx.width; height: timeMaskFx.height
                 source: timeMask
-                blurEnabled: true; blurMax: 10; blur: ls.ckWeight < 330 ? 0.25 : (ls.ckLiquid ? 0.38 : 0.45)
+                // the rim is a fixed share of the digit size (thin weights get a finer one)
+                blurEnabled: true; blurMax: 16
+                blur: Math.max(0.12, Math.min(0.6, ls.clockPx * (ls.ckWeight < 330 ? 0.016 : 0.03) / 16))
                 autoPaddingEnabled: false
                 visible: false
             }
@@ -482,7 +484,8 @@ Item {
                 source: timeMask
                 blurEnabled: true; blurMax: 64; blur: 1.0
                 colorization: 1.0; colorizationColor: "black"; brightness: -1.0
-                opacity: 0.22
+                opacity: ls.ckGlass ? 0.22 : 0.12
+                Behavior on opacity { NumberAnimation { duration: 500 } }
             }
             ShaderEffect {
                 id: timeGlass
@@ -497,19 +500,16 @@ Item {
                 property vector2d itemSize: Qt.vector2d(width, height)
                 property vector2d srcSize: Qt.vector2d(ls.width, ls.height)
                 property vector2d srcOffset: Qt.vector2d(fp.x, fp.y)
-                // frosted: flat milky glass with a soft lit edge (macOS 26); liquid: clear glass, the wallpaper bent at
-                // a bright rim all the way round (iOS 26). Animated, so switching styles in Settings cross-fades.
-                // thin strokes have little body: the rim is toned down there so they read as glass, not as outlines
-                readonly property real thin: Math.max(0, Math.min(1, (420 - ls.ckWeight) / 220))
-                property real refract: (ls.ckLiquid ? 6 : 2.5) * ls.u
-                property real bevel: ls.ckLiquid ? 5.0 - 1.5 * thin : 4.5
-                property real lift: ls.ckLiquid ? 0.08 + 0.06 * thin : 0.12
-                property real frost: ls.ckLiquid ? 0.22 + 0.16 * thin : 0.40
-                property real specAmt: ls.ckLiquid ? 0.62 - 0.3 * thin : 0.38
-                property real fresnelAmt: ls.ckLiquid ? 0.26 - 0.16 * thin : 0.0
-                Behavior on frost { NumberAnimation { duration: 500; easing.type: Easing.OutCubic } }
-                Behavior on lift { NumberAnimation { duration: 500; easing.type: Easing.OutCubic } }
-                Behavior on fresnelAmt { NumberAnimation { duration: 500; easing.type: Easing.OutCubic } }
+                // Apple's two clock materials (Settings → Lock Screen → Clock): Solid = vibrancy, Glass = Liquid Glass
+                property real mode: ls.ckGlass ? 1 : 0
+                property real intensity: ls.ckGlass ? ls.ckIntensity : 0.55 + 0.4 * ls.ckIntensity
+                property real refract: (6 + 4 * (1 - ls.ckIntensity)) * ls.u
+                property real bevel: 4.5
+                property color tint: ls.ckTint
+                property vector2d lightDir: Qt.vector2d(ls.lightX, ls.lightY)
+                Behavior on mode { NumberAnimation { duration: 500; easing.type: Easing.OutCubic } }
+                Behavior on intensity { NumberAnimation { duration: 500; easing.type: Easing.OutCubic } }
+                Behavior on tint { ColorAnimation { duration: 500 } }
                 onStatusChanged: if (status === ShaderEffect.Error) console.log("[maclock] clock shader:", log)
             }
             // fallback when the shader is missing
@@ -522,6 +522,41 @@ Item {
             }
         }
     }
+
+    // ═════════════ COVER HAND-OVER ═════════════
+    // Two picture slots. A new cover loads into the back slot; once it's there (or after 1.5 s) the bubble's cover
+    // "burns" over to it (burn.frag) and the blurred album background cross-fades, both in step.
+    readonly property string coverUrl: media.pl && media.pl.trackArtUrl ? media.pl.trackArtUrl : ""
+    property int coverIdx: 0
+    property real coverProg: 1
+    property real coverSeed: 0
+    property bool coverPending: false
+    onCoverUrlChanged: {
+        if (coverUrl === "" || !ls.isPrimary) return;
+        var cur = coverIdx === 0 ? coverA : coverB;
+        if (cur.source.toString() === coverUrl) return;
+        if (cur.source.toString() === "") { cur.source = coverUrl; return; }     // first cover: just show it
+        (coverIdx === 0 ? coverB : coverA).source = coverUrl;
+        coverPending = true;
+        coverWait.restart();
+        coverTry();
+    }
+    function coverTry() {
+        if (!coverPending) return;
+        var t = coverIdx === 0 ? coverB : coverA;
+        if (t.status === Image.Loading && coverWait.running) return;
+        coverPending = false;
+        coverWait.stop();
+        coverIdx = 1 - coverIdx;
+        coverSeed = Math.random();
+        coverAnim.restart();
+    }
+    Timer { id: coverWait; interval: 1500; onTriggered: ls.coverTry() }
+    NumberAnimation { id: coverAnim; target: ls; property: "coverProg"; from: 0; to: 1; duration: 1100; easing.type: Easing.InOutCubic }
+    Image { id: coverA; visible: false; width: 600; height: 600; fillMode: Image.PreserveAspectCrop; asynchronous: true; mipmap: true; sourceSize: Qt.size(600, 600); onStatusChanged: ls.coverTry() }
+    Image { id: coverB; visible: false; width: 600; height: 600; fillMode: Image.PreserveAspectCrop; asynchronous: true; mipmap: true; sourceSize: Qt.size(600, 600); onStatusChanged: ls.coverTry() }
+    readonly property Item coverNew: coverIdx === 0 ? coverA : coverB
+    readonly property Item coverOld: coverIdx === 0 ? coverB : coverA
 
     // ═════════════ NOW PLAYING ═════════════
     readonly property var player: {
@@ -569,7 +604,28 @@ Item {
         : (ckFont === "rounded" ? "Nunito" : (ckFont === "serif" ? "Noto Serif Display" : (ckFont === "inter" ? "Inter Display" : "Roboto Flex")))
     readonly property int ckWeight: (typeof ckCfg.w === "number" && ckCfg.w >= 100 && ckCfg.w <= 1000) ? ckCfg.w : 680
     readonly property bool ckTall: ckFont === "condensed" && ckCfg.t !== false
-    readonly property bool ckLiquid: ckCfg.m === "liquid"
+    // material: "solid" (vibrancy) | "glass" (Liquid Glass); older settings: liquid → clear glass, frosted → frosted glass
+    readonly property bool ckGlass: ckCfg.m !== "solid"
+    readonly property real ckIntensity: typeof ckCfg.i === "number" ? Math.max(0, Math.min(1, ckCfg.i))
+                                       : (ckCfg.m === "liquid" ? 0.12 : (ckCfg.m === "solid" ? 0.8 : 0.6))
+    readonly property color ckTint: (typeof ckCfg.c === "string" && ckCfg.c !== "") ? ckCfg.c : "#FFFFFF"
+    readonly property bool ckLiquid: ckGlass && ckIntensity < 0.35
+    // the light on the glass follows the pointer (tilting a phone); rests at the top-left
+    HoverHandler { id: lightHover }
+    property real lightX: -0.6
+    property real lightY: -0.8
+    Behavior on lightX { NumberAnimation { duration: 900; easing.type: Easing.OutCubic } }
+    Behavior on lightY { NumberAnimation { duration: 900; easing.type: Easing.OutCubic } }
+    Timer {
+        interval: 80; repeat: true; running: lightHover.hovered && ls.ckGlass && ls.isPrimary
+        onTriggered: {
+            var c = clock.mapToItem(ls, clock.width / 2, clock.height / 2);
+            var dx = c.x - lightHover.point.position.x, dy = c.y - lightHover.point.position.y;   // light comes from the pointer
+            var l = Math.sqrt(dx * dx + dy * dy) || 1;
+            // never straight from below: the glass reads best lit from above
+            ls.lightX = -dx / l; ls.lightY = Math.min(-0.25, -dy / l);
+        }
+    }
     readonly property bool ckShortDate: ckCfg.d === "short"
     // size per font (all shrink together when the cover / lyrics need the room)
     readonly property real ckBase: ckTall ? 226 : (ckFont === "condensed" ? 196 : (ckFont === "serif" ? 168 : (ckFont === "rounded" ? 176 : 172)))
@@ -716,23 +772,22 @@ Item {
                 anchors.centerIn: parent; width: 24 * ls.u; height: 24 * ls.u
                 kind: "note"; color: Qt.rgba(1, 1, 1, 0.6)
             }
-            Item {
-                id: artMask
-                anchors.fill: parent; visible: false
-                layer.enabled: true; layer.smooth: true
-                Rectangle { anchors.fill: parent; radius: art.r; color: "black" }
-            }
-            Image {
+            ShaderEffectSource { id: covOldSrc; sourceItem: ls.coverOld; visible: false; smooth: true; mipmap: true }
+            ShaderEffectSource { id: covNewSrc; sourceItem: ls.coverNew; visible: false; smooth: true; mipmap: true }
+            ShaderEffect {
                 id: artImg
                 anchors.fill: parent
-                source: media.pl && media.pl.trackArtUrl ? media.pl.trackArtUrl : ""
-                fillMode: Image.PreserveAspectCrop
-                asynchronous: true; smooth: true
-                sourceSize: Qt.size(600, 600)
-                opacity: status === Image.Ready ? 1 : 0
+                readonly property int status: ls.coverNew.status
+                visible: ls.coverUrl !== ""
+                opacity: ls.coverNew.status === Image.Ready ? 1 : 0
                 Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutQuint } }
-                layer.enabled: true; layer.smooth: true
-                layer.effect: MultiEffect { maskEnabled: true; maskSource: artMask; maskThresholdMin: 0.5; maskSpreadAtMin: 1.0 }
+                fragmentShader: Qt.resolvedUrl("burn.frag.qsb")
+                property variant oldTex: covOldSrc
+                property variant newTex: covNewSrc
+                property real progress: ls.coverProg
+                property vector2d itemSize: Qt.vector2d(width, height)
+                property real radius: art.r
+                property real seed: ls.coverSeed
             }
             Rectangle {
                 anchors.fill: parent; radius: art.r; color: "transparent"
