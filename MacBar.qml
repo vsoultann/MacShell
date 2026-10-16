@@ -136,8 +136,18 @@ Scope {
             onStreamFinished: {
                 var v = parseFloat(text);
                 if (isNaN(v)) return;
-                // white text needs a properly dark backdrop; anything from mid-tones up gets dark text + light glass
-                root.bgTone = v > 0.36 ? 1 : (v < 0.28 ? -1 : (root.darkMode ? -1 : 1));
+                // Only change anything when the normal text would NOT be readable. v is perceived (gamma) brightness of
+                // what's behind; turn it into relative luminance, put the panel's own tint over it, and test the WCAG
+                // contrast of the normal text colour. Below 3:1 → flip to the other style; otherwise keep the user's.
+                var L = Math.pow(Math.max(0, Math.min(1, v)), 2.2);
+                var tint = Math.min(0.6, root.glassOpacity * 0.55 + 0.05);
+                if (root.darkMode) {
+                    var effD = L * (1 - tint) + 0.004 * tint;                 // dark glass tint
+                    root.bgTone = (1.05 / (effD + 0.05)) < 3 ? 1 : 0;        // white text unreadable → dark text
+                } else {
+                    var effL = L * (1 - tint) + 1.0 * tint;                   // light glass tint
+                    root.bgTone = ((effL + 0.05) / 0.062) < 3 ? -1 : 0;       // dark text unreadable → white text
+                }
             }
         }
     }
