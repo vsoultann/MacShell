@@ -125,7 +125,8 @@ Scope {
     // measure brightness behind a screen rect (logical coords): one tiny grim grab, mean luminance
     function measureTone(sx, sy, sw, sh) {
         if (!autoContrast || toneProc.running) return;
-        toneProc.command = ["sh", "-c", "grim -s 0.08 -g \"$1,$2 $3x$4\" - 2>/dev/null | magick - -colorspace gray -format '%[fx:mean]' info: 2>/dev/null",
+        // perceived brightness of the sRGB means (a "gray" conversion in ImageMagick is linear-light and reads mid-tones far too dark)
+        toneProc.command = ["sh", "-c", "grim -s 0.08 -g \"$1,$2 $3x$4\" - 2>/dev/null | magick - -format '%[fx:0.299*mean.r+0.587*mean.g+0.114*mean.b]' info: 2>/dev/null",
                             "sh", String(Math.round(sx)), String(Math.round(sy)), String(Math.max(8, Math.round(sw))), String(Math.max(8, Math.round(sh)))];
         toneProc.running = true;
     }
@@ -135,7 +136,8 @@ Scope {
             onStreamFinished: {
                 var v = parseFloat(text);
                 if (isNaN(v)) return;
-                root.bgTone = v > 0.62 ? 1 : (v < 0.38 ? -1 : (root.darkMode ? -1 : 1));
+                // white text needs a properly dark backdrop; anything from mid-tones up gets dark text + light glass
+                root.bgTone = v > 0.36 ? 1 : (v < 0.28 ? -1 : (root.darkMode ? -1 : 1));
             }
         }
     }
