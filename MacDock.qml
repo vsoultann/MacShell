@@ -2520,18 +2520,20 @@ Scope {
                         SRow {
                             t: pal; title: "Resolution"
                             ComboBox {
-                                width: 200
+                                width: 220
                                 font.family: pal.fam; font.pixelSize: 13
-                                // macOS pop-up button look
+                                // macOS Tahoe System Settings pop-up: no box — right-aligned value + small grey chevrons,
+                                // a faint highlight only on hover
                                 background: Rectangle {
-                                    radius: 7
-                                    color: parent.down ? pal.buttonPressed : pal.button
-                                    border.width: 1; border.color: pal.buttonBorder
+                                    radius: 6
+                                    color: parent.hovered || parent.down ? pal.hover : "transparent"
+                                    Behavior on color { ColorAnimation { duration: 160 } }
                                 }
                                 contentItem: Text {
-                                    leftPadding: 10; rightPadding: 26
+                                    leftPadding: 8; rightPadding: 22
                                     text: parent.displayText
                                     font: parent.font; color: pal.text
+                                    horizontalAlignment: Text.AlignRight
                                     verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
                                 }
                                 // the opened list: a rounded macOS menu with an accent highlight
@@ -2556,15 +2558,16 @@ Scope {
                                     border.width: 1; border.color: pal.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
                                 }
                                 popup.padding: 5
-                                // macOS pop-up button: stacked up/down chevrons in a small accent capsule
-                                indicator: Rectangle {
-                                    x: parent.width - width - 3; anchors.verticalCenter: parent.verticalCenter
-                                    width: 18; height: parent.height - 6; radius: 5
-                                    color: pal.accent
-                                    Column {
-                                        anchors.centerIn: parent; spacing: -5
-                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "\u2303"; color: "white"; font.pixelSize: 10; font.bold: true }
-                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "\u2304"; color: "white"; font.pixelSize: 10; font.bold: true }
+                                indicator: Canvas {
+                                    x: parent.width - width - 7; anchors.verticalCenter: parent.verticalCenter
+                                    width: 8; height: 12
+                                    property color ink: pal.text2
+                                    onInkChanged: requestPaint()
+                                    onPaint: {
+                                        var c = getContext("2d"); c.reset();
+                                        c.strokeStyle = ink; c.lineWidth = 1.4; c.lineCap = "round"; c.lineJoin = "round";
+                                        c.beginPath(); c.moveTo(1, 4.2); c.lineTo(4, 1.2); c.lineTo(7, 4.2); c.stroke();
+                                        c.beginPath(); c.moveTo(1, 7.8); c.lineTo(4, 10.8); c.lineTo(7, 7.8); c.stroke();
                                     }
                                 }
                                 model: monCard.resolutions.map(function (r) { return r.w + " × " + r.h + (r.custom ? "  (current)" : ""); })
@@ -2581,18 +2584,20 @@ Scope {
                         SRow {
                             t: pal; title: "Refresh rate"
                             ComboBox {
-                                width: 200
+                                width: 220
                                 font.family: pal.fam; font.pixelSize: 13
-                                // macOS pop-up button look
+                                // macOS Tahoe System Settings pop-up: no box — right-aligned value + small grey chevrons,
+                                // a faint highlight only on hover
                                 background: Rectangle {
-                                    radius: 7
-                                    color: parent.down ? pal.buttonPressed : pal.button
-                                    border.width: 1; border.color: pal.buttonBorder
+                                    radius: 6
+                                    color: parent.hovered || parent.down ? pal.hover : "transparent"
+                                    Behavior on color { ColorAnimation { duration: 160 } }
                                 }
                                 contentItem: Text {
-                                    leftPadding: 10; rightPadding: 26
+                                    leftPadding: 8; rightPadding: 22
                                     text: parent.displayText
                                     font: parent.font; color: pal.text
+                                    horizontalAlignment: Text.AlignRight
                                     verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
                                 }
                                 // the opened list: a rounded macOS menu with an accent highlight
@@ -2617,15 +2622,16 @@ Scope {
                                     border.width: 1; border.color: pal.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
                                 }
                                 popup.padding: 5
-                                // macOS pop-up button: stacked up/down chevrons in a small accent capsule
-                                indicator: Rectangle {
-                                    x: parent.width - width - 3; anchors.verticalCenter: parent.verticalCenter
-                                    width: 18; height: parent.height - 6; radius: 5
-                                    color: pal.accent
-                                    Column {
-                                        anchors.centerIn: parent; spacing: -5
-                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "\u2303"; color: "white"; font.pixelSize: 10; font.bold: true }
-                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "\u2304"; color: "white"; font.pixelSize: 10; font.bold: true }
+                                indicator: Canvas {
+                                    x: parent.width - width - 7; anchors.verticalCenter: parent.verticalCenter
+                                    width: 8; height: 12
+                                    property color ink: pal.text2
+                                    onInkChanged: requestPaint()
+                                    onPaint: {
+                                        var c = getContext("2d"); c.reset();
+                                        c.strokeStyle = ink; c.lineWidth = 1.4; c.lineCap = "round"; c.lineJoin = "round";
+                                        c.beginPath(); c.moveTo(1, 4.2); c.lineTo(4, 1.2); c.lineTo(7, 4.2); c.stroke();
+                                        c.beginPath(); c.moveTo(1, 7.8); c.lineTo(4, 10.8); c.lineTo(7, 7.8); c.stroke();
                                     }
                                 }
                                 model: monCard.rates.map(function (h) { return h + " Hz"; })
