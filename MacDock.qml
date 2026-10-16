@@ -2379,6 +2379,19 @@ Scope {
             id: paneCC
             Column {
                 spacing: 10
+                SCard {
+                    t: pal
+                    SRow {
+                        t: pal
+                        title: "Style"
+                        subtitle: "Tiles gives every control its own piece of Liquid Glass; macOS puts them on one frosted panel"
+                        SSegmented {
+                            t: pal; model: ["Tiles", "macOS"]; segWidth: 80
+                            current: root.bar && root.bar.ccStyle === "macos" ? 1 : 0
+                            onPicked: i => { if (root.bar) root.bar.ccStyle = i === 1 ? "macos" : "tiles"; }
+                        }
+                    }
+                }
                 SLabel { t: pal; text: "Choose which controls appear in Control Center. You can also drag them around in Control Center → Edit Controls." }
                 SCard {
                     t: pal

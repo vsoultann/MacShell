@@ -91,6 +91,7 @@ Scope {
     // every part of the shell can be switched off on its own (the installer's feature picker writes these too)
     property bool spotlightEnabled: true     // Spotlight (the magnifier / its keybind)
     property bool ccEnabled: true            // Control Center
+    property string ccStyle: "tiles"         // tiles = every control its own glass | macos = one frosted panel behind them
     property bool notificationsEnabled: true // banners + Notification Center (off = no D-Bus daemon at all, so mako/dunst can take over)
     property bool clockAppEnabled: true      // the Clock app (alarms and timers still ring while it is on)
     readonly property bool barLayerNeeded: barEnabled || spotlightEnabled || ccEnabled || notificationsEnabled
@@ -240,7 +241,7 @@ Scope {
     readonly property var settingKeys: ["barEnabled", "darkMode", "accent", "fontFamily", "barHeight", "glassOpacity",
         "barStyle", "barGlass", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "barBgOpacity", "glassRealtime", "glassDebug", "wallpaperPath", "use24h", "showDate",
         "showSeconds", "showBatteryPercent", "showTray", "showSearch",
-        "spotlightEnabled", "ccEnabled", "notificationsEnabled", "clockAppEnabled", "barLogoMode", "barCustomLogoPath", "barWidgets", "weekStartsMonday", "terminal", "launcher",
+        "spotlightEnabled", "ccEnabled", "notificationsEnabled", "clockAppEnabled", "ccStyle", "barLogoMode", "barCustomLogoPath", "barWidgets", "weekStartsMonday", "terminal", "launcher",
         "filesCmd", "clipboardCmd", "appUsage", "clipHistory", "clipAutoPaste", "emojiRecent", "screenshotDir", "screenshotSave", "screenshotClipboard", "screenshotNotify", "nightTemp", "ccControls", "ccMigRec", "wallpaperDir", "wallpaperFavs", "wallpaperCmd", "wallpaperVideo", "uiSounds", "gamingMode", "gamingAuto", "ccMigGame", "lockArtBackground",
         "lockClockStyle", "switcherStyle", "lockClockFont", "lockClockWeight", "lockClockMaterial", "lockClockIntensity", "lockClockTint", "lockClockTall", "lockClockDate", "autoContrast", "wallpaperAppearance", "wpPairLight", "wpPairDark",
         "notifDnd", "dnd", "nightOn", "keepAwake",
@@ -2012,6 +2013,14 @@ Scope {
         else spotRequest++;                       // every bar window listens and the focused screen opens Spotlight
     }
     function spotOpen(mode) { if (!spotlightEnabled) return; spotWant = mode; spotRequest++; }
+    // qs -c MacShell ipc call controlcenter toggle | open | close   (works with the menu bar switched off too)
+    signal ccRequest(bool open)
+    IpcHandler {
+        target: "controlcenter"
+        function toggle(): void { root.ccRequest(true); }
+        function open(): void { root.ccRequest(true); }
+        function close(): void { root.ccRequest(false); }
+    }
     IpcHandler {
         target: "spotlight"
         function toggle(): void { root.search(); }
@@ -2926,7 +2935,7 @@ Scope {
         darkMode = true; accent = "#0a84ff"; fontFamily = "Inter Variable"; glassOpacity = 0.42; glassBlur = 5; barBgOpacity = 0.10; glassRealtime = false;
         barStyle = "liquid"; use24h = true; showDate = true; showSeconds = false; showBatteryPercent = true;
         showTray = true; showSearch = true;
-        spotlightEnabled = true; ccEnabled = true; notificationsEnabled = true; clockAppEnabled = true;
+        spotlightEnabled = true; ccEnabled = true; notificationsEnabled = true; clockAppEnabled = true; ccStyle = "tiles";
         barLogoMode = "arch"; barCustomLogoPath = "";
         barWidgets = ["appleMenu", "appMenus", "workspaces", "volume", "keyboard", "notifications", "wifi", "bluetooth", "privacy", "controlCenter", "clock"];
         ccControls = ccDefault.slice();
@@ -3620,6 +3629,14 @@ Scope {
                 property var trayStack: []          // submenu path (QsMenuEntry objects) inside that menu
                 Timer { interval: 400; repeat: true; running: ui.pop === "vol"; onTriggered: root.audioTick++ }
                 readonly property bool toastScreen: Quickshell.screens.length === 1 || (Hyprland.focusedMonitor !== null && Hyprland.focusedMonitor.name === win.modelData.name)
+                // the Control Center IPC: the focused screen opens it
+                Connections {
+                    target: root
+                    function onCcRequest(open) {
+                        if (!ui.toastScreen || !root.ccEnabled) return;
+                        ui.pop = (open && ui.pop !== "cc") ? "cc" : "";
+                    }
+                }
                 readonly property bool toastsShown: toastScreen && notifToasts.count > 0
                 // notifications arriving with no panel open: measure what's behind the banners
                 onToastsShownChanged: if (toastsShown && pop === "") root.measureTone(win.modelData.x + ui.width - 374, win.modelData.y + root.barHeight + 8, 364, 90)
@@ -5765,12 +5782,23 @@ Scope {
                     height: ccCol.height
                     x: Math.max(8, ui.width - width - 10)
                     y: root.barHeight + 6
-                    opacity: ui.pop === "cc" ? 1 : 0
+                    // opening (ColorOS 17): the panel springs out from the Control Center button, overshoots a little and
+                    // settles, while the controls stretch up into place one row after another. Closing is quick and flat.
+                    readonly property bool opening: ui.pop === "cc"
+                    property int openSeq: 0
+                    property real openT: opening ? 1 : 0
+                    Behavior on openT {
+                        NumberAnimation {
+                            duration: cc.opening ? 520 : 150
+                            easing.type: cc.opening ? Easing.OutBack : Easing.OutCubic
+                            easing.overshoot: 1.5
+                        }
+                    }
+                    opacity: Math.max(0, Math.min(1, openT * 2.2))
                     visible: opacity > 0
-                    scale: root.barPopupScale * (ui.pop === "cc" ? 1 : 0.96)
+                    scale: root.barPopupScale * (0.86 + 0.14 * openT)
                     transformOrigin: Item.TopRight
-                    Behavior on opacity { NumberAnimation { duration: 110 } }
-                    Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                    onOpeningChanged: if (opening) openSeq++
                     onVisibleChanged: if (visible) { root.refreshWifi(); root.refreshBt(); root.refreshBrightness(); }
 
                     ShaderEffectSource {
@@ -5825,9 +5853,10 @@ Scope {
                         liquid: root.liquidActive
                         shaderUrl: root.glassShaderUrl
                         dark: root.effDark
-                        tint: root.glassOpacity
-                        strength: root.glassLiquid
-                        rim: root.glassRim
+                        // macOS style: the panel is the glass, so each control only keeps a faint shape on top of it
+                        tint: root.ccStyle === "macos" ? root.glassOpacity * 0.30 : root.glassOpacity
+                        strength: root.ccStyle === "macos" ? root.glassLiquid * 0.30 : root.glassLiquid
+                        rim: root.ccStyle === "macos" ? root.glassRim * 0.45 : root.glassRim
                         grain: root.glassGrain
                         blur: root.glassBlur
                         debug: root.glassDebug
@@ -6146,6 +6175,17 @@ Scope {
                         }
                     }
 
+                    // macOS Control Center: one frosted slab behind everything (the tiles sit on it, instead of each
+                    // control being its own piece of glass)
+                    Loader {
+                        active: root.ccStyle === "macos"
+                        x: -12; y: -12
+                        width: cc.width + 24; height: ccCol.height + 24
+                        sourceComponent: Item {
+                            GGlass { anchors.fill: parent; gx: ccg; cornerR: 24; thickness: 26; strengthMul: 1.0; shadowAmt: 0.6 }
+                        }
+                    }
+
                     Column {
                         id: ccCol
                         x: 0; y: 0
@@ -6232,7 +6272,20 @@ Scope {
                                     width: slot ? slot.w * ccGrid.cw + (slot.w - 1) * 10 : 0
                                     height: slot ? slot.h * ccGrid.chh + (slot.h - 1) * 10 : 0
                                     z: dragging ? 100 : 0
-                                    scale: dragging ? 1.04 : 1
+                                    // stretch-and-settle, a touch later for each row / column (ColorOS 17)
+                                    property real ap: 1
+                                    Connections {
+                                        target: cc
+                                        function onOpenSeqChanged() { ct.ap = 0; tileIn.restart(); }
+                                    }
+                                    SequentialAnimation {
+                                        id: tileIn
+                                        PauseAnimation { duration: ct.slot ? Math.min(220, ct.slot.row * 55 + ct.slot.col * 18) : 0 }
+                                        NumberAnimation { target: ct; property: "ap"; from: 0; to: 1; duration: 460; easing.type: Easing.OutBack; easing.overshoot: 1.8 }
+                                    }
+                                    transform: Translate { y: (1 - ct.ap) * 14 }
+                                    opacity: Math.max(0, Math.min(1, ct.ap * 1.6))
+                                    scale: (dragging ? 1.04 : 1) * (0.86 + 0.14 * ct.ap)
                                     Behavior on x { enabled: !ct.dragging; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                                     Behavior on y { enabled: !ct.dragging; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
