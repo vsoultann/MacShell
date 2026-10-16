@@ -1818,24 +1818,19 @@ Scope {
                         // the cover's centre on this card (content starts 16 px in)
                         readonly property real cx: wd.shownSize === "l" ? width / 2 : 16 + (wd.shownSize === "s" ? 36 : 33)
                         readonly property real cy: 16 + (wd.shownSize === "l" ? 84 : (wd.shownSize === "s" ? 36 : 33))
-                        Item {
+                        ShaderEffect {
                             anchors.fill: parent
-                            layer.enabled: true
-                            layer.effect: MultiEffect { maskEnabled: true; maskSource: tintMask; maskThresholdMin: 0.5; maskSpreadAtMin: 1.0 }
-                            Rectangle { anchors.fill: parent; color: Qt.rgba(root.musicTintPrev.r, root.musicTintPrev.g, root.musicTintPrev.b, tintCard.alpha) }
-                            // the new colour: a soft-edged disc growing from the cover until it covers the card
-                            Rectangle {
-                                readonly property real reach: 2.3 * Math.sqrt(tintCard.width * tintCard.width + tintCard.height * tintCard.height)
-                                width: reach * root.musicSpread; height: width; radius: width / 2
-                                x: tintCard.cx - width / 2; y: tintCard.cy - height / 2
-                                visible: root.musicSpread < 1
-                                color: Qt.rgba(root.musicTint.r, root.musicTint.g, root.musicTint.b, tintCard.alpha)
-                                layer.enabled: visible
-                                layer.effect: MultiEffect { blurEnabled: true; blurMax: 64; blur: 1.0; autoPaddingEnabled: true }
-                            }
-                            Rectangle { anchors.fill: parent; visible: root.musicSpread >= 1; color: Qt.rgba(root.musicTint.r, root.musicTint.g, root.musicTint.b, tintCard.alpha) }
+                            fragmentShader: Qt.resolvedUrl("tintcard.frag.qsb")
+                            property vector2d itemSize: Qt.vector2d(width, height)
+                            property real radius: 22
+                            property vector2d center: Qt.vector2d(tintCard.cx, tintCard.cy)
+                            // reaches the farthest corner (plus the soft edge) when the spread is done
+                            property real spreadR: root.musicSpread * (Math.sqrt(width * width + height * height) + 2 * soft)
+                            property real soft: 70
+                            property color colOld: root.musicTintPrev
+                            property color colNew: root.musicTint
+                            property real alpha: tintCard.alpha
                         }
-                        Item { id: tintMask; anchors.fill: parent; visible: false; layer.enabled: true; Rectangle { anchors.fill: parent; radius: 22; color: "black" } }
                         Rectangle { anchors.fill: parent; radius: 22; color: "transparent"; border.width: 1; border.color: root.musicEdge }
                     }
 
