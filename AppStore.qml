@@ -231,7 +231,7 @@ Scope {
             readonly property color sep: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.09)
             readonly property color pill: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.07)
             readonly property color selRow: dark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(0, 0, 0, 0.09)
-            readonly property color getPill: dark ? Qt.rgba(1, 1, 1, 0.13) : "#E7E7EA"
+            readonly property color getPill: dark ? Qt.rgba(1, 1, 1, 0.095) : "#E8E8EB"
             readonly property color pillHover: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.12)
             readonly property color field: dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06)
             readonly property color border: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.2)
@@ -399,13 +399,35 @@ Scope {
                         ASGlyph { anchors.centerIn: parent; width: 14; height: 14; kind: "back"; color: pal.text }
                         MouseArea { id: backMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.goBack() }
                     }
-                    MorphText {
+                    Item {
                         x: 54; anchors.verticalCenter: parent.verticalCenter
-                        text: root.appId !== "" ? (root.details[root.appId] ? root.details[root.appId].name : " ")
-                            : (root.page === "discover" ? "Discover" : (root.page === "updates" ? "Updates"
-                            : (root.page === "search" ? "Results for “" + root.query + "”" : (root.page.indexOf("coll:") === 0 ? root.collName(root.page.substring(5)) : root.catName(root.page.substring(4))))))
-                        color: pal.text; font.family: root.fam; font.pixelSize: 15; font.weight: Font.DemiBold
-                        duration: 300
+                        width: parent.width - 80; height: 20
+                        readonly property bool searching: root.page === "search" && root.appId === ""
+                        // searching: "Results for" stays put and only the term blurs + morphs into the next one
+                        Row {
+                            visible: parent.searching
+                            spacing: 5
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Results for"
+                                color: pal.text2; font.family: root.fam; font.pixelSize: 15
+                            }
+                            MorphText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: root.query
+                                color: pal.text; font.family: root.fam; font.pixelSize: 15; font.weight: Font.DemiBold
+                                duration: 300
+                            }
+                        }
+                        MorphText {
+                            visible: !parent.searching
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: root.appId !== "" ? (root.details[root.appId] ? root.details[root.appId].name : " ")
+                                : (root.page === "discover" ? "Discover" : (root.page === "updates" ? "Updates"
+                                : (root.page.indexOf("coll:") === 0 ? root.collName(root.page.substring(5)) : root.catName(root.page.substring(4)))))
+                            color: pal.text; font.family: root.fam; font.pixelSize: 15; font.weight: Font.DemiBold
+                            duration: 300
+                        }
                     }
                 }
 
@@ -518,13 +540,13 @@ Scope {
                 Item {
                     width: parent.width; height: 56
                     Text { x: 24; anchors.verticalCenter: parent.verticalCenter; text: updCol.ups.length > 0 ? "Available Updates" : "All Up to Date"; color: pal.text; font.family: root.fam; font.pixelSize: 17; font.weight: Font.Bold }
-                    Rectangle {
+                    Text {
                         visible: updCol.ups.length > 1
                         anchors.right: parent.right; anchors.rightMargin: 24; anchors.verticalCenter: parent.verticalCenter
-                        width: 96; height: 28; radius: 14
-                        color: allMa.containsMouse ? Qt.darker(root.accent, 1.1) : root.accent
-                        Text { anchors.centerIn: parent; text: "Update All"; color: "white"; font.family: root.fam; font.pixelSize: 12; font.weight: Font.DemiBold }
-                        MouseArea { id: allMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                        text: "Update All"
+                        color: allMa.containsMouse ? Qt.lighter(root.accent, 1.2) : root.accent
+                        font.family: root.fam; font.pixelSize: 12
+                        MouseArea { id: allMa; anchors.fill: parent; anchors.margins: -8; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                                     onClicked: { var u = updCol.ups; for (var i = 0; i < u.length; i++) root.act(u[i], "update"); } }
                     }
                 }
@@ -702,7 +724,7 @@ Scope {
         readonly property bool hasUpdate: { root.tick; return root.updatable[appId] === true && isInstalled; }
         readonly property string working: { root.tick; return root.busy[appId] || ""; }
         readonly property string label: working !== "" ? "" : (hasUpdate ? "UPDATE" : (isInstalled ? "OPEN" : "GET"))
-        width: big ? 92 : 62; height: big ? 30 : 22
+        width: big ? 92 : 60; height: big ? 30 : 21
         Rectangle {
             anchors.fill: parent
             radius: height / 2
@@ -715,7 +737,7 @@ Scope {
                 anchors.centerIn: parent
                 text: gb.label
                 color: gb.onDark ? "white" : (gbMa.containsMouse ? "white" : root.accent)
-                font.family: root.fam; font.pixelSize: gb.big ? 13 : 11.5; font.weight: Font.Bold; font.letterSpacing: 0.4
+                font.family: root.fam; font.pixelSize: gb.big ? 13 : 11; font.weight: Font.DemiBold; font.letterSpacing: 0.2
             }
             // working: a spinner, like the App Store's progress ring
             Canvas {
