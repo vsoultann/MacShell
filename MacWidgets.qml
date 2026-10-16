@@ -1757,6 +1757,15 @@ Scope {
                     // each screen's layer shows only its own widgets (hidden delegates cost nothing); culled while
                     // a window is fullscreen on this screen — nobody can see them, so nothing is drawn (clock ticks, music…)
                     visible: root.screenOf(modelData) === win.sname && (root.editing || !win.covered)
+                    // coming back after a fullscreen window closes: enlarge + blur + fade in over 0.70 s
+                    property real reveal: 1
+                    Connections {
+                        target: win
+                        function onCoveredChanged() { if (!win.covered) { wd.reveal = 0; revealAnim.restart(); } }
+                    }
+                    NumberAnimation { id: revealAnim; target: wd; property: "reveal"; from: 0; to: 1; duration: 700; easing.type: Easing.OutQuint }
+                    layer.enabled: wd.reveal < 0.99
+                    layer.effect: MultiEffect { blurEnabled: true; blurMax: 40; blur: 1 - wd.reveal; autoPaddingEnabled: true }
                     // out of the picture for the instant the screen is captured (edit mode), then back with a fade
                     property real snapHide: win.snapping ? 0 : 1
                     Behavior on snapHide { enabled: !win.snapping; NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
@@ -1797,8 +1806,8 @@ Scope {
                     property real pop: 0
                     Component.onCompleted: pop = 1
                     Behavior on pop { NumberAnimation { duration: 450; easing.type: Easing.OutQuint } }
-                    opacity: pop * snapHide
-                    scale: (0.92 + 0.08 * pop) * (wDrag.active ? 1.06 : 1)
+                    opacity: pop * snapHide * Math.min(1, reveal * 1.6)
+                    scale: (0.92 + 0.08 * pop) * (wDrag.active ? 1.06 : 1) * (1.10 - 0.10 * reveal)
                     // light wiggle while dragged (iOS-style), eases back to straight when dropped
                     property real wob: 0
                     rotation: wob

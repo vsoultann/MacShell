@@ -5180,6 +5180,24 @@ Scope {
                     transformOrigin: Item.TopLeft
                     Behavior on opacity { NumberAnimation { duration: 90 } }
                     Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                    // moving from one menu to the next: the panel slides and reshapes while the items blur out and
+                    // the new ones come into focus — all at once, rather than snapping
+                    Behavior on x { enabled: ui.isMenu; NumberAnimation { duration: 320; easing.type: Easing.OutQuint } }
+                    Behavior on height { enabled: ui.isMenu; NumberAnimation { duration: 320; easing.type: Easing.OutQuint } }
+                    property string shownMenu: ""
+                    property real swapT: 1
+                    Connections {
+                        target: ui
+                        function onPopChanged() {
+                            if (!ui.isMenu) { menuPop.shownMenu = ""; menuPop.swapT = 1; return; }
+                            if (ui.pop === menuPop.shownMenu) return;
+                            var first = menuPop.shownMenu === "";
+                            menuPop.shownMenu = ui.pop;
+                            if (first) { menuPop.swapT = 1; return; }
+                            menuPop.swapT = 0; menuSwap.restart();
+                        }
+                    }
+                    NumberAnimation { id: menuSwap; target: menuPop; property: "swapT"; from: 0; to: 1; duration: 300; easing.type: Easing.OutCubic }
 
                     LGlass {
                         anchors.fill: parent
@@ -5202,6 +5220,10 @@ Scope {
                         id: menuCol
                         x: 6; y: 7
                         width: parent.width - 12
+                        opacity: Math.min(1, menuPop.swapT * 1.4)
+                        transform: Translate { x: (1 - menuPop.swapT) * 10 }
+                        layer.enabled: menuPop.swapT < 0.99
+                        layer.effect: MultiEffect { blurEnabled: true; blurMax: 24; blur: 1 - menuPop.swapT; autoPaddingEnabled: true }
                         Repeater {
                             model: ui.menuModel
                             delegate: Item {
