@@ -744,6 +744,10 @@ Scope {
                         source: Qt.resolvedUrl("assets/music-note.svg")
                         sourceSize: Qt.size(256, 256)
                         smooth: true; mipmap: true
+                        // blends into the glass: tinted to the widget's text colour, translucent
+                        opacity: 0.5
+                        layer.enabled: true
+                        layer.effect: MultiEffect { colorization: 1.0; colorizationColor: mus.fg; brightness: 0.75 }
                     }
                 }
                 MouseArea { id: artTap; anchors.fill: parent; enabled: !root.editing && mus.pl !== null; onClicked: { if (mus.pl && mus.pl.canRaise) mus.pl.raise(); } }
