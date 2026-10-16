@@ -32,6 +32,7 @@ ShellRoot {
         // the single settings window lives in MacDock.qml; everything else reaches it through here
         property var bar: macBar
         property var dock: macDock
+        property var widgets: macWidgets
         function openSettings(pane) { macDock.openPrefs(pane); }
 
         // set by MacBar / MacDock (Binding elements) when their glass needs live data
@@ -63,10 +64,10 @@ ShellRoot {
         // windowCapture = false (Dock Preferences, or  qs -c <config> ipc call glass captures false) switches the window previews off.
         readonly property bool windowCapture: macDock.windowCapture      // Dock Preferences -> "Live window capture" (saved in macdock/settings.json)
         property bool churn: false
-        readonly property bool captureHold: churn || !windowCapture
+        readonly property bool captureHold: churn || !windowCapture || macBar.gaming
         // Liquid Glass: only stage 1, and only while windows open / close. Live capture pauses (the glass keeps its last frame, the capture
         // source stays attached, so nothing goes blank), then resumes. Not tied to the previews switch, never cut.
-        readonly property bool glassHold: churn
+        readonly property bool glassHold: churn || macBar.gaming
         property bool captureCut: false
         onCaptureHoldChanged: { if (captureHold) cutDelay.restart(); else { cutDelay.stop(); captureCut = false; } }
         Timer { id: cutDelay; interval: 500; onTriggered: sharedHub.captureCut = true }
@@ -173,7 +174,8 @@ ShellRoot {
             glassClients = cl;
         }
         Timer {
-            interval: sharedHub.geoHot ? 16 : 100
+            // fast (60 Hz) for 1.5 s after any window event, otherwise a relaxed 2.5 Hz check (idle CPU)
+            interval: sharedHub.geoHot ? 16 : 400
             repeat: true
             running: (sharedHub.barWantsGeo || sharedHub.dockWantsGeo) && !sharedHub.ipcBroken
             triggeredOnStart: true
@@ -224,7 +226,7 @@ ShellRoot {
         }
 
         Timer {
-            interval: 4000
+            interval: 15000
             repeat: true
             running: sharedHub.barWantsWallpaper || sharedHub.dockWantsWallpaper
             onTriggered: sharedHub.refreshWallpaper()
@@ -233,12 +235,28 @@ ShellRoot {
 
     MacBar { id: macBar; hub: sharedHub }
     MacDock { id: macDock; hub: sharedHub }
+    MacWidgets { id: macWidgets; hub: sharedHub }
 
     // reopen settings even when both the Dock and the Menu Bar are disabled:
     //   qs -c macbar ipc call settings open
     IpcHandler {
         target: "settings"
         function open(): void { macDock.openPrefs("general"); }
+        // qs -c MacShell ipc call settings pane wallpaper   (general, dock, menubar, appearance, wallpaper, behavior, apps, about)
+        function pane(id: string): void { macDock.openPrefs(id); }
+    }
+    IpcHandler {
+        target: "notifications"
+        function open(): void { macBar.notifPopRequest(true); }
+        function close(): void { macBar.notifPopRequest(false); }
+        function clear(): void { macBar.notifClearAnimated(); }
+    }
+    // qs -c MacShell ipc call gaming toggle | on | off
+    IpcHandler {
+        target: "gaming"
+        function toggle(): void { macBar.gamingMode = !macBar.gaming; }
+        function on(): void { macBar.gamingMode = true; }
+        function off(): void { macBar.gamingMode = false; macBar.gamingAutoActive = false; }
     }
     // qs -c <config> ipc call glass captures false   (true to switch window previews back on)
     IpcHandler {

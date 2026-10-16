@@ -1,0 +1,1 @@
+-- Your own variables overrides for the MacShell session (kept across updates)

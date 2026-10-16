@@ -1,3 +1,62 @@
+# MacShell — Tahoe edition
+
+A macOS 26/27-style desktop for **Hyprland**, built on **Quickshell**: Liquid Glass menu bar, Dock, Control Center,
+Spotlight, desktop widgets, notifications and a full lock screen. This is a fork of
+[0-ss/Macshell](https://github.com/0-ss/Macshell) with a lot added on top (see below). The original README follows.
+
+## Install
+
+```sh
+git clone -b tahoe https://github.com/vsoultann/MacShell.git
+cd MacShell
+./install.sh            # interactive
+./install.sh --all -y   # everything, no questions
+```
+
+| Option | What it does |
+|---|---|
+| `--deps` | Installs dependencies (Arch-based: pacman, plus paru/yay for AUR packages) |
+| `--shell` | Installs / updates the shell (`~/.config/quickshell/MacShell`, `MacLock`, `~/.config/hypr-macshell`) |
+| `--session` | Adds **"Hyprland (MacShell)"** to your login screen as a separate session — your own Hyprland config is untouched (sudo) |
+| `--existing` | Starts MacShell from your *current* Hyprland config instead (Lua or hyprlang) |
+| `--icons` | Installs the [MacTahoe](https://github.com/vinceliuice/MacTahoe-icon-theme) icon theme |
+| `--fonts` | Installs Inter + Roboto Flex |
+| `--apply` | Sets the icons + font for GTK, Qt and KDE apps |
+| `--wallpapers` | Downloads the macOS 27 Golden Gate light & dark wallpapers |
+| `--sounds` | Generates the UI sound effects |
+| `--uninstall` | Removes the shell (keeps your settings) |
+
+Settings live in the shell itself: Apple menu → **System Settings…** (Install dependencies and Reset MacShell are in About / General).
+
+## What's new in this edition
+
+- **Lock screen (MacLock)** — glass clock that stretches like iOS 26's, Now Playing with album-tinted bubble, shuffle / repeat,
+  in-bubble or side-by-side synced lyrics, enlarge-the-cover artwork mode with blurred album background, Caps Lock
+  indicator, drag the bubble between spots, PAM unlock, animated wallpapers.
+- **System Settings** rebuilt like macOS: Wi-Fi (with Ethernet), Bluetooth, Network, Battery & Energy Mode, Control Center,
+  Desktop & Dock, Displays & Night Shift, Notifications, Sound (devices + input), Focus, Lock Screen, Users & Groups,
+  Keyboard, Mouse, Trackpad, Wallpaper (with light/dark/dynamic Golden Gate), Reset, Install dependencies.
+- **Desktop widgets** — Clock, World Clock, Calendar, Weather (macOS large layout), Batteries, Music, Notes, Photos,
+  Reminders, Stocks; Liquid Glass / Frosted / Tinted / Opaque, drag, resize with motion-morph, glass that follows a live wallpaper.
+- **Animated wallpapers** that are cheap: an optimized 30 fps copy decoded on the iGPU, one player per monitor, paused
+  automatically while windows cover the desktop or the screen is locked.
+- **Notifications** — Liquid Glass banners that morph into the Notification Center, disintegrate on Clear All, sounds only for
+  system notifications.
+- Spotlight hover glow + smooth fade, blur + morph text transitions everywhere, auto contrast (dark text on bright backgrounds),
+  Game Mode, UI sounds, drag Dock icons / window previews / clipboard items onto the desktop to open them,
+  state that survives a crash (Do Not Disturb, Night Shift, …), ~4 % idle CPU.
+
+## Credits
+
+- [0-ss/Macshell](https://github.com/0-ss/Macshell) — the original MacShell (menu bar, Dock, Liquid Glass shader). All credit for the base goes there.
+- The session config started from [end-4/dots-hyprland](https://github.com/end-4/dots-hyprland) (GPL-3.0).
+- [MacTahoe icon theme](https://github.com/vinceliuice/MacTahoe-icon-theme) by vinceliuice (GPL-3.0) — `assets/music-app.svg` comes from it.
+- [Roboto Flex](https://github.com/googlefonts/roboto-flex) (OFL) and [Inter](https://rsms.me/inter/) (OFL), downloaded by the installer.
+- Lyrics: [LRCLIB](https://lrclib.net) and NetEase Cloud Music. Weather: [Open-Meteo](https://open-meteo.com).
+- Apple's wallpapers belong to Apple and are not included — `--wallpapers` downloads them.
+
+---
+
 # MacShell
 
 A macOS Tahoe–style **menu bar + Dock** for Hyprland, built on [Quickshell](https://quickshell.org), with a real-time
