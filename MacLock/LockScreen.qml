@@ -549,14 +549,10 @@ Item {
     Behavior on artT { NumberAnimation { id: artAnim; duration: 650; easing.type: Easing.OutQuint } }
     property real lyrT: lyricsMode ? 1 : 0
     Behavior on lyrT { NumberAnimation { id: lyrAnim; duration: 650; easing.type: Easing.OutQuint } }
-    readonly property bool npAnimating: artAnim.running || lyrAnim.running || sideAnim.running || blAnim.running
+    readonly property bool npAnimating: artAnim.running || lyrAnim.running || sideAnim.running
     function clamp01(v) { return Math.max(0, Math.min(1, v)); }
     // how much the clock gives way (follows the cover / lyrics ease-out)
-    readonly property real squash: artT
-    // lyrics shown inside the bubble (lyrics button without the big cover)
-    readonly property bool bubLyrics: lyricsMode && !sideMode
-    property real blT: bubLyrics ? 1 : 0
-    Behavior on blT { NumberAnimation { id: blAnim; duration: 650; easing.type: Easing.OutQuint } }
+    readonly property real squash: Math.max(artT, lyrT)
     // iOS 26 stretched clock, done the way Apple does it: with the FONT, not by stretching pixels. Roboto Flex has a
     // figure-height axis (YTFI) plus width and weight, so the digits get taller/condensed with even strokes.
     //   room to spare → tall, condensed digits;  artwork / lyrics open → regular-width, shorter, smaller digits
@@ -586,36 +582,12 @@ Item {
     // vertical room above the bubble: the cover, the lyrics, or (side by side) the taller of the two
     // lyrics go UNDER the bubble when it sits in the top spot (the bubble stays put), above it in the bottom spot
     readonly property bool lyricsBelow: ls.st.mediaSlot !== "bottom"
-    readonly property real panelRoom: Math.max(0, artT) * (media.width + 24 * ls.u)
+    readonly property real panelRoom: Math.max(Math.max(0, artT) * (media.width + 24 * ls.u), lyricsBelow ? 0 : Math.max(0, lyrT) * (1 - sideT) * (lyricsH + 24 * ls.u))
     readonly property int springMs: 650
     // how far the dragged bubble is pressed past its top / bottom spot (px), 0 when not dragging
     readonly property real pressTop: media.dragging ? Math.max(0, media.slotTop - (media.base + media.dragOff)) : 0
     readonly property real pressBottom: media.dragging ? Math.max(0, (media.base + media.dragOff) - media.slotBottom) : 0
     function squishK(px) { return Math.min(1, px / (70 * u)); }
-
-    // average colour of the cover → bubble tint + border
-    property color artTint: Qt.rgba(0.16, 0.16, 0.18, 1)
-    property color artEdge: Qt.rgba(1, 1, 1, 0.22)
-    Behavior on artTint { ColorAnimation { duration: 650; easing.type: Easing.OutQuint } }
-    Behavior on artEdge { ColorAnimation { duration: 650; easing.type: Easing.OutQuint } }
-    readonly property string artUrl: media.pl && media.pl.trackArtUrl ? media.pl.trackArtUrl : ""
-    onArtUrlChanged: if (artUrl !== "" && isPrimary) { tintProc.running = false; tintProc.command = ["sh", "-c",
-        'u="$1"; f=$(mktemp); case "$u" in file://*) cp "${u#file://}" "$f";; http*) curl -s --max-time 5 -o "$f" "$u";; *) exit 1;; esac; '
-        + 'magick "$f" -resize 24x24\\! -resize 1x1\\! -format "%[fx:r] %[fx:g] %[fx:b]" info: 2>/dev/null; rm -f "$f"', "sh", artUrl]; tintProc.running = true; }
-    Process {
-        id: tintProc
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var v = text.trim().split(/\s+/).map(parseFloat);
-                if (v.length < 3 || isNaN(v[0])) return;
-                var c = Qt.rgba(v[0], v[1], v[2], 1);
-                // keep the hue, calm the saturation, sit it dark enough for white text
-                var h = c.hslHue < 0 ? 0 : c.hslHue, sat = Math.min(0.55, c.hslSaturation * 0.85);
-                ls.artTint = Qt.hsla(h, sat, 0.27, 1);
-                ls.artEdge = Qt.hsla(h, Math.min(0.6, sat + 0.1), 0.62, 0.38);
-            }
-        }
-    }
 
     Item {
         id: media
@@ -698,14 +670,6 @@ Item {
             src: glassTex; frame: ls
             cornerR: 28 * ls.u; thickness: 26; tint: 0.48; shadowAmt: 0.55
         }
-        // album-tinted pane with a subtle, slightly brighter edge (stands out from the wallpaper like Apple's)
-        Rectangle {
-            anchors.fill: parent
-            radius: 28 * ls.u
-            color: Qt.rgba(ls.artTint.r, ls.artTint.g, ls.artTint.b, 0.80)
-            border.width: 1
-            border.color: ls.artEdge
-        }
         HoverHandler { id: mediaHover }
         Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
@@ -722,11 +686,8 @@ Item {
             // the cover leaves the glass bubble: it is drawn on the screen itself, above the bubble
             parent: ls
             z: media.z + 1
-            visible: media.visible && opacity > 0.01
-            opacity: media.opacity * (1 - ls.blT * (1 - ls.clamp01(ls.artT)))
-            scale: 1 - 0.08 * ls.blT * (1 - ls.clamp01(ls.artT))
-            layer.enabled: ls.blT > 0.01 && ls.blT < 0.99
-            layer.effect: MultiEffect { blurEnabled: true; blurMax: 32; blur: ls.blT }
+            visible: media.visible
+            opacity: media.opacity
             readonly property real r: (11 * ls.u) + ((28 * ls.u) - (11 * ls.u)) * ls.artT
             x: (media.x + 16 * ls.u) + ((media.x) - (media.x + 16 * ls.u)) * ls.artT
             y: (media.y + 16 * ls.u) + ((media.y - media.bigArt - 24 * ls.u) - (media.y + 16 * ls.u)) * ls.artT
@@ -783,21 +744,17 @@ Item {
             id: txtCol
             x: (87 * ls.u) + ((18 * ls.u) - (87 * ls.u)) * ls.artT
             y: (16 * ls.u + (58 * ls.u - height) / 2) + ((16 * ls.u) - (16 * ls.u + (58 * ls.u - height) / 2)) * ls.artT
-            width: media.width - x - 18 * ls.u - (40 * ls.u) * (1 - ls.artT)
+            width: media.width - x - 18 * ls.u
             spacing: 2 * ls.u
-            opacity: 1 - ls.blT
-            visible: opacity > 0.01
-            layer.enabled: ls.blT > 0.01 && ls.blT < 0.99
-            layer.effect: MultiEffect { blurEnabled: true; blurMax: 32; blur: ls.blT }
             MorphText {
                 width: parent.width; elide: Text.ElideRight
                 text: media.pl ? (media.pl.trackTitle || "") : ""
                 horizontalAlignment: media.expanded ? Text.AlignHCenter : Text.AlignLeft
-                color: "white"; font.family: ls.fam; font.pixelSize: 17 * ls.u; font.weight: Font.DemiBold; animateWidth: false
+                color: "white"; font.family: ls.fam; font.pixelSize: 15 * ls.u; font.weight: Font.DemiBold; animateWidth: false
             }
             MorphText {
                 width: parent.width; elide: Text.ElideRight
-                text: media.pl ? ((media.pl.trackArtist || media.pl.identity || "") + (media.pl.trackAlbum ? " \u2014 " + media.pl.trackAlbum : "")) : ""
+                text: media.pl ? (media.pl.trackArtist || media.pl.identity || "") : ""
                 horizontalAlignment: media.expanded ? Text.AlignHCenter : Text.AlignLeft
                 color: Qt.rgba(1, 1, 1, 0.66); font.family: ls.fam; font.pixelSize: 13 * ls.u; animateWidth: false
             }
@@ -869,9 +826,9 @@ Item {
         // lyrics button (Apple's quote bubble), right of the controls
         Item {
             id: lyrBtn
-            x: media.width - 12 * ls.u - width
-            y: 10 * ls.u
-            width: 32 * ls.u; height: 32 * ls.u
+            x: media.width - 16 * ls.u - width
+            y: scrub.y + scrub.height + 6 * ls.u
+            width: 32 * ls.u; height: 34 * ls.u
             readonly property bool active: ls.st.npMode === "lyrics" || ls.st.npMode === "artlyrics"
             opacity: ls.lyrStatus === "none" || ls.lyrStatus === "instrumental" ? 0.4 : 1
             Rectangle {
@@ -918,99 +875,11 @@ Item {
             }
         }
 
-        // shuffle (left) and repeat (right), like Apple Music
-        Repeater {
-            model: ["shuffle", "repeat"]
-            delegate: Item {
-                id: sr
-                required property string modelData
-                readonly property bool isShuffle: modelData === "shuffle"
-                readonly property bool supported: media.pl !== null && (isShuffle ? media.pl.shuffleSupported : media.pl.loopSupported)
-                readonly property bool on: media.pl !== null && (isShuffle ? media.pl.shuffle : media.pl.loopState !== MprisLoopState.None)
-                x: isShuffle ? 18 * ls.u : media.width - 18 * ls.u - width
-                y: scrub.y + scrub.height + 6 * ls.u
-                width: 30 * ls.u; height: 34 * ls.u
-                opacity: supported ? (on ? 1 : 0.55) : 0.25
-                Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
-                MorphGlyph {
-                    anchors.centerIn: parent
-                    width: 17 * ls.u; height: width
-                    kind: sr.isShuffle ? "shuffle" : (media.pl && media.pl.loopState === MprisLoopState.Track ? "repeat1" : "repeat")
-                    color: sr.on ? Qt.lighter(ls.artEdge, 1.3) : "white"
-                    scale: srMa.pressed ? 0.82 : 1
-                    Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutQuint } }
-                }
-                MouseArea {
-                    id: srMa
-                    anchors.fill: parent; anchors.margins: -4
-                    enabled: sr.supported
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        if (sr.isShuffle) media.pl.shuffle = !media.pl.shuffle;
-                        else media.pl.loopState = media.pl.loopState === MprisLoopState.None ? MprisLoopState.Playlist
-                                                 : (media.pl.loopState === MprisLoopState.Playlist ? MprisLoopState.Track : MprisLoopState.None);
-                        ls.st.poke();
-                    }
-                }
-            }
-        }
-
-        // in-bubble lyrics (reference: Apple Music mini player): the current line big, the next one faded, feathered edges
-        Item {
-            id: bubLyr
-            x: 18 * ls.u; y: 12 * ls.u
-            width: media.width - 36 * ls.u - 40 * ls.u
-            height: scrub.y - 16 * ls.u
-            opacity: ls.blT
-            visible: opacity > 0.01
-            scale: 0.96 + 0.04 * ls.blT
-            transformOrigin: Item.Left
-            clip: true
-            layer.enabled: true
-            layer.effect: ShaderEffect {
-                fragmentShader: Qt.resolvedUrl("fade.frag.qsb")
-                property real fadeTop: 0.18
-                property real fadeBottom: 0.38
-            }
-            readonly property real target: { var it = ls.lyrCur >= 0 ? bubRep.itemAt(ls.lyrCur) : null; return it ? it.y - 6 * ls.u : 0; }
-            Column {
-                width: parent.width
-                spacing: 6 * ls.u
-                Repeater {
-                    id: bubRep
-                    model: ls.bubLyrics || ls.blT > 0.01 ? ls.lyrLines : []
-                    delegate: Text {
-                        id: bl
-                        required property var modelData
-                        required property int index
-                        readonly property bool cur: index === ls.lyrCur
-                        width: parent.width
-                        text: modelData.text === "" ? "\u2022 \u2022 \u2022" : modelData.text
-                        wrapMode: Text.WordWrap
-                        color: "white"
-                        font.family: ls.fam; font.pixelSize: 19 * ls.u; font.weight: Font.Bold
-                        opacity: ls.lyrStatus !== "synced" ? 0.9 : (cur ? 1 : 0.32)
-                        Behavior on opacity { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
-                        transform: Translate {
-                            y: -bubLyr.target
-                            Behavior on y { NumberAnimation { duration: 520 + Math.min(4, Math.max(0, bl.index - ls.lyrCur)) * 30; easing.type: Easing.OutQuint } }
-                        }
-                    }
-                }
-            }
-            MorphText {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: ls.lyrStatus !== "synced" && ls.lyrStatus !== "plain"
-                text: ls.lyrStatus === "loading" ? "Loading lyrics\u2026" : (ls.lyrStatus === "instrumental" ? "Instrumental" : "No lyrics for this song")
-                color: Qt.rgba(1, 1, 1, 0.6); font.family: ls.fam; font.pixelSize: 15 * ls.u; font.weight: Font.DemiBold
-            }
-        }
-
         // transport controls
         Row {
             anchors.horizontalCenter: parent.horizontalCenter
             y: scrub.y + scrub.height + 6 * ls.u
-            spacing: 30 * ls.u
+            spacing: 26 * ls.u
             Repeater {
                 model: ["prev", "play", "next"]
                 delegate: Item {
@@ -1158,7 +1027,7 @@ Item {
 
     Item {
         id: lyr
-        visible: ls.lyrT > 0.01 && ls.sideT > 0.01 && media.visible
+        visible: ls.lyrT > 0.01 && media.visible
         // lines past the feathered edges are cut off for real: not drawn and not clickable (they used to sit invisibly
         // over the media controls and swallow clicks)
         clip: true
@@ -1175,7 +1044,7 @@ Item {
         height: soloH + (hSide - soloH) * ls.sideT
         x: (ls.width - wTop) / 2 + ((media.x + media.width + ls.sideGap) - (ls.width - wTop) / 2) * ls.sideT
         y: soloY + (sideY - soloY) * ls.sideT
-        opacity: ls.clamp01(ls.lyrT) * ls.clamp01(ls.sideT) * media.opacity
+        opacity: ls.clamp01(ls.lyrT) * media.opacity
         scale: 0.94 + 0.06 * ls.lyrT
         transformOrigin: ls.sideMode ? Item.Left : (ls.lyricsBelow ? Item.Top : Item.Bottom)
 

@@ -292,6 +292,140 @@ Scope {
         return best;
     }
 
+    // ── Music widget: album tint (the cover's average colour, darker and calmer — close to the art, not the same) ──
+    readonly property bool wantsMusic: widgets.some(function (w) { return w.type === "music"; })
+    readonly property string musicArt: player && player.trackArtUrl ? player.trackArtUrl : ""
+    property color musicTint: Qt.rgba(0.16, 0.16, 0.18, 1)
+    property color musicEdge: Qt.rgba(1, 1, 1, 0.22)
+    property bool musicTintOk: false
+    readonly property bool musicTintOn: musicArt !== "" && musicTintOk
+    Behavior on musicTint { ColorAnimation { duration: 650; easing.type: Easing.OutQuint } }
+    Behavior on musicEdge { ColorAnimation { duration: 650; easing.type: Easing.OutQuint } }
+    onMusicArtChanged: musicTintLater.restart()
+    onWantsMusicChanged: musicTintLater.restart()
+    Timer { id: musicTintLater; interval: 120; onTriggered: root.musicTintRun() }
+    function musicTintRun() {
+        if (musicArt === "" || !wantsMusic) { musicTintOk = false; return; }
+        mTintProc.running = false;
+        mTintProc.command = ["sh", "-c",
+            'u="$1"; f=$(mktemp); case "$u" in file://*) cp "${u#file://}" "$f";; http*) curl -s --max-time 5 -o "$f" "$u";; *) exit 1;; esac; '
+            + 'magick "$f" -resize 24x24\\! -resize 1x1\\! -format "%[fx:r] %[fx:g] %[fx:b]" info: 2>/dev/null; rm -f "$f"', "sh", musicArt];
+        mTintProc.running = true;
+    }
+    Process {
+        id: mTintProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var v = text.trim().split(/\s+/).map(parseFloat);
+                if (v.length < 3 || isNaN(v[0])) return;
+                var c = Qt.rgba(v[0], v[1], v[2], 1);
+                var h = c.hslHue < 0 ? 0 : c.hslHue, sat = Math.min(0.55, c.hslSaturation * 0.85);
+                root.musicTint = Qt.hsla(h, sat, 0.27, 1);
+                root.musicEdge = Qt.hsla(h, Math.min(0.6, sat + 0.1), 0.62, 0.38);
+                root.musicTintOk = true;
+            }
+        }
+    }
+
+    // ── Music widget: synced lyrics (same sources + cache as the lock screen), fetched only while a widget shows them ──
+    property bool musicLyrics: false          // the lyrics button (shared by every Music widget)
+    property var mLyrLines: []
+    property string mLyrStatus: "idle"
+    property int mLyrTries: 0
+    readonly property string mTrackKey: player ? (player.trackArtist || "") + "\u0001" + (player.trackTitle || "") : ""
+    onMTrackKeyChanged: { mLyrLines = []; mLyrStatus = "idle"; if (musicLyrics) mLyrDelay.restart(); }
+    onMusicLyricsChanged: if (musicLyrics && (mLyrStatus === "idle" || mLyrStatus === "offline")) mLyrDelay.restart()
+    Timer { id: mLyrDelay; interval: 300; onTriggered: { root.mLyrTries = 0; root.mFetchLyrics(); } }
+    Timer { id: mLyrRetry; interval: 12000; onTriggered: root.mFetchLyrics() }
+    function mFetchLyrics() {
+        if (!player || !(player.trackTitle || "")) { mLyrLines = []; mLyrStatus = "idle"; return; }
+        mLyrLines = []; mLyrStatus = "loading";
+        var len = player.lengthSupported ? Math.round(player.length) : 0;
+        mLyrProc.running = false;
+        mLyrProc.command = ["sh", "-c", root.mLyrScript, "sh", player.trackArtist || "", player.trackTitle || "", player.trackAlbum || "", len > 0 ? String(len) : ""];
+        mLyrProc.running = true;
+    }
+    readonly property string mLyrScript: [
+        'a="$1"; t="$2"; al="$3"; d="${4:-0}"; c="$HOME/.cache/maclock/lyrics"; mkdir -p "$c"',
+        'k=$(printf "%s|%s" "$a" "$t" | md5sum | cut -c1-16); f="$c/$k.json"',
+        '[ -s "$f" ] && { cat "$f"; exit 0; }',
+        'tmp=$(mktemp); answered=0; r=""',
+        // titles like "Song (feat. X)" / "Song - Remastered 2011": also try the bare title
+        'bare=$(printf "%s" "$t" | sed -E "s/ *[(\\[][^)\\]]*[)\\]]//g; s/ +- +(.*[Rr]emaster.*|[Ll]ive.*|[Rr]adio [Ee]dit.*)$//")',
+        // ── 1. NetEase Cloud Music: fast, not rate-limited. Same title + same length (±4 s) or it doesn't count.
+        'ne() { code=$(curl -s --max-time 6 -A "Mozilla/5.0" -o "$tmp" -w "%{http_code}" -G "https://music.163.com/api/search/get" --data-urlencode "s=$1" -d type=1 -d limit=10); [ "$code" = 200 ] || return 1; answered=1',
+        '  id=$(jq -r --arg t "$bare" --argjson d "$d" \'def n: ascii_downcase | gsub("[^\\\\p{L}\\\\p{N}]"; ""); ($t | n) as $q | [.result.songs[]? | select((.name | n) as $nm | ($nm == $q) or ($nm | startswith($q)) or ($q | startswith($nm))) | select($d == 0 or (((.duration / 1000) - $d) | fabs) <= 4)][0].id // empty\' "$tmp")',
+        '  [ -n "$id" ] || return 1',
+        '  curl -s --max-time 6 -A "Mozilla/5.0" -o "$tmp" "https://music.163.com/api/song/lyric?id=$id&lv=1" || return 1',
+        '  l=$(jq -r ".lrc.lyric // empty" "$tmp"); case "$l" in *"[0"*|*"[1"*) ;; *) return 1;; esac',
+        '  r=$(jq -nc --arg l "$l" "{syncedLyrics: \\$l}"); }',
+        'ne "$a $bare" || ne "$bare"',
+        // ── 2. LRCLIB (rate-limited per second: wait and retry briefly), length-checked too
+        'ua="MacLock/1.0 (https://github.com/0-ss/Macshell)"; api=https://lrclib.net/api',
+        'req() { n=0; while [ $n -lt 2 ]; do code=$(curl -s --max-time 8 -A "$ua" -o "$tmp" -w "%{http_code}" -G "$@"); case "$code" in 200) answered=1; return 0;; 404) answered=1; return 1;; 429) n=$((n+1)); sleep 1.5;; *) return 1;; esac; done; return 1; }',
+        'pick=\'[.[] | select(.syncedLyrics != null or .plainLyrics != null) | select($d == 0 or (((.duration // 0) - $d) | fabs) <= 4)] | ([.[] | select(.syncedLyrics != null)][0] // .[0]) // empty\'',
+        'lsearch() { req "$api/search" "$@" && r=$(jq -c --argjson d "$d" "$pick" "$tmp"); }',
+        '[ -z "$r" ] && lsearch --data-urlencode "track_name=$t" --data-urlencode "artist_name=$a"',
+        '[ -z "$r" ] && [ "$bare" != "$t" ] && lsearch --data-urlencode "track_name=$bare" --data-urlencode "artist_name=$a"',
+        '[ -z "$r" ] && lsearch --data-urlencode "q=$a $bare"',
+        'rm -f "$tmp"',
+        'if [ -n "$r" ]; then printf "%s" "$r" | jq -c "{synced: .syncedLyrics, plain: .plainLyrics, instrumental: .instrumental}" | tee "$f"',
+        // a source really answered and nobody has it: remember; otherwise (offline / still limited) let the UI retry
+        'elif [ "$answered" = 1 ]; then echo "{}" | tee "$f"',
+        'else echo "{\\"retry\\":true}"; fi'
+    ].join("\n")
+    Process {
+        id: mLyrProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var o = {};
+                try { o = JSON.parse(text || "{}"); } catch (e) { o = {}; }
+                var out = [], i, m;
+                if (o.synced) {
+                    var ls2 = o.synced.split("\n");
+                    for (i = 0; i < ls2.length; i++) {
+                        var line = ls2[i], tags = [], re = /\[(\d+):(\d+(?:\.\d+)?)\]/g;
+                        while ((m = re.exec(line)) !== null) tags.push(parseInt(m[1]) * 60 + parseFloat(m[2]));
+                        var txt = line.replace(/\[[^\]]*\]/g, "").trim();
+                        if (/^(制作人|作词|作曲|编曲|混音|母带|制作|和声|吉他|贝斯|鼓|录音|监制|出品|发行|OP|SP|Producer|Lyricist|Composer|Lyrics|Composed|Written)\s*[:：]/i.test(txt)) continue;
+                        for (var j = 0; j < tags.length; j++) out.push({ t: tags[j], text: txt });
+                    }
+                    out.sort(function (a, b) { return a.t - b.t; });
+                    root.mLyrLines = out; root.mLyrStatus = out.length > 0 ? "synced" : "none";
+                } else if (o.plain) {
+                    var pl = o.plain.split("\n");
+                    for (i = 0; i < pl.length; i++) out.push({ t: -1, text: pl[i].trim() });
+                    root.mLyrLines = out; root.mLyrStatus = "plain";
+                } else if (o.retry) {
+                    // rate-limited / offline: try again shortly (a few times)
+                    if (root.mLyrTries < 4) { root.mLyrTries++; root.mLyrStatus = "loading"; mLyrRetry.restart(); }
+                    else { root.mLyrLines = []; root.mLyrStatus = "offline"; }
+                } else if (o.instrumental) {
+                    root.mLyrLines = []; root.mLyrStatus = "instrumental";
+                } else {
+                    root.mLyrLines = []; root.mLyrStatus = "none";
+                }
+            }
+        }
+    }
+    // smooth playback position for the lyrics (MPRIS is polled twice a second)
+    property real mPosBase: 0
+    property real mPosAt: 0
+    property bool mPosPlaying: false
+    property real mEstPos: 0
+    Timer {
+        interval: 500; repeat: true; triggeredOnStart: true
+        running: root.wantsMusic && root.player !== null && !root.gaming
+        onTriggered: { if (root.player && root.player.positionSupported) { root.player.positionChanged(); root.mPosBase = root.player.position; root.mPosAt = Date.now(); root.mPosPlaying = root.player.isPlaying; } }
+    }
+    Timer { interval: 50; repeat: true; running: root.musicLyrics && root.wantsMusic && !root.gaming; onTriggered: root.mEstPos = root.mPosBase + (root.mPosPlaying ? (Date.now() - root.mPosAt) / 1000 : 0) }
+    readonly property int mLyrCur: {
+        if (mLyrStatus !== "synced") return -1;
+        var p = mEstPos + 0.25, c = -1;
+        for (var i = 0; i < mLyrLines.length; i++) { if (mLyrLines[i].t <= p) c = i; else break; }
+        return c;
+    }
+
     // batteries: this Mac + anything UPower knows about (headsets, mice, keyboards…)
     readonly property var batteries: {
         var out = [], ds = UPower.devices.values;
@@ -671,158 +805,305 @@ Scope {
         Item {
             id: mus
             readonly property var ctx: parent ? parent.ctx : null
-            readonly property bool med: ctx && ctx.size !== "s"
-            readonly property bool big: ctx && ctx.size === "l"
+            readonly property string sz: ctx ? ctx.size : "m"
+            readonly property bool big: sz === "l"
             readonly property var pl: root.player
-            readonly property color fg: ctx ? ctx.fg : "white"
-            readonly property color fg2: ctx ? ctx.fg2 : "white"
+            // on the album-tinted card the text is always white, like Apple's
+            readonly property bool tinted: root.musicTintOn
+            readonly property color fg: tinted ? "white" : (ctx ? ctx.fg : "white")
+            readonly property color fg2: tinted ? Qt.rgba(1, 1, 1, 0.66) : (ctx ? ctx.fg2 : "white")
+            readonly property int morphMs: 460
+            readonly property bool lyr: root.musicLyrics && sz !== "s" && pl !== null
+            property real lyrT: lyr ? 1 : 0
+            Behavior on lyrT { NumberAnimation { duration: 560; easing.type: Easing.OutQuint } }
 
-            // ── cover with the "burning paper" hand-over (burn.frag): two picture slots, the new one shows through
-            //    ragged spreading holes in the old one ──
+            // ── layout (content area: S 138×138, M 324×138, L 324×324); everything glides between sizes / modes ──
+            readonly property real artW: sz === "s" ? 66 : (sz === "m" ? 56 : (lyr ? 64 : 176))
+            readonly property real artX: sz === "l" && !lyr ? (324 - 176) / 2 : 0
+            readonly property real artR: artW > 120 ? 16 : 11
+
+            // ── cover with a real hand-over: the old art blurs, shrinks and fades while the new one comes into focus ──
             readonly property string url: pl && pl.trackArtUrl ? pl.trackArtUrl : ""
-            property int curIdx: 0          // slot showing the current cover
-            property real prog: 1
-            property real seed: 0
-            property bool pending: false
+            property int front: 0            // slot showing the current cover
+            property string pendingUrl: ""
+            property real xf: 1              // 0 → 1 during a hand-over
             onUrlChanged: {
-                var target = 1 - curIdx;
-                (target === 0 ? imgA : imgB).source = url;
-                pending = true;
+                if (url === "" || !slotA || !slotB) return;
+                var back = front === 0 ? slotB : slotA;
+                if (back.src === url && xf >= 1) return;
+                pendingUrl = url;
+                back.src = url;
+                xfWait.restart();
                 tryStart();
             }
-            Component.onCompleted: { imgA.source = url; }
             function tryStart() {
-                if (!pending) return;
-                var t = (curIdx === 0 ? imgB : imgA);
-                if (t.status === Image.Loading) return;      // wait for it
-                pending = false;
-                curIdx = 1 - curIdx;
-                seed = Math.random();
-                burnAnim.restart();
+                if (pendingUrl === "" || !slotA || !slotB) return;
+                var back = front === 0 ? slotB : slotA;
+                if (back.status === Image.Loading && xfWait.running) return;
+                pendingUrl = "";
+                xfWait.stop();
+                front = 1 - front;
+                xfAnim.restart();
             }
-            NumberAnimation { id: burnAnim; target: mus; property: "prog"; from: 0; to: 1; duration: 900; easing.type: Easing.OutCubic }
+            Timer { id: xfWait; interval: 1500; onTriggered: mus.tryStart() }   // never wait forever for a slow cover
+            NumberAnimation { id: xfAnim; target: mus; property: "xf"; from: 0; to: 1; duration: 700; easing.type: Easing.OutQuint }
 
-            // layout targets per size (content area: S 138×138, M 324×138, L 324×324); every element glides to its
-            // new spot / size in step with the card (same 420 ms ease-out), so resizing is one continuous morph
-            readonly property string sz: ctx ? ctx.size : "m"
-            readonly property int morphMs: 420
-            readonly property real artW: sz === "l" ? 200 : (sz === "m" ? 138 : 64)
-            readonly property real artX: sz === "l" ? 62 : 0
             Item {
                 id: mArt
                 width: mus.artW; height: width
                 x: mus.artX
                 Behavior on width { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
                 Behavior on x { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
-                scale: artTap.pressed ? 0.95 : 1
+                // in Medium the cover steps back for the lyrics (blur + fade), like the lock screen bubble
+                readonly property real away: mus.sz === "m" ? mus.lyrT : 0
+                opacity: 1 - away
+                scale: (artTap.pressed ? 0.95 : 1) * (1 - 0.08 * away)
                 Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutQuint } }
-                Rectangle { anchors.fill: parent; radius: 10; color: Qt.rgba(1, 1, 1, 0.12) }
-                Image { id: imgA; anchors.fill: parent; visible: false; fillMode: Image.PreserveAspectCrop; asynchronous: true; sourceSize: Qt.size(300, 300); onStatusChanged: mus.tryStart() }
-                Image { id: imgB; anchors.fill: parent; visible: false; fillMode: Image.PreserveAspectCrop; asynchronous: true; sourceSize: Qt.size(300, 300); onStatusChanged: mus.tryStart() }
-                ShaderEffectSource { id: srcA; sourceItem: imgA; hideSource: true; visible: false; smooth: true }
-                ShaderEffectSource { id: srcB; sourceItem: imgB; hideSource: true; visible: false; smooth: true }
-                ShaderEffect {
-                    anchors.fill: parent
-                    visible: mus.url !== "" || mus.prog < 1
-                    fragmentShader: Qt.resolvedUrl("burn.frag.qsb")
-                    property variant oldTex: mus.curIdx === 0 ? srcB : srcA
-                    property variant newTex: mus.curIdx === 0 ? srcA : srcB
-                    property real progress: mus.prog
-                    property vector2d itemSize: Qt.vector2d(width, height)
-                    property real radius: 10 + 4 * Math.max(0, Math.min(1, (mArt.width - 138) / 62))
-                    property real seed: mus.seed
+                layer.enabled: away > 0.01 && away < 0.99
+                layer.effect: MultiEffect { blurEnabled: true; blurMax: 32; blur: mArt.away }
+                RectangularShadow {
+                    anchors.fill: parent; radius: mus.artR
+                    blur: 18; offset.y: 5; color: Qt.rgba(0, 0, 0, 0.35)
+                    opacity: mus.url !== "" ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: 400 } }
                 }
-                // nothing playing: like macOS, the Music app icon (MacTahoe icon theme, Apple Music style) on a soft tile
+                Item { id: artMask; anchors.fill: parent; visible: false; layer.enabled: true; Rectangle { anchors.fill: parent; radius: mus.artR; color: "black" } }
+                Repeater {
+                    model: 2
+                    delegate: Image {
+                        id: slot
+                        required property int index
+                        property string src: ""
+                        readonly property bool isFront: mus.front === index
+                        anchors.fill: parent
+                        source: src
+                        fillMode: Image.PreserveAspectCrop
+                        asynchronous: true; smooth: true; mipmap: true
+                        sourceSize: Qt.size(400, 400)
+                        onStatusChanged: mus.tryStart()
+                        Component.onCompleted: { if (index === 0) { mus.slotA = slot; src = mus.url; } else mus.slotB = slot; }
+                        // the new cover: in from a little bigger and soft; the old one: out a little smaller and soft
+                        readonly property real t: isFront ? mus.xf : 1 - mus.xf
+                        opacity: status === Image.Ready && mus.url !== "" ? t : 0
+                        scale: isFront ? 1.06 - 0.06 * mus.xf : 1 - 0.06 * mus.xf
+                        z: isFront ? 1 : 0
+                        layer.enabled: true; layer.smooth: true
+                        layer.effect: MultiEffect {
+                            maskEnabled: true; maskSource: artMask; maskThresholdMin: 0.5; maskSpreadAtMin: 1.0
+                            blurEnabled: mus.xf < 0.999; blurMax: 40; blur: 1 - slot.t
+                        }
+                    }
+                }
+                Rectangle { anchors.fill: parent; radius: mus.artR; color: "transparent"; border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.14); opacity: mus.url !== "" ? 1 : 0 }
+                // nothing playing: the Music note, translucent, on a soft tile
                 Item {
                     anchors.fill: parent
                     opacity: mus.url === "" ? 1 : 0
                     visible: opacity > 0.01
                     Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
-                    Rectangle { anchors.fill: parent; radius: mus.big ? 14 : 10; color: Qt.rgba(1, 1, 1, 0.08); border.width: 0.5; border.color: Qt.rgba(1, 1, 1, 0.14) }
+                    Rectangle { anchors.fill: parent; radius: mus.artR; color: Qt.rgba(1, 1, 1, 0.08); border.width: 0.5; border.color: Qt.rgba(1, 1, 1, 0.14) }
                     Image {
                         anchors.centerIn: parent
                         width: Math.round(parent.width * 0.62); height: width
                         source: Qt.resolvedUrl("assets/music-note.svg")
                         sourceSize: Qt.size(256, 256)
                         smooth: true; mipmap: true
-                        // blends into the glass: tinted to the widget's text colour, translucent
                         opacity: 0.5
                         layer.enabled: true
                         layer.effect: MultiEffect { colorization: 1.0; colorizationColor: mus.fg; brightness: 0.75 }
                     }
                 }
-                MouseArea { id: artTap; anchors.fill: parent; enabled: !root.editing && mus.pl !== null; onClicked: { if (mus.pl && mus.pl.canRaise) mus.pl.raise(); } }
+                MouseArea { id: artTap; anchors.fill: parent; enabled: !root.editing && mus.pl !== null; cursorShape: Qt.PointingHandCursor; onClicked: { if (mus.pl && mus.pl.canRaise) mus.pl.raise(); } }
             }
-            // title / artist: blur + morph
+            property var slotA: null
+            property var slotB: null
+
+            // title / "Artist — Album" (blur + morph); in Medium they give way to the lyrics too
             Column {
-                // title + artist travel to their new place and re-align (left ↔ centred) as they go
-                x: mus.sz === "m" ? 152 : 0
-                y: mus.sz === "l" ? 212 : (mus.sz === "m" ? 4 : 74)
-                width: mus.sz === "m" ? 172 : (mus.sz === "l" ? 324 : 138)
+                id: mTxt
+                readonly property real away: mus.sz === "m" ? mus.lyrT : 0
+                x: mus.sz === "s" ? 0 : (mus.sz === "m" ? 68 : (mus.lyr ? 76 : 0))
+                y: mus.sz === "s" ? 76 : (mus.sz === "m" ? (56 - height) / 2 : (mus.lyr ? (64 - height) / 2 : 190))
+                width: mus.sz === "s" ? 138 : (mus.sz === "m" ? 324 - 68 - 36 : (mus.lyr ? 324 - 76 - 36 : 324))
                 Behavior on x { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
                 Behavior on y { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
                 Behavior on width { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
+                opacity: 1 - away
+                visible: opacity > 0.01
+                layer.enabled: away > 0.01 && away < 0.99
+                layer.effect: MultiEffect { blurEnabled: true; blurMax: 32; blur: mTxt.away }
                 spacing: 1
-                MorphText { width: parent.width; elide: Text.ElideRight; animateWidth: false; duration: 460; horizontalAlignment: mus.big ? Text.AlignHCenter : Text.AlignLeft
-                            text: mus.pl ? (mus.pl.trackTitle || "") : "Not Playing"; color: mus.fg; font.family: root.fam; font.pixelSize: mus.big ? 15 : 13; font.weight: Font.DemiBold }
-                MorphText { width: parent.width; elide: Text.ElideRight; animateWidth: false; duration: 460; horizontalAlignment: mus.big ? Text.AlignHCenter : Text.AlignLeft
-                            text: mus.pl ? (mus.pl.trackArtist || mus.pl.identity || "") : "Music"; color: mus.fg2; font.family: root.fam; font.pixelSize: mus.big ? 13 : 12 }
+                readonly property bool centred: mus.sz === "l" && !mus.lyr
+                MorphText { width: parent.width; elide: Text.ElideRight; animateWidth: false; duration: 460; horizontalAlignment: mTxt.centred ? Text.AlignHCenter : Text.AlignLeft
+                            text: mus.pl ? (mus.pl.trackTitle || "") : "Not Playing"; color: mus.fg; font.family: root.fam; font.pixelSize: mus.big ? 16 : 14; font.weight: Font.DemiBold }
+                MorphText { width: parent.width; elide: Text.ElideRight; animateWidth: false; duration: 460; horizontalAlignment: mTxt.centred ? Text.AlignHCenter : Text.AlignLeft
+                            text: mus.pl ? ((mus.pl.trackArtist || mus.pl.identity || "") + (mus.sz !== "s" && mus.pl.trackAlbum ? " — " + mus.pl.trackAlbum : "")) : "Music"
+                            color: mus.fg2; font.family: root.fam; font.pixelSize: mus.big ? 13 : 12 }
             }
-            // Large: progress bar with times
+
+            // lyrics button (Apple's quote bubble), top-right
             Item {
-                // progress bar: slides up into place and fades in on Large, out again when it shrinks
-                opacity: mus.sz === "l" ? 1 : 0
+                id: lyrBtn
+                visible: mus.sz !== "s" && mus.pl !== null
+                x: 324 - width + 4; y: -4
+                width: 30; height: 30
+                readonly property bool active: root.musicLyrics
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 28; height: 28; radius: 8
+                    color: lyrBtn.active ? Qt.rgba(1, 1, 1, 0.92) : Qt.rgba(1, 1, 1, lbMa.containsMouse ? 0.14 : 0)
+                    scale: lbMa.pressed ? 0.88 : 1
+                    Behavior on color { ColorAnimation { duration: 220 } }
+                    Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutQuint } }
+                    Canvas {
+                        anchors.centerIn: parent
+                        width: 17; height: 17
+                        property color ink: lyrBtn.active ? "#1c1c1e" : mus.fg
+                        onInkChanged: requestPaint()
+                        onPaint: {
+                            var c = getContext("2d"); c.reset();
+                            var k = width / 18; c.scale(k, k);
+                            c.fillStyle = ink; c.strokeStyle = ink; c.lineWidth = 1.5; c.lineJoin = "round";
+                            c.beginPath();
+                            c.moveTo(4.5, 2.5); c.lineTo(13.5, 2.5); c.arcTo(16, 2.5, 16, 5, 2.5); c.lineTo(16, 10.5); c.arcTo(16, 13, 13.5, 13, 2.5);
+                            c.lineTo(8, 13); c.lineTo(4.6, 15.8); c.lineTo(4.6, 13); c.arcTo(2, 13, 2, 10.5, 2.5); c.lineTo(2, 5); c.arcTo(2, 2.5, 4.5, 2.5, 2.5);
+                            c.closePath(); c.stroke();
+                            function q(x) { c.beginPath(); c.arc(x, 7, 1.35, 0, Math.PI * 2); c.fill(); c.beginPath(); c.moveTo(x + 1.2, 7); c.quadraticCurveTo(x + 1.3, 9.6, x - 0.6, 10.4); c.stroke(); }
+                            q(6.6); q(10.8);
+                        }
+                    }
+                }
+                MouseArea { id: lbMa; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; enabled: !root.editing; cursorShape: Qt.PointingHandCursor; onClicked: root.musicLyrics = !root.musicLyrics }
+            }
+
+            // lyrics: the current line bold, the next ones faded, feathered top and bottom (Apple Music mini player)
+            Item {
+                id: lyrBox
+                x: 0
+                y: mus.sz === "m" ? -2 : 74
+                width: mus.sz === "m" ? 324 - 40 : 324
+                height: mus.sz === "m" ? 64 : 166
+                opacity: mus.lyrT
+                visible: opacity > 0.01
+                scale: 0.96 + 0.04 * mus.lyrT
+                transformOrigin: Item.Left
+                clip: true
+                layer.enabled: true
+                layer.effect: ShaderEffect {
+                    fragmentShader: Qt.resolvedUrl("fade.frag.qsb")
+                    property real fadeTop: mus.sz === "m" ? 0.16 : 0.14
+                    property real fadeBottom: mus.sz === "m" ? 0.40 : 0.30
+                }
+                readonly property real target: { var it = root.mLyrCur >= 0 ? lyrRep.itemAt(root.mLyrCur) : null; return it ? it.y - 6 : 0; }
+                Column {
+                    width: parent.width
+                    spacing: 5
+                    Repeater {
+                        id: lyrRep
+                        model: mus.lyr || mus.lyrT > 0.01 ? root.mLyrLines : []
+                        delegate: Text {
+                            id: ll
+                            required property var modelData
+                            required property int index
+                            readonly property bool cur: index === root.mLyrCur
+                            width: parent.width
+                            text: modelData.text === "" ? "• • •" : modelData.text
+                            wrapMode: Text.WordWrap
+                            color: mus.fg
+                            font.family: root.fam; font.pixelSize: mus.big ? 20 : 17; font.weight: Font.Bold
+                            opacity: root.mLyrStatus !== "synced" ? 0.9 : (cur ? 1 : 0.32)
+                            Behavior on opacity { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
+                            transform: Translate {
+                                y: -lyrBox.target
+                                Behavior on y { NumberAnimation { duration: 520 + Math.min(4, Math.max(0, ll.index - root.mLyrCur)) * 30; easing.type: Easing.OutQuint } }
+                            }
+                        }
+                    }
+                }
+                MorphText {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.mLyrStatus !== "synced" && root.mLyrStatus !== "plain"
+                    text: root.mLyrStatus === "loading" || root.mLyrStatus === "idle" ? "Loading lyrics…" : (root.mLyrStatus === "instrumental" ? "Instrumental" : "No lyrics for this song")
+                    color: mus.fg2; font.family: root.fam; font.pixelSize: 14; font.weight: Font.DemiBold
+                }
+            }
+
+            // scrubber (Medium + Large)
+            Item {
+                id: scrub
+                opacity: mus.sz === "s" ? 0 : 1
                 visible: opacity > 0.01
                 Behavior on opacity { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
-                y: mus.sz === "l" ? 256 : 290
+                y: mus.sz === "l" ? 252 : 70
                 Behavior on y { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
-                width: parent.width; height: 14
+                width: 324; height: 16
                 readonly property real len: mus.pl && mus.pl.lengthSupported ? mus.pl.length : 0
-                property real pos: 0
+                readonly property real pos: root.mPosBase
+                readonly property real frac: len > 0 ? Math.max(0, Math.min(1, pos / len)) : 0
                 function fmt(v) { v = Math.max(0, Math.floor(v)); var m = Math.floor(v / 60), r = v % 60; return m + ":" + (r < 10 ? "0" : "") + r; }
-                Timer {
-                    interval: 1000; repeat: true; triggeredOnStart: true
-                    running: mus.big && mus.pl !== null && !root.gaming
-                    onTriggered: { if (mus.pl && mus.pl.positionSupported) { mus.pl.positionChanged(); parent.pos = mus.pl.position; } }
-                }
-                Text { id: pL; anchors.verticalCenter: parent.verticalCenter; text: parent.fmt(parent.pos); color: mus.fg2; font.family: root.fam; font.pixelSize: 10 }
-                Text { id: pR; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: parent.len > 0 ? "-" + parent.fmt(parent.len - parent.pos) : ""; color: mus.fg2; font.family: root.fam; font.pixelSize: 10 }
-                Rectangle {
-                    anchors.left: pL.right; anchors.right: pR.left; anchors.leftMargin: 8; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
-                    height: 4; radius: 2; color: Qt.rgba(1, 1, 1, 0.2)
+                Text { id: sL; anchors.verticalCenter: parent.verticalCenter; text: scrub.fmt(scrub.pos); color: mus.fg2; font.family: root.fam; font.pixelSize: 10; font.features: { "tnum": 1 } }
+                Text { id: sR; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: scrub.len > 0 ? "-" + scrub.fmt(scrub.len - scrub.pos) : "--:--"; color: mus.fg2; font.family: root.fam; font.pixelSize: 10; font.features: { "tnum": 1 } }
+                Item {
+                    id: sBar
+                    anchors.left: sL.right; anchors.right: sR.left; anchors.leftMargin: 8; anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: sMa.containsMouse || sMa.pressed ? 7 : 4
+                    Behavior on height { NumberAnimation { duration: 220; easing.type: Easing.OutQuint } }
+                    Rectangle { anchors.fill: parent; radius: height / 2; color: Qt.rgba(1, 1, 1, 0.22) }
                     Rectangle {
-                        height: 4; radius: 2; color: mus.fg
-                        width: parent.parent.len > 0 ? parent.width * Math.min(1, parent.parent.pos / parent.parent.len) : 0
-                        Behavior on width { NumberAnimation { duration: 1000; easing.type: Easing.Linear } }
+                        height: parent.height; radius: height / 2
+                        width: Math.max(height, parent.width * scrub.frac)
+                        color: mus.fg; opacity: 0.88
+                        Behavior on width { NumberAnimation { duration: 480; easing.type: Easing.Linear } }
+                    }
+                    MouseArea {
+                        id: sMa
+                        anchors.fill: parent; anchors.margins: -6
+                        hoverEnabled: true
+                        enabled: !root.editing && mus.pl !== null && mus.pl.canSeek && scrub.len > 0
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: mouse => { var f = Math.max(0, Math.min(1, (mouse.x - 6) / sBar.width)); mus.pl.position = f * scrub.len; root.mPosBase = f * scrub.len; root.mPosAt = Date.now(); }
                     }
                 }
             }
-            // controls: morphing icons, squish on press
-            Row {
-                id: ctlRow
-                anchors.bottom: parent.bottom
-                readonly property real fullW: 3 * 30 + 2 * spacing
-                x: mus.sz === "l" ? (324 - fullW) / 2 : (mus.sz === "m" ? 146 : 138 - 30 + 4)
-                spacing: mus.sz === "l" ? 34 : (mus.sz === "m" ? 18 : 0)
-                Behavior on x { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
-                Behavior on spacing { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
+
+            // controls: shuffle · prev · play · next · repeat (Small: just play / pause)
+            Item {
+                id: ctl
+                y: mus.sz === "l" ? 280 : (mus.sz === "m" ? 96 : 104)
+                Behavior on y { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
+                width: mus.sz === "s" ? 138 : 324; height: 34
                 Repeater {
-                    model: ["prev", "play", "next"]
+                    model: ["shuffle", "prev", "play", "next", "repeat"]
                     delegate: Item {
                         id: cb
                         required property string modelData
+                        required property int index
+                        readonly property bool isSR: modelData === "shuffle" || modelData === "repeat"
                         readonly property bool shown: modelData === "play" || mus.sz !== "s"
-                        width: shown ? 30 : 0; height: 30
-                        opacity: shown ? 1 : 0
+                        // positions: transport centred, shuffle / repeat at the edges; Small: play at the bottom-right
+                        readonly property real cx: mus.sz === "s" ? (modelData === "play" ? 138 - 17 : 138 - 17)
+                                                 : (modelData === "shuffle" ? 15 : modelData === "repeat" ? 324 - 15
+                                                 : 162 + (index - 2) * (mus.big ? 62 : 54))
+                        x: cx - width / 2
+                        Behavior on x { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
+                        width: 34; height: 34
+                        readonly property bool on: mus.pl !== null && (modelData === "shuffle" ? mus.pl.shuffle : (modelData === "repeat" ? mus.pl.loopState !== MprisLoopState.None : false))
+                        readonly property bool can: mus.pl !== null && (modelData === "shuffle" ? mus.pl.shuffleSupported
+                                                  : modelData === "repeat" ? mus.pl.loopSupported
+                                                  : modelData === "prev" ? mus.pl.canGoPrevious : modelData === "next" ? mus.pl.canGoNext : mus.pl.canTogglePlaying)
+                        opacity: !shown ? 0 : (!can ? 0.3 : (isSR && !on ? 0.55 : 1))
                         scale: shown ? 1 : 0.5
-                        Behavior on width { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
-                        Behavior on opacity { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
+                        visible: opacity > 0.01
+                        Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
                         Behavior on scale { NumberAnimation { duration: mus.morphMs; easing.type: Easing.OutQuint } }
                         Rectangle {
-                            anchors.centerIn: parent; width: 32; height: 32; radius: 16
-                            color: Qt.rgba(1, 1, 1, cbMa.pressed ? 0.18 : 0.10)
+                            anchors.centerIn: parent; width: 34; height: 34; radius: 17
+                            color: Qt.rgba(1, 1, 1, cbMa.pressed ? 0.20 : 0.12)
                             opacity: cbMa.containsMouse ? 1 : 0
-                            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                            scale: cbMa.containsMouse ? 1 : 0.6
+                            Behavior on opacity { NumberAnimation { duration: 180 } }
+                            Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutQuint } }
                         }
                         // skip motion: the arrows shoot out in their direction and slide back in from the other side
                         property real shift: 0
@@ -844,22 +1125,27 @@ Scope {
                             anchors.centerIn: parent
                             anchors.horizontalCenterOffset: cb.shift
                             opacity: cb.shiftOp
-                            width: cb.modelData === "play" ? 20 : 17; height: width
-                            kind: cb.modelData === "play" ? (mus.pl && mus.pl.isPlaying ? "pause" : "play") : cb.modelData
-                            color: mus.fg
-                            scale: cbMa.pressed ? 0.8 : 1
+                            width: cb.modelData === "play" ? 22 : (cb.isSR ? 16 : 18); height: width
+                            kind: cb.modelData === "play" ? (mus.pl && mus.pl.isPlaying ? "pause" : "play")
+                                : (cb.modelData === "repeat" && mus.pl && mus.pl.loopState === MprisLoopState.Track ? "repeat1" : cb.modelData)
+                            color: cb.isSR && cb.on ? (mus.tinted ? Qt.lighter(root.musicEdge, 1.35) : root.accent) : mus.fg
+                            scale: cbMa.pressed ? 0.82 : 1
                             Behavior on scale { NumberAnimation { duration: cbMa.pressed ? 120 : 380; easing.type: Easing.OutQuint } }
                         }
                         MouseArea {
                             id: cbMa
-                            anchors.fill: parent; anchors.margins: -3
+                            anchors.fill: parent; anchors.margins: -2
                             hoverEnabled: true
-                            enabled: mus.pl !== null && !root.editing
+                            enabled: cb.can && cb.shown && !root.editing
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                if (cb.modelData === "prev") { skipAnim.restart(); mus.pl.previous(); }
-                                else if (cb.modelData === "next") { skipAnim.restart(); mus.pl.next(); }
-                                else mus.pl.togglePlaying();
+                                var p = mus.pl;
+                                if (cb.modelData === "prev") { skipAnim.restart(); p.previous(); }
+                                else if (cb.modelData === "next") { skipAnim.restart(); p.next(); }
+                                else if (cb.modelData === "play") p.togglePlaying();
+                                else if (cb.modelData === "shuffle") p.shuffle = !p.shuffle;
+                                else p.loopState = p.loopState === MprisLoopState.None ? MprisLoopState.Playlist
+                                                 : (p.loopState === MprisLoopState.Playlist ? MprisLoopState.Track : MprisLoopState.None);
                             }
                         }
                     }
@@ -1510,6 +1796,17 @@ Scope {
                             GradientStop { position: 0; color: root.weather && root.weather.current.is_day ? "#2F7FE0" : "#1B2A4A" }
                             GradientStop { position: 1; color: root.weather && root.weather.current.is_day ? "#6CB6F5" : "#2E3B5C" }
                         }
+                    }
+
+                    // Music: the card takes the album's colour (close to the cover, not the same) with a subtle brighter edge
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 22
+                        opacity: wd.wtype === "music" && root.musicTintOn ? 1 : 0
+                        visible: opacity > 0.01
+                        Behavior on opacity { NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
+                        color: Qt.rgba(root.musicTint.r, root.musicTint.g, root.musicTint.b, 0.80)
+                        border.width: 1; border.color: root.musicEdge
                     }
 
                     // ── content ──

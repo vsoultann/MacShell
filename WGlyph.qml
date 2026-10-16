@@ -163,6 +163,19 @@ Canvas {
         } else if (k === "trackpad") {
             rrect(2, 3.5, 14, 11, 2.2); ctx.stroke();
             line(2.6, 11.6, 15.4, 11.6); line(9, 11.6, 9, 14);
+        } else if (k === "shuffle") {
+            // two crossing arrows
+            ctx.beginPath(); ctx.moveTo(2, 5.5); ctx.lineTo(5, 5.5); ctx.bezierCurveTo(8.5, 5.5, 9.5, 12.5, 13, 12.5); ctx.lineTo(15.5, 12.5); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(2, 12.5); ctx.lineTo(5, 12.5); ctx.bezierCurveTo(8.5, 12.5, 9.5, 5.5, 13, 5.5); ctx.lineTo(15.5, 5.5); ctx.stroke();
+            poly([13.6, 3.4, 16, 5.5, 13.6, 7.6], false);
+            poly([13.6, 10.4, 16, 12.5, 13.6, 14.6], false);
+        } else if (k === "repeat" || k === "repeat1") {
+            // loop: rounded path with an arrow head on each run
+            ctx.beginPath(); ctx.moveTo(3, 9); ctx.lineTo(3, 7.5); ctx.arcTo(3, 5, 5.5, 5, 2.5); ctx.lineTo(15, 5); ctx.stroke();
+            poly([12.8, 2.9, 15, 5, 12.8, 7.1], false);
+            ctx.beginPath(); ctx.moveTo(15, 9); ctx.lineTo(15, 10.5); ctx.arcTo(15, 13, 12.5, 13, 2.5); ctx.lineTo(3, 13); ctx.stroke();
+            poly([5.2, 10.9, 3, 13, 5.2, 15.1], false);
+            if (k === "repeat1") { ctx.font = "bold 5px sans-serif"; ctx.textAlign = "center"; ctx.fillText("1", 9, 10.8); }
         } else if (k === "play") {
             rpoly([5, 3.2, 15, 9, 5, 14.8], 0.8);
         } else if (k === "pause") {
