@@ -71,6 +71,7 @@ Scope {
             if (o.blurAmt !== undefined) root.blurAmt = o.blurAmt;
             if (o.enabled !== undefined) root.enabled = o.enabled;
             if (o.stocks) root.stockSymbols = o.stocks;
+            if (o.musicTintEnabled !== undefined) root.musicTintEnabled = o.musicTintEnabled;
             root.widgets = o.widgets || [];
             root.loaded = true;
         }
@@ -110,12 +111,13 @@ Scope {
     Timer {
         id: saveTimer
         interval: 300
-        onTriggered: store.setText(JSON.stringify({ enabled: root.enabled, style: root.style, glassAmt: root.glassAmt, blurAmt: root.blurAmt, stocks: root.stockSymbols, widgets: root.widgets }, null, 2))
+        onTriggered: store.setText(JSON.stringify({ enabled: root.enabled, style: root.style, glassAmt: root.glassAmt, blurAmt: root.blurAmt, stocks: root.stockSymbols, musicTintEnabled: root.musicTintEnabled, widgets: root.widgets }, null, 2))
     }
     onStyleChanged: if (loaded) save()
     onGlassAmtChanged: if (loaded) save()
     onBlurAmtChanged: if (loaded) save()
     onEnabledChanged: if (loaded) save()
+    onMusicTintEnabledChanged: if (loaded) save()
 
     function update(id, patch) {
         var out = [];
@@ -302,7 +304,8 @@ Scope {
     property real musicSpread: 1
     property color musicEdge: Qt.rgba(1, 1, 1, 0.22)
     property bool musicTintOk: false
-    readonly property bool musicTintOn: musicArt !== "" && musicTintOk
+    property bool musicTintEnabled: true      // Settings → Desktop & Dock → "Music widget takes the album's colour"
+    readonly property bool musicTintOn: musicTintEnabled && musicArt !== "" && musicTintOk
     Behavior on musicEdge { ColorAnimation { duration: 1400; easing.type: Easing.InOutCubic } }
     NumberAnimation { id: spreadAnim; target: root; property: "musicSpread"; from: 0; to: 1; duration: 1400; easing.type: Easing.InOutCubic
                       onFinished: root.musicTintPrev = root.musicTint }
@@ -1810,6 +1813,8 @@ Scope {
                         opacity: wd.wtype === "music" && root.musicTintOn ? 1 : 0
                         visible: opacity > 0.01
                         Behavior on opacity { NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
+                        // a translucent glaze: the Liquid Glass (rim, refraction) still shows through, like Apple's tinted glass
+                        readonly property real alpha: wd.st === "opaque" ? 0.85 : 0.56
                         // the cover's centre on this card (content starts 16 px in)
                         readonly property real cx: wd.shownSize === "l" ? width / 2 : 16 + (wd.shownSize === "s" ? 36 : 33)
                         readonly property real cy: 16 + (wd.shownSize === "l" ? 84 : (wd.shownSize === "s" ? 36 : 33))
@@ -1817,18 +1822,18 @@ Scope {
                             anchors.fill: parent
                             layer.enabled: true
                             layer.effect: MultiEffect { maskEnabled: true; maskSource: tintMask; maskThresholdMin: 0.5; maskSpreadAtMin: 1.0 }
-                            Rectangle { anchors.fill: parent; color: Qt.rgba(root.musicTintPrev.r, root.musicTintPrev.g, root.musicTintPrev.b, 0.80) }
+                            Rectangle { anchors.fill: parent; color: Qt.rgba(root.musicTintPrev.r, root.musicTintPrev.g, root.musicTintPrev.b, tintCard.alpha) }
                             // the new colour: a soft-edged disc growing from the cover until it covers the card
                             Rectangle {
                                 readonly property real reach: 2.3 * Math.sqrt(tintCard.width * tintCard.width + tintCard.height * tintCard.height)
                                 width: reach * root.musicSpread; height: width; radius: width / 2
                                 x: tintCard.cx - width / 2; y: tintCard.cy - height / 2
                                 visible: root.musicSpread < 1
-                                color: Qt.rgba(root.musicTint.r, root.musicTint.g, root.musicTint.b, 0.80)
+                                color: Qt.rgba(root.musicTint.r, root.musicTint.g, root.musicTint.b, tintCard.alpha)
                                 layer.enabled: visible
                                 layer.effect: MultiEffect { blurEnabled: true; blurMax: 64; blur: 1.0; autoPaddingEnabled: true }
                             }
-                            Rectangle { anchors.fill: parent; visible: root.musicSpread >= 1; color: Qt.rgba(root.musicTint.r, root.musicTint.g, root.musicTint.b, 0.80) }
+                            Rectangle { anchors.fill: parent; visible: root.musicSpread >= 1; color: Qt.rgba(root.musicTint.r, root.musicTint.g, root.musicTint.b, tintCard.alpha) }
                         }
                         Item { id: tintMask; anchors.fill: parent; visible: false; layer.enabled: true; Rectangle { anchors.fill: parent; radius: 22; color: "black" } }
                         Rectangle { anchors.fill: parent; radius: 22; color: "transparent"; border.width: 1; border.color: root.musicEdge }

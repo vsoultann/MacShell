@@ -10,6 +10,8 @@ export QT_FFMPEG_DECODING_HW_DEVICE_TYPES=vaapi
 # the desktop's animated wallpaper is hidden while locked: stop decoding it (MacLock plays its own copy)
 "$HOME/.config/hypr-macshell/scripts/macshell-wallpause.sh" all pause
 trap '"$HOME/.config/hypr-macshell/scripts/macshell-wallpause.sh" all resume' EXIT
+# animations at each screen's own refresh rate (Qt otherwise paces them to the first, 60 Hz, screen)
+export QSG_USE_SIMPLE_ANIMATION_DRIVER=1
 n=0
 while [ "$n" -lt 5 ]; do
     qs -c MacLock && exit 0

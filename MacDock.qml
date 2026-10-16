@@ -1247,6 +1247,12 @@ Scope {
                     }
                     SRow {
                         t: pal
+                        title: "Music widget takes the album's colour"
+                        subtitle: "While something plays, the card is tinted to match the cover (and the colour flows into the next song's)"
+                        SSwitch { t: pal; checked: root.hub && root.hub.widgets ? root.hub.widgets.musicTintEnabled : true; onToggled: v => { if (root.hub && root.hub.widgets) root.hub.widgets.musicTintEnabled = v; } }
+                    }
+                    SRow {
+                        t: pal
                         title: "Arrange widgets"
                         subtitle: "Drag a widget to move it. Right-click one to edit: drag its corner to resize, \u2212 to remove."
                         SButton { t: pal; text: "Edit on Desktop"; onClicked: { if (root.hub && root.hub.widgets) root.hub.widgets.editing = true; prefsWindow.visible = false; } }
@@ -2401,6 +2407,22 @@ Scope {
             Column {
                 spacing: 18
                 Loader { width: parent.width; sourceComponent: paneDock }
+                SLabel { t: pal; header: true; text: "App Switcher (Alt + Tab)" }
+                SCard {
+                    t: pal
+                    SRow {
+                        t: pal
+                        title: "Style"
+                        subtitle: "Liquid Glass refracts what's behind it, Frosted blurs it, Opaque is a solid panel"
+                        SSegmented {
+                            t: pal
+                            model: ["Liquid Glass", "Frosted", "Opaque"]
+                            segWidth: 92
+                            current: Math.max(0, ["glass", "frosted", "opaque"].indexOf(root.bar ? root.bar.switcherStyle : "glass"))
+                            onPicked: i => { if (root.bar) root.bar.switcherStyle = ["glass", "frosted", "opaque"][i]; }
+                        }
+                    }
+                }
                 SLabel { t: pal; header: true; text: "Behavior" }
                 Loader { width: parent.width; sourceComponent: paneBehavior }
             }

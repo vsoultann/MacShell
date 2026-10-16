@@ -6,7 +6,9 @@ hl.on("hyprland.start", function ()
     -- auto-restart loop: upstream known issue (wl_display invalid object crash)
     -- mako gets D-Bus-activated if a notification arrives while MacShell is down (crash/restart) and then keeps the
     -- notification slot: stop it before every (re)start so MacShell always owns notifications
-    hl.exec_cmd("sh -c 'while :; do pkill -x mako; qs -c MacShell; sleep 1; done'")
+    -- QSG_USE_SIMPLE_ANIMATION_DRIVER: Qt otherwise paces every animation to the FIRST screen (often a 60 Hz laptop panel),
+    -- so they ran at 60 fps on high-refresh monitors; with it, animations follow each screen's own refresh rate
+    hl.exec_cmd("sh -c 'while :; do pkill -x mako; QSG_USE_SIMPLE_ANIMATION_DRIVER=1 qs -c MacShell; sleep 1; done'")
 
     -- Core components (authentication, lock screen)
     hl.exec_cmd("gnome-keyring-daemon --start --components=secrets")

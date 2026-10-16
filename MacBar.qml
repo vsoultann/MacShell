@@ -233,7 +233,7 @@ Scope {
         "barStyle", "barGlass", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "barBgOpacity", "glassRealtime", "glassDebug", "wallpaperPath", "use24h", "showDate",
         "showSeconds", "showBatteryPercent", "showTray", "showSearch", "barLogoMode", "barCustomLogoPath", "barWidgets", "weekStartsMonday", "terminal", "launcher",
         "filesCmd", "clipboardCmd", "appUsage", "clipHistory", "clipAutoPaste", "emojiRecent", "screenshotDir", "screenshotSave", "screenshotClipboard", "screenshotNotify", "nightTemp", "ccControls", "ccMigRec", "wallpaperDir", "wallpaperFavs", "wallpaperCmd", "wallpaperVideo", "uiSounds", "gamingMode", "gamingAuto", "ccMigGame", "lockArtBackground",
-        "lockClockStyle", "lockClockFont", "lockClockWeight", "lockClockMaterial", "lockClockIntensity", "lockClockTint", "lockClockTall", "lockClockDate", "autoContrast", "wallpaperAppearance", "wpPairLight", "wpPairDark",
+        "lockClockStyle", "switcherStyle", "lockClockFont", "lockClockWeight", "lockClockMaterial", "lockClockIntensity", "lockClockTint", "lockClockTall", "lockClockDate", "autoContrast", "wallpaperAppearance", "wpPairLight", "wpPairDark",
         "notifDnd", "dnd", "nightOn", "keepAwake",
         "kbRepeatRate", "kbRepeatDelay", "mouseSens", "mouseNatural", "tpNatural", "tpTap", "tpDwt", "tpScroll"]
     // Optional bar widgets; tray and Spotlight use their existing showTray/showSearch settings.
@@ -3443,6 +3443,7 @@ Scope {
     // (use the same `qs ...` prefix you use for the Spotlight bind). Hold ALT, tap TAB to cycle, release ALT to switch.
     // Layer namespace: "macswitch" (only needed for a blur layerrule if you are NOT using the Liquid Glass style).
     property real switcherBlur: 15           // blur of the switcher glass (smooth Gaussian; less than Spotlight / notifications)
+    property string switcherStyle: "glass"   // glass (Liquid Glass) | frosted | opaque — Settings → Desktop & Dock
     property bool swOpen: false
     property var swApps: []                  // open apps, most recently used first: { appId, name, icon, win, count }
     property int swIndex: 0
@@ -6386,29 +6387,47 @@ Scope {
                     height: padY + cellH + 25
                     x: Math.round((swRoot.width - width) / 2)
                     y: Math.round(swRoot.height * 0.42 - height / 2)
-                    opacity: (root.swOpen && ui.toastScreen) ? 1 : 0
+                    // opens with motion + blur: grows from 92 % while coming into focus; closes quicker
+                    readonly property bool shown: root.swOpen && ui.toastScreen
+                    opacity: shown ? 1 : 0
                     visible: opacity > 0
-                    scale: (root.swOpen && ui.toastScreen) ? 1 : 0.94
+                    scale: shown ? 1 : 0.92
                     transformOrigin: Item.Center
-                    Behavior on opacity { NumberAnimation { duration: 120 } }
-                    Behavior on scale { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
+                    Behavior on opacity { NumberAnimation { duration: swPanel.shown ? 220 : 160; easing.type: Easing.OutCubic } }
+                    Behavior on scale { NumberAnimation { duration: swPanel.shown ? 420 : 200; easing.type: Easing.OutQuint } }
+                    property real soft: shown ? 0 : 1
+                    Behavior on soft { NumberAnimation { duration: swPanel.shown ? 300 : 160; easing.type: Easing.OutCubic } }
+                    layer.enabled: soft > 0.01
+                    layer.effect: MultiEffect { blurEnabled: true; blurMax: 32; blur: swPanel.soft * 0.8; autoPaddingEnabled: true }
 
+                    readonly property string style: root.switcherStyle
                     LGlass {
                         anchors.fill: parent
+                        visible: swPanel.style !== "opaque"
                         backdrop: swBackdrop.item
                         shaderUrl: root.glassShaderUrl
                         liquid: root.liquidActive
                         dark: root.effDark
                         bx: swPanel.x; by: swPanel.y
                         cornerR: 26
-                        tint: root.glassOpacity
-                        thickness: 20
-                        strength: 0.75 * root.glassLiquid
-                        rim: root.glassRim
+                        // frosted: the same glass with no refraction, a heavier blur and more tint
+                        tint: swPanel.style === "frosted" ? Math.max(0.5, root.glassOpacity) : root.glassOpacity
+                        thickness: swPanel.style === "frosted" ? 6 : 20
+                        strength: swPanel.style === "frosted" ? 0.0 : 0.75 * root.glassLiquid
+                        rim: swPanel.style === "frosted" ? 0.15 : root.glassRim
                         grain: root.glassGrain
-                        blur: root.switcherBlur
+                        blur: swPanel.style === "frosted" ? 30 : root.switcherBlur
                         debug: root.glassDebug
                         onShaderError: root.glassState = "failed"
+                    }
+                    Rectangle {
+                        anchors.fill: parent
+                        visible: swPanel.style === "opaque"
+                        radius: 26
+                        color: root.effDark ? "#232325" : "#F2F2F5"
+                        border.width: 1; border.color: root.effDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.10)
+                        layer.enabled: true
+                        layer.effect: MultiEffect { shadowEnabled: true; shadowBlur: 1.0; shadowOpacity: 0.35; shadowVerticalOffset: 8 }
                     }
 
                     // selection highlight (slides between apps)
@@ -6421,7 +6440,7 @@ Scope {
                         color: root.darkMode ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.11)
                         border.width: 1
                         border.color: root.darkMode ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.06)
-                        Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                        Behavior on x { NumberAnimation { duration: 320; easing.type: Easing.OutQuint } }
                     }
                     Repeater {
                         model: root.swApps
@@ -6435,6 +6454,9 @@ Scope {
                             Image {
                                 anchors.centerIn: parent
                                 width: swPanel.ico; height: swPanel.ico
+                                // the selected app's icon lifts a little
+                                scale: root.swIndex === swCell.index ? 1.06 : 0.96
+                                Behavior on scale { NumberAnimation { duration: 320; easing.type: Easing.OutQuint } }
                                 source: root.swIcon(swCell.modelData)
                                 sourceSize.width: 128; sourceSize.height: 128
                                 fillMode: Image.PreserveAspectFit
@@ -6450,16 +6472,19 @@ Scope {
                         }
                     }
                     // name of the selected app, under its icon
-                    Text {
+                    // the name blur-morphs into the next app's while it glides under the new icon
+                    MorphText {
+                        id: swName
                         visible: swPanel.n > 0
                         text: root.swApps.length > root.swIndex ? root.swApps[root.swIndex].name : ""
-                        color: pal.fg
+                        color: swPanel.style === "opaque" ? (root.effDark ? "white" : "#1D1D1F") : pal.fg
                         font.family: pal.fam; font.pixelSize: 13; font.weight: Font.Medium
-                        elide: Text.ElideRight
-                        width: Math.min(implicitWidth, swPanel.width - 20)
-                        x: Math.max(10, Math.min(swPanel.width - width - 10, swPanel.pad + root.swIndex * swPanel.cw + swPanel.cw / 2 - width / 2))
+                        horizontalAlignment: Text.AlignHCenter
+                        duration: 320
+                        readonly property real cx: swPanel.pad + root.swIndex * swPanel.cw + swPanel.cw / 2
+                        x: Math.max(10, Math.min(swPanel.width - width - 10, cx - width / 2))
                         y: swPanel.padY + swPanel.cellH + 3
-                        Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                        Behavior on x { NumberAnimation { duration: 320; easing.type: Easing.OutQuint } }
                     }
                 }
             }

@@ -103,7 +103,7 @@ Item {
                     saturation: 0.25
                     brightness: -0.16
                     // new: fades in with the hand-over; old: only there while it's being covered
-                    opacity: index === 1 ? ls.coverProg : (ls.coverProg < 1 ? 1 : 0)
+                    opacity: index === 1 ? ls.bgProg : (ls.bgProg < 1 ? 1 : 0)
                     visible: img.status === Image.Ready && opacity > 0.003
                     z: index
                 }
@@ -230,6 +230,23 @@ Item {
         onFileChanged: reload()
     }
     readonly property var lockNotifs: { try { return notifFile.loaded ? JSON.parse(notifFile.text()) : []; } catch (e) { return []; } }
+    // the cards live in a keyed ListModel updated in place: clearing one doesn't rebuild (and re-fade) the others
+    ListModel { id: lnModel }
+    onLockNotifsChanged: {
+        var want = lockNotifs.slice(0, 4), i, j, k;
+        for (i = lnModel.count - 1; i >= 0; i--) {
+            var keep = false;
+            for (j = 0; j < want.length; j++) if (want[j].id === lnModel.get(i).nid) keep = true;
+            if (!keep) lnModel.remove(i);
+        }
+        for (i = 0; i < want.length; i++) {
+            var at = -1;
+            for (k = 0; k < lnModel.count; k++) if (lnModel.get(k).nid === want[i].id) { at = k; break; }
+            var row = { nid: want[i].id, app: want[i].app || "", icon: want[i].icon || "", time: want[i].time || 0 };
+            if (at < 0) lnModel.insert(i, row);
+            else if (at !== i) lnModel.move(at, i, 1);
+        }
+    }
     // Clock app state: a running timer / stopwatch, or an alarm ringing
     FileView {
         id: clockFile
@@ -262,6 +279,8 @@ Item {
         y: 48 * ls.u
         width: 340 * ls.u
         spacing: 8 * ls.u
+        // cards below a cleared one glide up into its place
+        move: Transition { NumberAnimation { properties: "y"; duration: 420; easing.type: Easing.OutQuint } }
         opacity: ls.shown && !ls.leaving ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
 
@@ -332,10 +351,13 @@ Item {
 
         // notifications (newest first; past four they stack, like macOS)
         Repeater {
-            model: ls.lockNotifs.slice(0, 4)
+            model: lnModel
             delegate: Item {
                 id: nc
-                required property var modelData
+                required property int nid
+                required property string app
+                required property string icon
+                required property real time
                 required property int index
                 width: rightCol.width
                 // a swiped card folds its slot away so the ones below glide up
@@ -356,44 +378,67 @@ Item {
                     id: flyOff
                     property real to: 0
                     NumberAnimation { target: nc; property: "dragX"; to: flyOff.to; duration: 260; easing.type: Easing.OutCubic }
-                    ScriptAction { script: { nc.gone = true; Quickshell.execDetached(["qs", "-c", "MacShell", "ipc", "call", "notifications", "dismiss", String(nc.modelData.id)]); } }
+                    ScriptAction { script: { nc.gone = true; Quickshell.execDetached(["qs", "-c", "MacShell", "ipc", "call", "notifications", "dismiss", String(nc.nid)]); } }
                 }
-                DragHandler {
-                    id: swipe
-                    target: null
-                    xAxis.enabled: true; yAxis.enabled: false
-                    property real startX: 0
-                    onActiveChanged: {
-                        if (active) { snapBack.stop(); startX = nc.dragX; ls.st.poke(); return; }
-                        var v = centroid.velocity.x;
-                        if (Math.abs(nc.dragX) > nc.width / 3 || Math.abs(v) > 900) {
-                            var dir = (Math.abs(v) > 900 ? v : nc.dragX) > 0 ? 1 : -1;
-                            flyOff.to = dir * (nc.width + 60 * ls.u); flyOff.restart();
-                        } else snapBack.restart();
-                    }
-                    onTranslationChanged: if (active) nc.dragX = startX + translation.x
-                }
+
                 Glass { anchors.fill: parent; src: glassTex; frame: ls; cornerR: 20 * ls.u; thickness: 20; tint: 0.40; shadowAmt: 0.3 }
                 Rectangle { anchors.fill: parent; radius: 20 * ls.u; color: "white"; opacity: ncMa.pressed ? 0.12 : (ncMa.containsMouse ? 0.06 : 0); Behavior on opacity { NumberAnimation { duration: 140 } } }
                 Image {
                     x: 14 * ls.u; anchors.verticalCenter: parent.verticalCenter
                     width: 34 * ls.u; height: width
                     // apps without an icon (MacShell's own, notify-send…) get the system notifications icon
-                    source: nc.modelData.icon && status !== Image.Error ? nc.modelData.icon : "image://icon/preferences-system-notifications"
+                    source: nc.icon && status !== Image.Error ? nc.icon : "image://icon/preferences-system-notifications"
                     sourceSize: Qt.size(96, 96)
                     smooth: true; mipmap: true
                 }
                 Column {
                     x: 60 * ls.u; anchors.verticalCenter: parent.verticalCenter
                     width: parent.width - x - 70 * ls.u
-                    Text { width: parent.width; elide: Text.ElideRight; text: nc.modelData.app; color: "white"; font.family: ls.fam; font.pixelSize: 14 * ls.u; font.weight: Font.DemiBold }
+                    Text { width: parent.width; elide: Text.ElideRight; text: nc.app; color: "white"; font.family: ls.fam; font.pixelSize: 14 * ls.u; font.weight: Font.DemiBold }
                     Text { text: "Notification"; color: Qt.rgba(1, 1, 1, 0.72); font.family: ls.fam; font.pixelSize: 13 * ls.u }
                 }
                 Text {
                     anchors.right: parent.right; anchors.rightMargin: 14 * ls.u; y: 13 * ls.u
-                    text: ls.notifAge(nc.modelData.time); color: Qt.rgba(1, 1, 1, 0.6); font.family: ls.fam; font.pixelSize: 12 * ls.u
+                    text: ls.notifAge(nc.time); color: Qt.rgba(1, 1, 1, 0.6); font.family: ls.fam; font.pixelSize: 12 * ls.u
                 }
-                MouseArea { id: ncMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: ls.askPassword() }
+                // one MouseArea for tap AND swipe: it keeps the pointer for the whole drag (preventStealing), and the card
+                // is only cleared when the button is actually released — an interrupted drag springs back
+                MouseArea {
+                    id: ncMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    preventStealing: true
+                    cursorShape: dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+                    // screen coordinates: the card itself moves under the pointer
+                    property real pressSX: 0
+                    property real startDX: 0
+                    property real lastSX: 0
+                    property real lastT: 0
+                    property real vx: 0
+                    property bool dragging: false
+                    function sx(mouse) { return ncMa.mapToItem(ls, mouse.x, mouse.y).x; }
+                    onPressed: mouse => { snapBack.stop(); pressSX = sx(mouse); lastSX = pressSX; startDX = nc.dragX; lastT = Date.now(); vx = 0; dragging = false; }
+                    onPositionChanged: mouse => {
+                        if (!pressed) return;
+                        var x = sx(mouse);
+                        if (!dragging && Math.abs(x - pressSX) > 6) { dragging = true; ls.st.poke(); }
+                        if (!dragging) return;
+                        nc.dragX = startDX + (x - pressSX);
+                        var t = Date.now(), dt = Math.max(1, t - lastT);
+                        vx = 0.7 * vx + 0.3 * ((x - lastSX) / dt * 1000);
+                        lastSX = x; lastT = t;
+                    }
+                    onReleased: {
+                        if (!dragging) return;
+                        dragging = false;
+                        if (Math.abs(nc.dragX) > nc.width / 3 || Math.abs(vx) > 900) {
+                            var dir = (Math.abs(vx) > 900 ? vx : nc.dragX) > 0 ? 1 : -1;
+                            flyOff.to = dir * (nc.width + 60 * ls.u); flyOff.restart();
+                        } else snapBack.restart();
+                    }
+                    onCanceled: { dragging = false; snapBack.restart(); }
+                    onClicked: if (Math.abs(nc.dragX) < 2) ls.askPassword()
+                }
             }
         }
         // "+N more": the rest, stacked under the last card
@@ -580,9 +625,13 @@ Item {
         coverIdx = 1 - coverIdx;
         coverSeed = Math.random();
         coverAnim.restart();
+        bgAnim.restart();
     }
     Timer { id: coverWait; interval: 1500; onTriggered: ls.coverTry() }
     NumberAnimation { id: coverAnim; target: ls; property: "coverProg"; from: 0; to: 1; duration: 1100; easing.type: Easing.InOutCubic }
+    // the blurred album background: its own, quicker hand-over (0.65 s ease-out)
+    property real bgProg: 1
+    NumberAnimation { id: bgAnim; target: ls; property: "bgProg"; from: 0; to: 1; duration: 650; easing.type: Easing.OutCubic }
     Image { id: coverA; visible: false; width: 600; height: 600; fillMode: Image.PreserveAspectCrop; asynchronous: true; mipmap: true; sourceSize: Qt.size(600, 600); onStatusChanged: ls.coverTry() }
     Image { id: coverB; visible: false; width: 600; height: 600; fillMode: Image.PreserveAspectCrop; asynchronous: true; mipmap: true; sourceSize: Qt.size(600, 600); onStatusChanged: ls.coverTry() }
     readonly property Item coverNew: coverIdx === 0 ? coverA : coverB

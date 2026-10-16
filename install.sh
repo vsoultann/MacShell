@@ -105,7 +105,7 @@ do_existing() {
 -- MacShell (added by install.sh)
 hl.on("hyprland.start", function ()
     hl.exec_cmd("$SESS/scripts/macshell-wallpaper.sh")
-    hl.exec_cmd("sh -c 'while :; do pkill -x mako; qs -c MacShell; sleep 1; done'")
+    hl.exec_cmd("sh -c 'while :; do pkill -x mako; QSG_USE_SIMPLE_ANIMATION_DRIVER=1 qs -c MacShell; sleep 1; done'")
     hl.exec_cmd("hypridle -c $SESS/hypridle.conf")
 end)
 EOF
@@ -116,7 +116,7 @@ EOF
         cat > "$f" <<EOF
 # MacShell (added by install.sh)
 exec-once = $SESS/scripts/macshell-wallpaper.sh
-exec-once = sh -c 'while :; do pkill -x mako; qs -c MacShell; sleep 1; done'
+exec-once = sh -c 'while :; do pkill -x mako; QSG_USE_SIMPLE_ANIMATION_DRIVER=1 qs -c MacShell; sleep 1; done'
 exec-once = hypridle -c $SESS/hypridle.conf
 layerrule = blur, macbarbg
 layerrule = ignorealpha 0.05, macbarbg
