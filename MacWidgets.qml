@@ -1260,7 +1260,7 @@ Scope {
                 id: rHead
                 width: parent.width
                 Text { width: parent.width - cnt.width; text: "Reminders"; color: blue; font.family: root.fam; font.pixelSize: 14; font.weight: Font.Bold }
-                Text { id: cnt; text: parent.parent.open.length; color: blue; font.family: root.fam; font.pixelSize: 22; font.weight: Font.Bold }
+                MorphText { id: cnt; text: parent.parent.open.length; duration: 420; animateWidth: false; color: blue; font.family: root.fam; font.pixelSize: 22; font.weight: Font.Bold }
             }
             Column {
                 y: rHead.height + 6
@@ -1275,12 +1275,52 @@ Scope {
                         spacing: 8
                         width: parent.width
                         Rectangle {
+                            id: tick
                             width: 16; height: 16; radius: 8
                             anchors.verticalCenter: parent.verticalCenter
-                            color: modelData.done ? blue : "transparent"
-                            border.width: 1.5; border.color: modelData.done ? blue : (ctx ? ctx.fg2 : "white")
-                            Text { anchors.centerIn: parent; visible: modelData.done; text: "✓"; color: "white"; font.pixelSize: 10; font.bold: true }
-                            MouseArea { anchors.fill: parent; anchors.margins: -4; enabled: !root.editing; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleReminder(modelData.line) }
+                            readonly property bool done: modelData.done
+                            property real fill: done ? 1 : 0
+                            Behavior on fill { NumberAnimation { duration: 420; easing.type: Easing.OutBack; easing.overshoot: 2.4 } }
+                            color: Qt.rgba(blue.r, blue.g, blue.b, fill)
+                            border.width: 1.5
+                            border.color: done ? blue : (ctx ? ctx.fg2 : "white")
+                            Behavior on border.color { ColorAnimation { duration: 300 } }
+                            // the press itself: a quick squeeze that springs back
+                            property real press: 0
+                            scale: (0.86 + 0.14 * Math.max(fill, 1 - fill * 0)) * (1 - 0.18 * press) + (fill > 0 ? 0 : 0)
+                            SequentialAnimation {
+                                id: tickPop
+                                NumberAnimation { target: tick; property: "press"; to: 1; duration: 90; easing.type: Easing.OutCubic }
+                                NumberAnimation { target: tick; property: "press"; to: 0; duration: 420; easing.type: Easing.OutBack; easing.overshoot: 3.0 }
+                            }
+                            // the tick draws itself in
+                            Canvas {
+                                id: tickMark
+                                anchors.centerIn: parent
+                                width: 11; height: 11
+                                property real draw: tick.fill
+                                onDrawChanged: requestPaint()
+                                onPaint: {
+                                    var c = getContext("2d"); c.reset();
+                                    if (draw <= 0.01) return;
+                                    c.strokeStyle = "white"; c.lineWidth = 1.9; c.lineCap = "round"; c.lineJoin = "round";
+                                    var p = [[1.6, 5.6], [4.3, 8.4], [9.4, 2.6]];
+                                    var d = Math.max(0, Math.min(1, (draw - 0.15) / 0.85));
+                                    c.beginPath(); c.moveTo(p[0][0], p[0][1]);
+                                    var t1 = Math.min(1, d / 0.4);
+                                    c.lineTo(p[0][0] + (p[1][0] - p[0][0]) * t1, p[0][1] + (p[1][1] - p[0][1]) * t1);
+                                    if (d > 0.4) {
+                                        var t2 = (d - 0.4) / 0.6;
+                                        c.lineTo(p[1][0] + (p[2][0] - p[1][0]) * t2, p[1][1] + (p[2][1] - p[1][1]) * t2);
+                                    }
+                                    c.stroke();
+                                }
+                            }
+                            MouseArea {
+                                anchors.fill: parent; anchors.margins: -4
+                                enabled: !root.editing; cursorShape: Qt.PointingHandCursor
+                                onClicked: { tickPop.restart(); root.toggleReminder(modelData.line); if (root.bar) root.bar.playSound("tink", 0.5); }
+                            }
                         }
                         Text {
                             width: parent.width - 24; elide: Text.ElideRight

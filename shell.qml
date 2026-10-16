@@ -299,6 +299,7 @@ ShellRoot {
         function open(): void { macBar.notifPopRequest(true); }
         function close(): void { macBar.notifPopRequest(false); }
         function clear(): void { macBar.notifClearAnimated(); }
+        function dnd(state: string): void { macBar.notifDnd = state === "toggle" ? !macBar.notifDnd : (state === "on"); }
         // the lock screen: a notification swiped away
         function dismiss(id: int): void { macBar.notifDelete(id); macBar.notifUnread = Math.max(0, macBar.notifUnread - 1); }
     }

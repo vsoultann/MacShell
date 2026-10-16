@@ -4502,7 +4502,26 @@ Scope {
                                 width: parent.width - 2; height: parent.height - 6; radius: 6
                                 color: ui.pop === "notif" ? bpal.hover : "transparent"
                             }
-                            Glyph { anchors.centerIn: parent; width: 16; height: 16; kind: "bell"; color: root.notifDnd ? bpal.fg2 : bpal.fg }
+                            MorphGlyph {
+                                id: bellGlyph
+                                anchors.centerIn: parent
+                                width: 16; height: 16
+                                kind: root.notifDnd ? "moon" : "bell"
+                                color: root.notifDnd ? bpal.fg2 : bpal.fg
+                                Behavior on color { ColorAnimation { duration: 320 } }
+                                property real dip: 0
+                                scale: 1 - 0.18 * dip
+                                rotation: -8 * dip
+                                Connections {
+                                    target: root
+                                    function onNotifDndChanged() { dndPop.restart(); }
+                                }
+                                SequentialAnimation {
+                                    id: dndPop
+                                    NumberAnimation { target: bellGlyph; property: "dip"; to: 1; duration: 120; easing.type: Easing.OutCubic }
+                                    NumberAnimation { target: bellGlyph; property: "dip"; to: 0; duration: 420; easing.type: Easing.OutBack; easing.overshoot: 2.6 }
+                                }
+                            }
                             Rectangle {
                                 visible: root.notifUnread > 0 && !root.notifDnd
                                 x: parent.width / 2 + 2; y: parent.height / 2 - 8
