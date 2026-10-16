@@ -409,9 +409,10 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             renderType: Text.NativeRendering
             anchors.horizontalCenter: parent.horizontalCenter
-            text: Qt.formatDate(ls.st.now, "dddd d MMMM")
+            text: Qt.formatDate(ls.st.now, ls.ckShortDate ? "ddd MMM d" : "dddd, MMMM d")
             color: Qt.rgba(1, 1, 1, 0.92)
-            font.family: ls.fam; font.pixelSize: 25 * ls.u; font.weight: Font.DemiBold
+            font.family: ls.ckFont === "serif" && ls.ckFontOk ? "Noto Serif Display" : ls.fam
+            font.pixelSize: (ls.ckShortDate ? 23 : 25) * ls.u; font.weight: Font.DemiBold
             layer.enabled: true
             layer.effect: MultiEffect { shadowEnabled: true; shadowBlur: 0.6; shadowOpacity: 0.25; shadowVerticalOffset: 1 }
         }
@@ -441,9 +442,11 @@ Item {
                 // (Qt's "h" only goes 12-hour together with AP, so the hour is computed here)
                 text: ls.st.use24h ? Qt.formatTime(ls.st.now, "H:mm") : ((ls.st.now.getHours() % 12) || 12) + Qt.formatTime(ls.st.now, ":mm")
                 color: "white"
-                font.family: Qt.fontFamilies().indexOf("Roboto Flex") >= 0 ? "Roboto Flex" : "Inter Variable"; font.pixelSize: ls.clockPx; font.weight: Font.Bold
-                font.variableAxes: ({ "wdth": ls.clockWdth, "YTFI": ls.clockYtfi, "wght": ls.clockWght, "opsz": 144 })
-                font.letterSpacing: -2 * ls.u
+                font.family: ls.ckFamily; font.pixelSize: ls.clockPx; font.weight: Font.Bold
+                font.variableAxes: ls.ckFamily === "Roboto Flex"
+                    ? ({ "wdth": ls.clockWdth, "YTFI": ls.clockYtfi, "wght": ls.clockWght, "opsz": 144 })
+                    : ({ "wght": ls.clockWght })
+                font.letterSpacing: (ls.ckFont === "condensed" ? -2 : (ls.ckWeight < 330 ? 0 : -1.5)) * ls.u
                 renderType: Text.QtRendering
                 visible: false
             }
@@ -467,7 +470,7 @@ Item {
                 id: timeHeightFx
                 width: timeMaskFx.width; height: timeMaskFx.height
                 source: timeMask
-                blurEnabled: true; blurMax: 10; blur: 0.45
+                blurEnabled: true; blurMax: 10; blur: ls.ckWeight < 330 ? 0.25 : (ls.ckLiquid ? 0.38 : 0.45)
                 autoPaddingEnabled: false
                 visible: false
             }
@@ -494,13 +497,19 @@ Item {
                 property vector2d itemSize: Qt.vector2d(width, height)
                 property vector2d srcSize: Qt.vector2d(ls.width, ls.height)
                 property vector2d srcOffset: Qt.vector2d(fp.x, fp.y)
-                // flat frosted glass with a thin lit rim (macOS 26), not a puffed lens
-                property real refract: 2.5 * ls.u
-                property real bevel: 4.5
-                property real lift: 0.14
-                property real frost: 0.50
-                property real specAmt: 0.38
-                property real fresnelAmt: 0.0
+                // frosted: flat milky glass with a soft lit edge (macOS 26); liquid: clear glass, the wallpaper bent at
+                // a bright rim all the way round (iOS 26). Animated, so switching styles in Settings cross-fades.
+                // thin strokes have little body: the rim is toned down there so they read as glass, not as outlines
+                readonly property real thin: Math.max(0, Math.min(1, (420 - ls.ckWeight) / 220))
+                property real refract: (ls.ckLiquid ? 6 : 2.5) * ls.u
+                property real bevel: ls.ckLiquid ? 5.0 - 1.5 * thin : 4.5
+                property real lift: ls.ckLiquid ? 0.08 + 0.06 * thin : 0.12
+                property real frost: ls.ckLiquid ? 0.22 + 0.16 * thin : 0.40
+                property real specAmt: ls.ckLiquid ? 0.62 - 0.3 * thin : 0.38
+                property real fresnelAmt: ls.ckLiquid ? 0.26 - 0.16 * thin : 0.0
+                Behavior on frost { NumberAnimation { duration: 500; easing.type: Easing.OutCubic } }
+                Behavior on lift { NumberAnimation { duration: 500; easing.type: Easing.OutCubic } }
+                Behavior on fresnelAmt { NumberAnimation { duration: 500; easing.type: Easing.OutCubic } }
                 onStatusChanged: if (status === ShaderEffect.Error) console.log("[maclock] clock shader:", log)
             }
             // fallback when the shader is missing
@@ -551,10 +560,28 @@ Item {
     // iOS 26 stretched clock, done the way Apple does it: with the FONT, not by stretching pixels. Roboto Flex has a
     // figure-height axis (YTFI) plus width and weight, so the digits get taller/condensed with even strokes.
     //   room to spare → tall, condensed digits;  artwork / lyrics open → regular-width, shorter, smaller digits
-    readonly property real clockPx: (226 - 104 * squash) * u
-    readonly property real clockWdth: Math.max(25, Math.min(151, 40 + 60 * squash))
-    readonly property real clockYtfi: Math.max(560, Math.min(788, 788 - 188 * squash))
-    readonly property real clockWght: Math.max(100, Math.min(1000, 680 - 80 * squash))
+    // ── clock style (Settings → Lock Screen → Clock) ──
+    //   font: condensed (Roboto Flex, can go tall) | rounded (Nunito) | serif (Noto Serif Display) | inter (Inter Display)
+    //   material: frosted (milky glass) | liquid (clear glass with a bright rim)
+    readonly property var ckCfg: (ls.st.clockCfg && !ls.st.clockCfg.__ignore) ? ls.st.clockCfg : ({})
+    readonly property string ckFont: ["condensed", "rounded", "serif", "inter"].indexOf(ckCfg.f) >= 0 ? ckCfg.f : "condensed"
+    readonly property bool ckFontOk: {
+        var want = ckFont === "rounded" ? "Nunito" : (ckFont === "serif" ? "Noto Serif Display" : (ckFont === "inter" ? "Inter Display" : "Roboto Flex"));
+        return Qt.fontFamilies().indexOf(want) >= 0;
+    }
+    readonly property string ckFamily: !ckFontOk ? "Inter Variable"
+        : (ckFont === "rounded" ? "Nunito" : (ckFont === "serif" ? "Noto Serif Display" : (ckFont === "inter" ? "Inter Display" : "Roboto Flex")))
+    readonly property int ckWeight: (typeof ckCfg.w === "number" && ckCfg.w >= 100 && ckCfg.w <= 1000) ? ckCfg.w : 680
+    readonly property bool ckTall: ckFont === "condensed" && ckCfg.t !== false
+    readonly property bool ckLiquid: ckCfg.m === "liquid"
+    readonly property bool ckShortDate: ckCfg.d === "short"
+    // size per font (all shrink together when the cover / lyrics need the room)
+    readonly property real ckBase: ckTall ? 226 : (ckFont === "condensed" ? 196 : (ckFont === "serif" ? 168 : (ckFont === "rounded" ? 176 : 172)))
+                                   * (ckWeight < 330 ? 1.12 : 1.0)
+    readonly property real clockPx: ckBase * (1 - 0.46 * squash) * u
+    readonly property real clockWdth: ckTall ? Math.max(25, Math.min(151, 40 + 60 * squash)) : 100
+    readonly property real clockYtfi: ckTall ? Math.max(560, Math.min(788, 788 - 188 * squash)) : 712
+    readonly property real clockWght: Math.max(100, Math.min(1000, ckWeight - 80 * squash * (ckWeight / 680)))
     readonly property real lyricsH: Math.min(ls.height * 0.42, 440 * ls.u)
     // vertical room above the bubble: the cover, the lyrics, or (side by side) the taller of the two
     // lyrics go UNDER the bubble when it sits in the top spot (the bubble stays put), above it in the bottom spot

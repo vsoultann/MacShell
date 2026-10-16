@@ -50,6 +50,8 @@ ShellRoot {
         property string mediaSlot: "top"    // "top" (under the clock) | "bottom" (above the password field)
         property bool capsLock: false
         property bool use24h: true          // MacShell → Menu Bar → "24-hour clock"
+        // Settings → Lock Screen → Clock (MACLOCK_CLOCK='{"f":"serif",...}' overrides it, for previews)
+        property var clockCfg: { try { return JSON.parse(Quickshell.env("MACLOCK_CLOCK") || "{}"); } catch (e) { return {}; } }
         property bool artBg: true           // blurred album art behind everything while the cover is enlarged (MacShell setting)
         property bool sounds: false         // MacShell's "Play user interface sound effects" (and not in Game Mode)
         function sound(name) {
@@ -154,7 +156,8 @@ ShellRoot {
             + "[ -f \"$HOME/.config/macshell/wallpaper-video\" ] && [ -f \"$v\" ] && printf '%s' \"$v\"; echo; "
             + "[ \"$(jq -r '.uiSounds' \"$HOME/.config/macbar/settings.json\" 2>/dev/null)\" != false ] && [ ! -f \"${XDG_RUNTIME_DIR:-/tmp}/macshell-gaming.state\" ] && echo snd || echo -; "
             + "jq -r '.lockArtBackground' \"$HOME/.config/macbar/settings.json\" 2>/dev/null || echo true; "
-            + "jq -r '.use24h' \"$HOME/.config/macbar/settings.json\" 2>/dev/null || echo true"]
+            + "jq -r '.use24h' \"$HOME/.config/macbar/settings.json\" 2>/dev/null || echo true; "
+            + "jq -c '{f: .lockClockFont, w: .lockClockWeight, m: .lockClockMaterial, t: .lockClockTall, d: .lockClockDate}' \"$HOME/.config/macbar/settings.json\" 2>/dev/null || echo '{}'"]
         stdout: StdioCollector {
             onStreamFinished: {
                 var l = text.split("\n");
@@ -169,6 +172,7 @@ ShellRoot {
                 lockState.sounds = (l[7] || "").trim() === "snd";
                 lockState.artBg = (l[8] || "true").trim() !== "false";
                 lockState.use24h = (l[9] || "true").trim() !== "false";
+                if (!Quickshell.env("MACLOCK_CLOCK")) { try { lockState.clockCfg = JSON.parse((l[10] || "{}").trim() || "{}"); } catch (e) { } }
                 if (!root.preview) lockState.sound("lock");
             }
         }

@@ -2698,8 +2698,117 @@ Scope {
                         SSwitch { t: pal; checked: root.bar ? root.bar.use24h : true; onToggled: v => { if (root.bar) root.bar.use24h = v; } }
                     }
                 }
+                // ── Clock ──
+                // the clock fonts, loaded straight from their files so the previews never fall back to another face
+                FontLoader { id: fNunito; source: "file://" + Quickshell.env("HOME") + "/.local/share/fonts/Nunito/Nunito.ttf" }
+                FontLoader { id: fSerif; source: "file://" + Quickshell.env("HOME") + "/.local/share/fonts/NotoSerifDisplay/NotoSerifDisplay.ttf" }
+                SLabel { t: pal; text: "Clock"; font.weight: Font.DemiBold; topPadding: 6 }
+                SCard {
+                    t: pal
+                    // preset tiles
+                    Item {
+                        width: parent.width; height: 132
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 10
+                            Repeater {
+                                model: [
+                                    { id: "glass",   name: "Glass",   fam: "Roboto Flex",        w: 680, tall: true,  liquid: false },
+                                    { id: "classic", name: "Classic", fam: fNunito.status === FontLoader.Ready ? fNunito.name : "Nunito",             w: 640, tall: false, liquid: false },
+                                    { id: "serif",   name: "Serif",   fam: fSerif.status === FontLoader.Ready ? fSerif.name : "Noto Serif Display", w: 560, tall: false, liquid: false },
+                                    { id: "liquid",  name: "Liquid",  fam: "Roboto Flex",        w: 560, tall: true,  liquid: true },
+                                    { id: "thin",    name: "Thin",    fam: fNunito.status === FontLoader.Ready ? fNunito.name : "Nunito",             w: 220, tall: false, liquid: true }
+                                ]
+                                delegate: Column {
+                                    id: tile
+                                    required property var modelData
+                                    readonly property bool sel: root.bar && root.bar.lockClockStyle === modelData.id
+                                    spacing: 6
+                                    Rectangle {
+                                        width: 92; height: 92; radius: 14
+                                        gradient: Gradient {
+                                            GradientStop { position: 0; color: "#8C7A6B" }
+                                            GradientStop { position: 1; color: "#3E3530" }
+                                        }
+                                        border.width: tile.sel ? 3 : 0; border.color: pal.accent
+                                        Behavior on border.width { NumberAnimation { duration: 160 } }
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "9:41"
+                                            font.family: tile.modelData.fam; font.pixelSize: tile.modelData.tall ? 40 : 30
+                                            font.weight: Math.max(100, Math.min(900, tile.modelData.w))
+                                            font.variableAxes: tile.modelData.fam === "Roboto Flex"
+                                                ? ({ "wght": tile.modelData.w, "wdth": tile.modelData.tall ? 40 : 100, "YTFI": tile.modelData.tall ? 788 : 712, "opsz": 144 })
+                                                : ({ "wght": tile.modelData.w })
+                                            color: tile.modelData.liquid ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(1, 1, 1, 0.78)
+                                            style: tile.modelData.liquid ? Text.Outline : Text.Normal
+                                            styleColor: Qt.rgba(1, 1, 1, 0.85)
+                                        }
+                                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: if (root.bar) root.bar.applyLockClockPreset(tile.modelData.id) }
+                                    }
+                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: tile.modelData.name; color: tile.sel ? pal.accent : pal.text; font.family: pal.fam; font.pixelSize: 12; font.weight: tile.sel ? Font.DemiBold : Font.Normal }
+                                }
+                            }
+                        }
+                    }
+                    SRow {
+                        t: pal; title: "Font"
+                        SPopUp {
+                            t: pal
+                            model: ["Condensed", "Rounded", "Serif", "Default"]
+                            readonly property var ids: ["condensed", "rounded", "serif", "inter"]
+                            current: Math.max(0, ids.indexOf(root.bar ? root.bar.lockClockFont : "condensed"))
+                            onPicked: i => { if (root.bar) { root.bar.lockClockFont = ids[i]; root.bar.lockClockStyle = "custom"; } }
+                        }
+                    }
+                    SRow {
+                        t: pal; title: "Weight"
+                        SSlider {
+                            t: pal; width: 220; from: 100; to: 1000; stepSize: 10
+                            leftLabel: "Thin"; rightLabel: "Heavy"
+                            value: root.bar ? root.bar.lockClockWeight : 680
+                            onMoved: v => { if (root.bar) { root.bar.lockClockWeight = Math.round(v); root.bar.lockClockStyle = "custom"; } }
+                        }
+                    }
+                    SRow {
+                        t: pal; title: "Material"
+                        subtitle: "Liquid Glass is clear with a bright rim; Frosted is soft, milky glass"
+                        SSegmented {
+                            t: pal; model: ["Liquid Glass", "Frosted"]; segWidth: 96
+                            current: root.bar && root.bar.lockClockMaterial === "liquid" ? 0 : 1
+                            onPicked: i => { if (root.bar) { root.bar.lockClockMaterial = i === 0 ? "liquid" : "frosted"; root.bar.lockClockStyle = "custom"; } }
+                        }
+                    }
+                    SRow {
+                        t: pal; title: "Tall digits"
+                        subtitle: "Stretches the Condensed font to fill the space, like iOS 26"
+                        SSwitch {
+                            t: pal
+                            enabled: root.bar && root.bar.lockClockFont === "condensed"
+                            checked: root.bar ? root.bar.lockClockTall : true
+                            onToggled: v => { if (root.bar) { root.bar.lockClockTall = v; root.bar.lockClockStyle = "custom"; } }
+                        }
+                    }
+                    SRow {
+                        t: pal; title: "Date"
+                        SSegmented {
+                            t: pal; model: ["Friday, October 16", "Fri Oct 16"]; segWidth: 130
+                            current: root.bar && root.bar.lockClockDate === "short" ? 1 : 0
+                            onPicked: i => { if (root.bar) { root.bar.lockClockDate = i === 1 ? "short" : "long"; root.bar.lockClockStyle = "custom"; } }
+                        }
+                    }
+                }
                 Row {
                     spacing: 8
+                    // a 6-second look at the lock screen (no real lock) with the settings above
+                    SButton {
+                        t: pal; text: "Preview"
+                        onClicked: {
+                            var b = root.bar;
+                            var cfg = JSON.stringify({ f: b.lockClockFont, w: b.lockClockWeight, m: b.lockClockMaterial, t: b.lockClockTall, d: b.lockClockDate });
+                            Quickshell.execDetached(["sh", "-c", "MACLOCK_PREVIEW=1 MACLOCK_CLOCK=\"$1\" timeout 6 qs -c MacLock >/dev/null 2>&1", "sh", cfg]);
+                        }
+                    }
                     SButton { t: pal; text: "Lock Screen Now"; onClicked: { prefsWindow.visible = false; Quickshell.execDetached(["loginctl", "lock-session"]); } }
                 }
             }
@@ -3233,6 +3342,7 @@ Scope {
         if (bar) {
             bar.resetSettings();
             bar.uiSounds = true; bar.gamingMode = false; bar.gamingAuto = true; bar.lockArtBackground = true;
+            bar.applyLockClockPreset("glass");
             bar.wallpaperAppearance = "auto"; bar.notifDnd = false; bar.nightOn = false; bar.keepAwake = false;
             bar.kbRepeatRate = 35; bar.kbRepeatDelay = 250; bar.mouseSens = 0; bar.mouseNatural = false;
             bar.tpNatural = true; bar.tpTap = true; bar.tpDwt = true; bar.tpScroll = 0.7;

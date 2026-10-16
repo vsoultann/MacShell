@@ -12,7 +12,7 @@
 #   --session       add "Hyprland (MacShell)" as a SEPARATE login session (own config, your Hyprland untouched; needs sudo)
 #   --existing      instead of a separate session, start MacShell from your CURRENT Hyprland config
 #   --icons         install the MacTahoe icon theme (Apple-style app icons)
-#   --fonts         install Inter + Roboto Flex (the lock screen's stretch clock)
+#   --fonts         install Inter, Roboto Flex, Nunito and Noto Serif Display (the lock screen clock styles)
 #   --apply         set the icon theme + font for GTK / Qt / KDE apps
 #   --wallpapers    download the macOS 27 "Golden Gate" light + dark wallpapers
 #   --sounds        generate the UI sound effects (+ the Clock's alarm / timer tones)
@@ -141,12 +141,18 @@ do_icons() {
 }
 
 do_fonts() {
-    say "Installing fonts (Inter, Roboto Flex)"
+    say "Installing fonts (Inter, Roboto Flex, Nunito, Noto Serif Display)"
     have pacman && { pacman -Q inter-font >/dev/null 2>&1 || sudo pacman -S --needed --noconfirm inter-font; }
     mkdir -p "$HOME/.local/share/fonts/RobotoFlex"
     curl -fsSL -o "$HOME/.local/share/fonts/RobotoFlex/RobotoFlex.ttf" \
         "https://github.com/google/fonts/raw/main/ofl/robotoflex/RobotoFlex%5BGRAD,XOPQ,XTRA,YOPQ,YTAS,YTDE,YTFI,YTLC,YTUC,opsz,slnt,wdth,wght%5D.ttf"
     curl -fsSL -o "$HOME/.local/share/fonts/RobotoFlex/OFL.txt" https://github.com/google/fonts/raw/main/ofl/robotoflex/OFL.txt
+    # lock screen clock styles: Nunito (Classic / Thin), Noto Serif Display (Serif)
+    mkdir -p "$HOME/.local/share/fonts/Nunito" "$HOME/.local/share/fonts/NotoSerifDisplay"
+    curl -fsSL -o "$HOME/.local/share/fonts/Nunito/Nunito.ttf" "https://github.com/google/fonts/raw/main/ofl/nunito/Nunito%5Bwght%5D.ttf"
+    curl -fsSL -o "$HOME/.local/share/fonts/Nunito/OFL.txt" https://github.com/google/fonts/raw/main/ofl/nunito/OFL.txt
+    curl -fsSL -o "$HOME/.local/share/fonts/NotoSerifDisplay/NotoSerifDisplay.ttf" "https://github.com/google/fonts/raw/main/ofl/notoserifdisplay/NotoSerifDisplay%5Bwdth,wght%5D.ttf"
+    curl -fsSL -o "$HOME/.local/share/fonts/NotoSerifDisplay/OFL.txt" https://github.com/google/fonts/raw/main/ofl/notoserifdisplay/OFL.txt
     fc-cache -f >/dev/null 2>&1 || true
 }
 
