@@ -182,6 +182,14 @@ ShellRoot {
     WlSessionLock {
         id: lock
         locked: !root.preview
+        // If this instance ever stops holding the lock without unlocking itself (another locker took over, the
+        // compositor ended it, …), quit: a leftover instance keeps maclock.sh's one-locker guard and every later
+        // lock attempt would silently do nothing.
+        property bool wasSecure: false
+        onSecureChanged: {
+            if (secure) { wasSecure = true; return; }
+            if (wasSecure && !root.preview) { console.log("[maclock] lost the session lock: quitting"); quitTimer.start(); }
+        }
 
         WlSessionLockSurface {
             id: surf
