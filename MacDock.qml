@@ -3635,7 +3635,12 @@ Scope {
     }
 
     // MacShell's own windows all have the app id "org.quickshell": the Clock window counts as the Clock app
-    function appOf(tl) { return (tl.appId === "org.quickshell" && tl.title === "Clock") ? "macshell-clock" : tl.appId; }
+    function appOf(tl) {
+        if (tl.appId !== "org.quickshell") return tl.appId;
+        if (tl.title === "Clock") return "macshell-clock";
+        if (tl.title === "App Store") return "macshell-appstore";
+        return tl.appId;
+    }
     function windowsFor(key) {
         var out = [];
         var tls = ToplevelManager.toplevels.values;

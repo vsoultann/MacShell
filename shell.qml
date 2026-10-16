@@ -34,6 +34,7 @@ ShellRoot {
         property var dock: macDock
         property var widgets: macWidgets
         property var clock: clockApp
+        property var appstore: appStore
         function openSettings(pane) { macDock.openPrefs(pane); }
 
         // set by MacBar / MacDock (Binding elements) when their glass needs live data
@@ -268,6 +269,7 @@ ShellRoot {
     MacDock { id: macDock; hub: sharedHub }
     MacWidgets { id: macWidgets; hub: sharedHub }
     ClockApp { id: clockApp; hub: sharedHub }
+    AppStore { id: appStore; hub: sharedHub }
 
     // reopen settings even when both the Dock and the Menu Bar are disabled:
     //   qs -c macbar ipc call settings open
@@ -284,6 +286,13 @@ ShellRoot {
         function tab(name: string): void { clockApp.open(name); }
         function stop(): void { clockApp.stopRing(); }
         function snooze(): void { clockApp.snooze(); }
+    }
+    // qs -c MacShell ipc call appstore open | page discover|updates | search <text>
+    IpcHandler {
+        target: "appstore"
+        function open(): void { appStore.open(); }
+        function page(p: string): void { appStore.open(p); }
+        function search(q: string): void { appStore.open("search"); appStore.query = q; }
     }
     IpcHandler {
         target: "notifications"

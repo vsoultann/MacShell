@@ -40,3 +40,4 @@ hl.layer_rule({ name = "macbarbg", match = { namespace = "macbarbg" }, blur = tr
 hl.layer_rule({ name = "macshot",  match = { namespace = "macshot"  }, no_anim = true })
 hl.window_rule({ match = { title = "^macshell Settings$" }, float = true })
 hl.window_rule({ match = { class = "^org\\.quickshell$", title = "^Clock$" }, float = true, size = "780 540", center = true })
+hl.window_rule({ match = { class = "^org\\.quickshell$", title = "^App Store$" }, float = true, size = "1080 720", center = true })
