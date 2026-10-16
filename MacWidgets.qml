@@ -1608,7 +1608,8 @@ Scope {
             // windows), not just the wallpaper: right after the layer rises, the widgets (and the dimming) stay invisible
             // for an instant, the screen is captured through the empty layer, and the glass refracts that snapshot.
             property bool snapping: false
-            readonly property bool covered: root.bar ? root.bar.screenCovered[win.sname] === true : false
+            // culled only behind a FULLSCREEN window (a focused / tiled one leaves them drawn)
+            readonly property bool covered: root.bar ? root.bar.screenFullscreen[win.sname] === true : false
             property bool snapOk: false
             Connections {
                 target: root
@@ -1744,7 +1745,7 @@ Scope {
                     // same shape the rest of the code (and the content components) read
                     readonly property var modelData: ({ id: wid, type: wtype, size: wsize, x: wx, y: wy, screen: wscreen, style: wstyle })
                     // each screen's layer shows only its own widgets (hidden delegates cost nothing); culled while
-                    // windows cover this whole desktop — nobody can see them, so nothing is drawn (clock ticks, music…)
+                    // a window is fullscreen on this screen — nobody can see them, so nothing is drawn (clock ticks, music…)
                     visible: root.screenOf(modelData) === win.sname && (root.editing || !win.covered)
                     // out of the picture for the instant the screen is captured (edit mode), then back with a fade
                     property real snapHide: win.snapping ? 0 : 1

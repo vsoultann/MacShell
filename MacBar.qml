@@ -87,7 +87,13 @@ Scope {
     readonly property bool captureHeld: hub ? hub.glassHold : false
 
     // ───────────── CONFIG (all persisted to settings.json) ─────────────
-    property bool barEnabled: true           // false = no menu bar / Spotlight / Control Center at all
+    property bool barEnabled: true           // the menu bar strip itself
+    // every part of the shell can be switched off on its own (the installer's feature picker writes these too)
+    property bool spotlightEnabled: true     // Spotlight (the magnifier / its keybind)
+    property bool ccEnabled: true            // Control Center
+    property bool notificationsEnabled: true // banners + Notification Center (off = no D-Bus daemon at all, so mako/dunst can take over)
+    property bool clockAppEnabled: true      // the Clock app (alarms and timers still ring while it is on)
+    readonly property bool barLayerNeeded: barEnabled || spotlightEnabled || ccEnabled || notificationsEnabled
     property bool darkMode: true
     property color accent: "#0A84FF"
     // "Inter" renders with the single variable file: the static Inter.ttc got mapped once per face (~25×13 MB of RSS)
@@ -233,7 +239,8 @@ Scope {
 
     readonly property var settingKeys: ["barEnabled", "darkMode", "accent", "fontFamily", "barHeight", "glassOpacity",
         "barStyle", "barGlass", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "barBgOpacity", "glassRealtime", "glassDebug", "wallpaperPath", "use24h", "showDate",
-        "showSeconds", "showBatteryPercent", "showTray", "showSearch", "barLogoMode", "barCustomLogoPath", "barWidgets", "weekStartsMonday", "terminal", "launcher",
+        "showSeconds", "showBatteryPercent", "showTray", "showSearch",
+        "spotlightEnabled", "ccEnabled", "notificationsEnabled", "clockAppEnabled", "barLogoMode", "barCustomLogoPath", "barWidgets", "weekStartsMonday", "terminal", "launcher",
         "filesCmd", "clipboardCmd", "appUsage", "clipHistory", "clipAutoPaste", "emojiRecent", "screenshotDir", "screenshotSave", "screenshotClipboard", "screenshotNotify", "nightTemp", "ccControls", "ccMigRec", "wallpaperDir", "wallpaperFavs", "wallpaperCmd", "wallpaperVideo", "uiSounds", "gamingMode", "gamingAuto", "ccMigGame", "lockArtBackground",
         "lockClockStyle", "switcherStyle", "lockClockFont", "lockClockWeight", "lockClockMaterial", "lockClockIntensity", "lockClockTint", "lockClockTall", "lockClockDate", "autoContrast", "wallpaperAppearance", "wpPairLight", "wpPairDark",
         "notifDnd", "dnd", "nightOn", "keepAwake",
@@ -1999,11 +2006,12 @@ Scope {
         if (e) e.execute();
     }
     function search() {
+        if (!spotlightEnabled && launcher === "") return;
         spotWant = "home";
         if (launcher !== "") sh(launcher);
         else spotRequest++;                       // every bar window listens and the focused screen opens Spotlight
     }
-    function spotOpen(mode) { spotWant = mode; spotRequest++; }
+    function spotOpen(mode) { if (!spotlightEnabled) return; spotWant = mode; spotRequest++; }
     IpcHandler {
         target: "spotlight"
         function toggle(): void { root.search(); }
@@ -2803,6 +2811,9 @@ Scope {
     // output → its desktop is completely hidden behind windows (or one is fullscreen). Always tracked: the desktop
     // widgets stop drawing on covered screens (culling), and a video wallpaper pauses there.
     property var screenCovered: ({})
+    // output → a window is FULLSCREEN there: only then do the desktop widgets stop drawing (a focused or tiled
+    // window that merely covers the desktop keeps them alive)
+    property var screenFullscreen: ({})
     readonly property string wallPauseScript: Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-wallpause.sh"
     Process {
         id: coverProbe
@@ -2810,7 +2821,7 @@ Scope {
         stdout: StdioCollector {
             onStreamFinished: {
                 var o; try { o = JSON.parse(text); } catch (e) { return; }
-                var next = {};
+                var next = {}, fullMap = {};
                 for (var i = 0; i < o.m.length; i++) {
                     var m = o.m[i], ws = m.activeWorkspace ? m.activeWorkspace.id : -999, mw = m.width / (m.scale || 1), mh = m.height / (m.scale || 1);
                     var area = 0, full = false;
@@ -2821,7 +2832,11 @@ Scope {
                         if (!c.floating) area += Math.min(c.size[0], mw) * Math.min(c.size[1], mh);
                     }
                     next[m.name] = full || area >= mw * mh * 0.86;
+                    fullMap[m.name] = full;
                 }
+                var sameF = true;
+                for (var f in fullMap) if (fullMap[f] !== (root.screenFullscreen[f] === true)) sameF = false;
+                if (!sameF) root.screenFullscreen = fullMap;
                 var same = true;
                 for (var q in next) if (next[q] !== (root.screenCovered[q] === true)) same = false;
                 if (!same) root.screenCovered = next;
@@ -2911,6 +2926,7 @@ Scope {
         darkMode = true; accent = "#0a84ff"; fontFamily = "Inter Variable"; glassOpacity = 0.42; glassBlur = 5; barBgOpacity = 0.10; glassRealtime = false;
         barStyle = "liquid"; use24h = true; showDate = true; showSeconds = false; showBatteryPercent = true;
         showTray = true; showSearch = true;
+        spotlightEnabled = true; ccEnabled = true; notificationsEnabled = true; clockAppEnabled = true;
         barLogoMode = "arch"; barCustomLogoPath = "";
         barWidgets = ["appleMenu", "appMenus", "workspaces", "volume", "keyboard", "notifications", "wifi", "bluetooth", "privacy", "controlCenter", "clock"];
         ccControls = ccDefault.slice();
@@ -3033,15 +3049,18 @@ Scope {
     ListModel { id: notifHist }              // notification centre history, newest first
     ListModel { id: notifToasts }            // popups currently on screen, newest first
 
-    NotificationServer {
-        id: notifServer
-        keepOnReload: false
-        bodySupported: true
-        bodyMarkupSupported: false
-        imageSupported: true
-        actionsSupported: true
-        persistenceSupported: true
-        onNotification: n => root.notifReceive(n)
+    // switched off: no daemon at all, so mako / dunst / swaync can own the D-Bus name instead
+    Loader {
+        active: root.notificationsEnabled
+        sourceComponent: NotificationServer {
+            keepOnReload: false
+            bodySupported: true
+            bodyMarkupSupported: false
+            imageSupported: true
+            actionsSupported: true
+            persistenceSupported: true
+            onNotification: n => root.notifReceive(n)
+        }
     }
     function notifIndex(model, id) {
         for (var i = 0; i < model.count; i++) if (model.get(i).nid === id) return i;
@@ -3561,7 +3580,7 @@ Scope {
     }
 
     Variants {
-        model: (root.settingsReady && root.barEnabled) ? Quickshell.screens : []
+        model: (root.settingsReady && root.barLayerNeeded) ? Quickshell.screens : []
 
         Scope {
             id: perScreen
@@ -3577,7 +3596,7 @@ Scope {
             color: "transparent"
 
             exclusionMode: ExclusionMode.Normal
-            exclusiveZone: root.barHeight
+            exclusiveZone: root.barEnabled ? root.barHeight : 0
 
             WlrLayershell.namespace: "macbar"
             WlrLayershell.layer: WlrLayer.Top
@@ -4096,6 +4115,7 @@ Scope {
                 // ═════════ the bar itself ═════════
                 Rectangle {
                     id: barBg
+                    visible: root.barEnabled
                     z: 20
                     x: 0; y: 0
                     width: ui.width
@@ -4423,10 +4443,10 @@ Scope {
                         // control center
                         Item {
                             id: ccBtn
-                            visible: root.barWidgetEnabled("controlCenter")
+                            visible: root.ccEnabled && root.barWidgetEnabled("controlCenter")
                             // the widget grows to the right while a privacy dot is showing, so the dot sits beside the icon
                             readonly property bool dotsOn: root.privacyAny && root.barWidgetEnabled("privacy")
-                            width: root.barWidgetEnabled("controlCenter") ? 30 + (dotsOn ? ccDots.width + 2 : 0) : 0; height: 28
+                            width: (root.ccEnabled && root.barWidgetEnabled("controlCenter")) ? 30 + (dotsOn ? ccDots.width + 2 : 0) : 0; height: 28
                             Behavior on width { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
                             Rectangle {
                                 anchors.centerIn: parent
@@ -4721,7 +4741,7 @@ Scope {
                     y: popBottom > 0 ? popBottom + 12 : root.barHeight + 8
                     Behavior on y { NumberAnimation { duration: 770; easing.type: Easing.OutQuint } }
                     height: toastCol.height
-                    visible: ui.toastsShown
+                    visible: ui.toastsShown && root.notificationsEnabled
                     Column {
                         id: toastCol
                         width: parent.width
@@ -6926,7 +6946,7 @@ Scope {
             screen: perScreen.modelData
             // The layer stays mapped: creating / destroying it on every open restarted the glass's window captures and
             // Hyprland's layer animation, which is what made Spotlight flicker or vanish. Closed = invisible + click-through.
-            visible: true
+            visible: root.spotlightEnabled
             readonly property bool openish: ui.pop === "spot" || spot.vis > 0
             onOpenishChanged: root.popCount += (openish ? 1 : -1)     // keeps the window-geometry poller running while Spotlight is open
             mask: Region { item: spotWin.openish ? spotRoot : spotNoInput }

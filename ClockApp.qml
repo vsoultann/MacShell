@@ -22,6 +22,7 @@ Scope {
     readonly property string fam: dock ? dock.fontFamily : "Inter Variable"
     readonly property color accent: dock ? dock.accent : "#0A84FF"
     readonly property bool use24h: bar ? bar.use24h : true
+    readonly property bool appEnabled: bar ? bar.clockAppEnabled : true
     readonly property string home: Quickshell.env("HOME")
     readonly property string soundDir: home + "/.local/share/sounds/macshell"
     readonly property color orange: "#FF9F0A"
@@ -207,7 +208,7 @@ Scope {
     }
     property string lastMinute: ""
     function check() {
-        if (!loaded) return;
+        if (!loaded || !appEnabled) return;
         var d = new Date(nowMs);
         if (timer.state === "running" && nowMs >= timer.endAt) {
             var t = Object.assign({}, timer); t.state = "idle"; t.left = t.total; timer = t;
@@ -257,6 +258,7 @@ Scope {
     Timer { id: ringLimit; interval: 5 * 60000; onTriggered: root.stopRing() }
 
     function open(tabName) {
+        if (!appEnabled) return;
         if (tabName !== undefined) {
             var i = ["world", "alarms", "stopwatch", "timers"].indexOf(tabName);
             if (i >= 0) win.tab = i;

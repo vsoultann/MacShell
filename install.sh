@@ -6,8 +6,12 @@
 #   ./install.sh --only shell,lock     install / update just these features
 #   ./install.sh --update [features]   pull the latest version, then update the features you name (default: shell,lock,config)
 #
-# Features
-#   shell       the shell: menu bar, Dock, Spotlight, Control Center, notifications, desktop widgets, Clock app, Settings
+# Features — pick only what you want, e.g.  ./install.sh --only spotlight,widgets
+#   shell       the shell files + System Settings (every part below needs these; added automatically)
+#   menubar     the menu bar          spotlight   Spotlight          controlcenter  Control Center
+#   notifications  banners + Notification Center                     dock           the Dock
+#   widgets     desktop widgets       clock       the Clock app
+#   (parts you leave out are switched off, so only what you picked runs)
 #   lock        the lock screen (MacLock)
 #   config      the Hyprland session config + helper scripts (wallpapers, Game Mode, lock); your custom/ files are kept
 #   session     add "Hyprland (MacShell)" as a SEPARATE login session (your own Hyprland is untouched; needs sudo)
@@ -33,9 +37,18 @@ QS="$HOME/.config/quickshell"
 SESS="$HOME/.config/hypr-macshell"
 SHARE="$HOME/.local/share/macshell"
 YES=0
-ORDER=(deps shell lock config session existing icons fonts apply wallpapers sounds)
+ORDER=(deps shell menubar spotlight controlcenter notifications dock widgets clock lock config session existing icons fonts apply wallpapers sounds)
+# the parts of the shell you can pick individually (one set of files, each part switched on or off)
+PARTS=(menubar spotlight controlcenter notifications dock widgets clock)
 declare -A DESC=(
-    [shell]="Shell — menu bar, Dock, Spotlight, Control Center, notifications, widgets, Clock, Settings"
+    [shell]="Shell files + System Settings (needed by every part below)"
+    [menubar]="Menu bar (Apple menu, app menus, workspaces, tray, clock)"
+    [spotlight]="Spotlight (search, clipboard, emoji)"
+    [controlcenter]="Control Center"
+    [notifications]="Notifications (banners + Notification Center)"
+    [dock]="Dock"
+    [widgets]="Desktop widgets (Clock, Weather, Music, Reminders…)"
+    [clock]="Clock app (World Clock, Alarms, Stopwatch, Timers)"
     [lock]="Lock screen (MacLock)"
     [config]="Session config + helper scripts (wallpapers, Game Mode, lock)"
     [session]="\"Hyprland (MacShell)\" login session (separate, needs sudo)"
@@ -107,6 +120,34 @@ do_shell() {
     cp "$REPO"/session/applications/*.desktop "$HOME/.local/share/applications/" 2>/dev/null || true
     note "$QS/MacShell"
 }
+
+# ── feature switches: one shell, each part on or off (written into the settings files) ──
+MACBAR="$HOME/.config/macbar/settings.json"
+MACDOCK="$HOME/.config/macdock/settings.json"
+WIDGETS="$HOME/.config/macshell/widgets.json"
+set_json() {   # set_json <file> <key> <true|false>
+    local f="$1" k="$2" v="$3" t
+    have jq || { warn "jq is missing: can't set $k"; return 0; }
+    mkdir -p "$(dirname "$f")"
+    [ -s "$f" ] || printf '{}\n' > "$f"
+    t=$(mktemp) && jq --arg k "$k" --argjson v "$v" '.[$k] = $v' "$f" > "$t" && mv "$t" "$f"
+}
+part_file() { case "$1" in dock) printf '%s' "$MACDOCK" ;; widgets) printf '%s' "$WIDGETS" ;; *) printf '%s' "$MACBAR" ;; esac; }
+part_key()  {
+    case "$1" in
+        menubar) printf 'barEnabled' ;; spotlight) printf 'spotlightEnabled' ;; controlcenter) printf 'ccEnabled' ;;
+        notifications) printf 'notificationsEnabled' ;; clock) printf 'clockAppEnabled' ;;
+        dock) printf 'dockEnabled' ;; widgets) printf 'enabled' ;;
+    esac
+}
+set_part() { set_json "$(part_file "$1")" "$(part_key "$1")" "$2"; }
+do_menubar()       { say "Menu bar: on";       set_part menubar true; }
+do_spotlight()     { say "Spotlight: on";      set_part spotlight true; }
+do_controlcenter() { say "Control Center: on"; set_part controlcenter true; }
+do_notifications() { say "Notifications: on";  set_part notifications true; }
+do_dock()          { say "Dock: on";           set_part dock true; }
+do_widgets()       { say "Desktop widgets: on"; set_part widgets true; }
+do_clock()         { say "Clock app: on";      set_part clock true; }
 
 do_lock() {
     say "Installing the lock screen"
@@ -263,10 +304,24 @@ pull() {
 }
 
 run() {
-    local s want
+    local s want p picked=0
+    # picking any part of the shell pulls in the shell files it needs
+    for p in "${PARTS[@]}"; do for want in "$@"; do [ "$want" = "$p" ] && picked=1; done; done
+    if [ "$picked" = 1 ]; then
+        local has=0; for want in "$@"; do [ "$want" = shell ] && has=1; done
+        [ "$has" = 0 ] && set -- shell "$@"
+    fi
     for s in "${ORDER[@]}"; do
         for want in "$@"; do [ "$want" = "$s" ] && "do_$s"; done
     done
+    # parts you did not tick are switched off, so "only Spotlight and widgets" means only those run
+    if [ "$picked" = 1 ]; then
+        for p in "${PARTS[@]}"; do
+            local on=0; for want in "$@"; do [ "$want" = "$p" ] && on=1; done
+            [ "$on" = 0 ] && { note "${DESC[$p]%% —*}: off"; set_part "$p" false; }
+        done
+        pgrep -f 'qs -c MacShell' >/dev/null && note "MacShell is running: restart it (or log out and in) for the switches to take effect"
+    fi
     say "Done. Log into \"Hyprland (MacShell)\" (or restart Hyprland). Settings: Apple menu → System Settings…"
 }
 
@@ -319,7 +374,7 @@ menu() {
             local u; read -r -p "Choose [1]: " u
             case "${u:-1}" in
                 1) backup_original; run shell lock config sounds fonts; return ;;
-                2) backup_original; run deps shell lock config session icons fonts apply wallpapers sounds; return ;;
+                2) backup_original; run deps shell menubar spotlight controlcenter notifications dock widgets clock lock config session icons fonts apply wallpapers sounds; return ;;
             esac ;;
         tahoe)
             printf '%sMacShell (Tahoe edition) is already installed.%s\n' "$c_b" "$c_0"
@@ -327,14 +382,14 @@ menu() {
             local u; read -r -p "Choose [1]: " u
             case "${u:-1}" in
                 1) pull; run shell lock config sounds; return ;;
-                2) pull; run deps shell lock config icons fonts apply sounds; return ;;
+                2) pull; run deps shell menubar spotlight controlcenter notifications dock widgets clock lock config icons fonts apply sounds; return ;;
             esac ;;
     esac
     printf '  1) Install\n  2) Update (gets the latest version first)\n  3) Check what is installed\n  4) Uninstall\n'
     local w; read -r -p "Choose [1]: " w
     local -a sel
     case "${w:-1}" in
-        1) mapfile -t sel < <(pick "What do you want to install?" deps shell lock config session existing icons fonts apply wallpapers sounds) ;;
+        1) mapfile -t sel < <(pick "What do you want to install?" deps shell menubar spotlight controlcenter notifications dock widgets clock lock config session existing icons fonts apply wallpapers sounds) ;;
         2) pull; mapfile -t sel < <(pick "What do you want to update?" shell lock config sounds fonts icons) ;;
         3) do_check; return ;;
         4) mapfile -t sel < <(pick "What do you want to remove?" shell lock config session existing sounds); do_uninstall "${sel[@]}"; return ;;
@@ -350,7 +405,7 @@ while [ $i -lt ${#args[@]} ]; do
     a="${args[$i]}"
     case "$a" in
         -y|--yes) YES=1 ;;
-        --all) todo+=(deps shell lock config session icons fonts apply wallpapers sounds) ;;
+        --all) todo+=(deps shell menubar spotlight controlcenter notifications dock widgets clock lock config session icons fonts apply wallpapers sounds) ;;
         --deps-only) do_deps; exit 0 ;;
         --only) i=$((i + 1)); IFS=',' read -r -a parts <<< "${args[$i]:-}"; for p in "${parts[@]}"; do known "$p" || die "unknown feature: $p"; todo+=("$p"); done ;;
         --update) mode=update ;;
