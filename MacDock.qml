@@ -2519,60 +2519,11 @@ Scope {
                         }
                         SRow {
                             t: pal; title: "Resolution"
-                            ComboBox {
-                                width: 220
-                                font.family: pal.fam; font.pixelSize: 13
-                                // macOS Tahoe System Settings pop-up: no box — right-aligned value + small grey chevrons,
-                                // a faint highlight only on hover
-                                background: Rectangle {
-                                    radius: 6
-                                    color: parent.hovered || parent.down ? pal.hover : "transparent"
-                                    Behavior on color { ColorAnimation { duration: 160 } }
-                                }
-                                contentItem: Text {
-                                    leftPadding: 8; rightPadding: 22
-                                    text: parent.displayText
-                                    font: parent.font; color: pal.text
-                                    horizontalAlignment: Text.AlignRight
-                                    verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
-                                }
-                                // the opened list: a rounded macOS menu with an accent highlight
-                                delegate: ItemDelegate {
-                                    required property var modelData
-                                    required property int index
-                                    width: ListView.view ? ListView.view.width : 200
-                                    height: 26
-                                    highlighted: ListView.view ? ListView.view.currentIndex === index : false
-                                    background: Rectangle { radius: 5; color: parent.hovered ? pal.accent : "transparent" }
-                                    contentItem: Text {
-                                        leftPadding: 8
-                                        text: parent.modelData
-                                        color: parent.hovered ? "white" : pal.text
-                                        font.family: pal.fam; font.pixelSize: 13
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
-                                }
-                                popup.background: Rectangle {
-                                    radius: 9
-                                    color: pal.dark ? Qt.rgba(0.17, 0.17, 0.19, 0.97) : Qt.rgba(0.97, 0.97, 0.98, 0.98)
-                                    border.width: 1; border.color: pal.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
-                                }
-                                popup.padding: 5
-                                indicator: Canvas {
-                                    x: parent.width - width - 7; anchors.verticalCenter: parent.verticalCenter
-                                    width: 8; height: 12
-                                    property color ink: pal.text2
-                                    onInkChanged: requestPaint()
-                                    onPaint: {
-                                        var c = getContext("2d"); c.reset();
-                                        c.strokeStyle = ink; c.lineWidth = 1.4; c.lineCap = "round"; c.lineJoin = "round";
-                                        c.beginPath(); c.moveTo(1, 4.2); c.lineTo(4, 1.2); c.lineTo(7, 4.2); c.stroke();
-                                        c.beginPath(); c.moveTo(1, 7.8); c.lineTo(4, 10.8); c.lineTo(7, 7.8); c.stroke();
-                                    }
-                                }
+                            SPopUp {
+                                t: pal
                                 model: monCard.resolutions.map(function (r) { return r.w + " × " + r.h + (r.custom ? "  (current)" : ""); })
-                                currentIndex: { for (var i = 0; i < monCard.resolutions.length; i++) if (monCard.resolutions[i].w + "x" + monCard.resolutions[i].h === monCard.selRes) return i; return 0; }
-                                onActivated: i => {
+                                current: { for (var i = 0; i < monCard.resolutions.length; i++) if (monCard.resolutions[i].w + "x" + monCard.resolutions[i].h === monCard.selRes) return i; return 0; }
+                                onPicked: i => {
                                     var r = monCard.resolutions[i];
                                     if (r.custom) return;
                                     monCard.selRes = r.w + "x" + r.h;
@@ -2583,60 +2534,11 @@ Scope {
                         }
                         SRow {
                             t: pal; title: "Refresh rate"
-                            ComboBox {
-                                width: 220
-                                font.family: pal.fam; font.pixelSize: 13
-                                // macOS Tahoe System Settings pop-up: no box — right-aligned value + small grey chevrons,
-                                // a faint highlight only on hover
-                                background: Rectangle {
-                                    radius: 6
-                                    color: parent.hovered || parent.down ? pal.hover : "transparent"
-                                    Behavior on color { ColorAnimation { duration: 160 } }
-                                }
-                                contentItem: Text {
-                                    leftPadding: 8; rightPadding: 22
-                                    text: parent.displayText
-                                    font: parent.font; color: pal.text
-                                    horizontalAlignment: Text.AlignRight
-                                    verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
-                                }
-                                // the opened list: a rounded macOS menu with an accent highlight
-                                delegate: ItemDelegate {
-                                    required property var modelData
-                                    required property int index
-                                    width: ListView.view ? ListView.view.width : 200
-                                    height: 26
-                                    highlighted: ListView.view ? ListView.view.currentIndex === index : false
-                                    background: Rectangle { radius: 5; color: parent.hovered ? pal.accent : "transparent" }
-                                    contentItem: Text {
-                                        leftPadding: 8
-                                        text: parent.modelData
-                                        color: parent.hovered ? "white" : pal.text
-                                        font.family: pal.fam; font.pixelSize: 13
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
-                                }
-                                popup.background: Rectangle {
-                                    radius: 9
-                                    color: pal.dark ? Qt.rgba(0.17, 0.17, 0.19, 0.97) : Qt.rgba(0.97, 0.97, 0.98, 0.98)
-                                    border.width: 1; border.color: pal.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
-                                }
-                                popup.padding: 5
-                                indicator: Canvas {
-                                    x: parent.width - width - 7; anchors.verticalCenter: parent.verticalCenter
-                                    width: 8; height: 12
-                                    property color ink: pal.text2
-                                    onInkChanged: requestPaint()
-                                    onPaint: {
-                                        var c = getContext("2d"); c.reset();
-                                        c.strokeStyle = ink; c.lineWidth = 1.4; c.lineCap = "round"; c.lineJoin = "round";
-                                        c.beginPath(); c.moveTo(1, 4.2); c.lineTo(4, 1.2); c.lineTo(7, 4.2); c.stroke();
-                                        c.beginPath(); c.moveTo(1, 7.8); c.lineTo(4, 10.8); c.lineTo(7, 7.8); c.stroke();
-                                    }
-                                }
+                            SPopUp {
+                                t: pal
                                 model: monCard.rates.map(function (h) { return h + " Hz"; })
-                                currentIndex: { var c = Math.round(monCard.modelData.refreshRate), i = monCard.rates.indexOf(c); return i < 0 ? 0 : i; }
-                                onActivated: i => {
+                                current: { var c = Math.round(monCard.modelData.refreshRate), i = monCard.rates.indexOf(c); return i < 0 ? 0 : i; }
+                                onPicked: i => {
                                     var hz = monCard.bestHz(monCard.selRes, monCard.rates[i]);
                                     root.tryMode(monCard.modelData.name, monCard.selRes + "@" + hz.toFixed(2));
                                 }
