@@ -510,31 +510,32 @@ Scope {
         Component {
             id: pageUpdates
             Column {
+                id: updCol
                 width: parent.width
                 spacing: 0
                 readonly property var ups: { root.tick; var a = []; for (var k in root.updatable) if (root.installed[k]) a.push(k); return a.sort(); }
                 readonly property var ins: { root.tick; var a = []; for (var k in root.installed) if (!root.updatable[k]) a.push(k); return a.sort(); }
                 Item {
                     width: parent.width; height: 56
-                    Text { x: 24; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.ups.length > 0 ? "Available Updates" : "All Up to Date"; color: pal.text; font.family: root.fam; font.pixelSize: 17; font.weight: Font.Bold }
+                    Text { x: 24; anchors.verticalCenter: parent.verticalCenter; text: updCol.ups.length > 0 ? "Available Updates" : "All Up to Date"; color: pal.text; font.family: root.fam; font.pixelSize: 17; font.weight: Font.Bold }
                     Rectangle {
-                        visible: parent.parent.ups.length > 1
+                        visible: updCol.ups.length > 1
                         anchors.right: parent.right; anchors.rightMargin: 24; anchors.verticalCenter: parent.verticalCenter
                         width: 96; height: 28; radius: 14
                         color: allMa.containsMouse ? Qt.darker(root.accent, 1.1) : root.accent
                         Text { anchors.centerIn: parent; text: "Update All"; color: "white"; font.family: root.fam; font.pixelSize: 12; font.weight: Font.DemiBold }
                         MouseArea { id: allMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                    onClicked: { var u = parent.parent.parent.ups; for (var i = 0; i < u.length; i++) root.act(u[i], "update"); } }
+                                    onClicked: { var u = updCol.ups; for (var i = 0; i < u.length; i++) root.act(u[i], "update"); } }
                     }
                 }
-                Repeater { model: parent.ups; delegate: AppRow { required property string modelData; appId: modelData } }
+                Repeater { model: updCol.ups; delegate: AppRow { required property string modelData; required property int index; x: 24; width: parent.width - 48; appId: modelData; divider: index < updCol.ups.length - 1 } }
                 Item { width: 1; height: 18 }
                 Item {
                     width: parent.width; height: 44
                     visible: parent.parent !== null
                     Text { x: 24; anchors.verticalCenter: parent.verticalCenter; text: "Installed"; color: pal.text; font.family: root.fam; font.pixelSize: 15; font.weight: Font.Bold }
                 }
-                Repeater { model: parent.ins; delegate: AppRow { required property string modelData; appId: modelData } }
+                Repeater { model: updCol.ins; delegate: AppRow { required property string modelData; required property int index; x: 24; width: parent.width - 48; appId: modelData; divider: index < updCol.ins.length - 1 } }
             }
         }
 
