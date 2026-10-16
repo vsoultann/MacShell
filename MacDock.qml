@@ -663,6 +663,7 @@ Scope {
             { id: "update",     sec: 4, name: "Software Update", wg: "sun",        c1: "#8E8E93", c2: "#5A5A5F", keys: "update version changelog release notes upgrade" },
             { id: "lockscreen", sec: 4, name: "Lock Screen",     wg: "lock",       c1: "#3A3A3C", c2: "#1C1C1E", keys: "lock password album lyrics media clock" },
             { id: "users",      sec: 4, name: "Users & Groups",  wg: "smile",      c1: "#3D9BFF", c2: "#0A6CFF", keys: "account user name picture avatar" },
+            { id: "shortcuts",  sec: 5, name: "Keyboard Shortcuts", wg: "keyboard", c1: "#8E8E93", c2: "#5A5A5F", keys: "keybind shortcut hotkey spotlight switcher binds" },
             { id: "keyboard",   sec: 5, name: "Keyboard",        wg: "keyboard",   c1: "#A7A7AD", c2: "#7C7C82", keys: "repeat rate delay layout typing" },
             { id: "mouse",      sec: 5, name: "Mouse",           wg: "mouse",      c1: "#A7A7AD", c2: "#7C7C82", keys: "tracking speed scroll natural" },
             { id: "trackpad",   sec: 5, name: "Trackpad",        wg: "trackpad",   c1: "#A7A7AD", c2: "#7C7C82", keys: "tap click natural scroll touchpad gestures" },
@@ -1174,7 +1175,7 @@ Scope {
                         general: paneGeneral, appearance: paneAppearance, controlcenter: paneCC, dock: paneDesktopDock,
                         displays: paneDisplays, menubar: paneMenuBar, wallpaper: paneWallpaper,
                         notifications: paneNotif, sound: paneSound, focus: paneFocus,
-                        update: paneUpdate, lockscreen: paneLock, users: paneUsers, keyboard: paneKeyboard, mouse: paneMouse, trackpad: paneTrackpad,
+                        update: paneUpdate, shortcuts: paneShortcuts, lockscreen: paneLock, users: paneUsers, keyboard: paneKeyboard, mouse: paneMouse, trackpad: paneTrackpad,
                         apps: paneApps, about: paneAbout
                     })[prefsWindow.panes[prefsWindow.cur].id]
                     onLoaded: fadeIn.restart()
@@ -2758,6 +2759,107 @@ Scope {
             }
         }
 
+        // ── Keyboard Shortcuts ──
+        // Every MacShell shortcut, editable. What you set is written to ~/.config/macshell/keybinds.lua, which the
+        // session config reads after its own binds, so your choice wins and an update never overwrites it.
+        Component {
+            id: paneShortcuts
+            Column {
+                id: scPane
+                spacing: 10
+                property string capturing: ""          // the id of the shortcut listening for a key
+                readonly property var defs: [
+                    { id: "spotlight",  name: "Spotlight",            def: "SUPER + Space",     cmd: "spotlight toggle" },
+                    { id: "clipboard",  name: "Clipboard history",    def: "SUPER + V",         cmd: "spotlight clipboard" },
+                    { id: "emoji",      name: "Emoji picker",         def: "SUPER + Period",    cmd: "spotlight emoji" },
+                    { id: "apps",       name: "All applications",     def: "SUPER + A",         cmd: "spotlight apps" },
+                    { id: "cc",         name: "Control Center",       def: "SUPER + C",         cmd: "controlcenter toggle" },
+                    { id: "notifs",     name: "Notification Center",  def: "SUPER + N",         cmd: "notifications open" },
+                    { id: "clock",      name: "Clock",                def: "SUPER + T",         cmd: "clock open" },
+                    { id: "appstore",   name: "App Store",            def: "SUPER + SHIFT + A", cmd: "appstore open" },
+                    { id: "settings",   name: "System Settings",      def: "SUPER + Comma",     cmd: "settings open" },
+                    { id: "shot",       name: "Screenshot a region",  def: "SUPER + SHIFT + S", cmd: "screenshot region" },
+                    { id: "wallpapers", name: "Wallpapers",           def: "CTRL + ALT + W",    cmd: "wallpapers toggle" },
+                    { id: "gaming",     name: "Game Mode",            def: "SUPER + G",         cmd: "gaming toggle" }
+                ]
+                function keyOf(id) { var m = root.shortcuts || ({}); var d = scPane.defs; for (var i = 0; i < d.length; i++) if (d[i].id === id) return m[id] !== undefined ? m[id] : d[i].def; return ""; }
+                function setKey(id, combo) {
+                    var m = {}; for (var k in (root.shortcuts || ({}))) m[k] = root.shortcuts[k];
+                    if (combo === "") delete m[id]; else m[id] = combo;
+                    root.shortcuts = m;
+                    root.saveSettings();
+                    scPane.write();
+                }
+                function write() {
+                    var mac = "qs -c MacShell ipc call ";
+                    var lines = ["-- written by MacShell (Settings → Keyboard Shortcuts)"];
+                    for (var i = 0; i < scPane.defs.length; i++) {
+                        var d = scPane.defs[i], k = scPane.keyOf(d.id);
+                        if (k === "") continue;
+                        lines.push('hl.bind("' + k + '", hl.dsp.exec_cmd("' + mac + d.cmd + '"), { description = "MacShell: ' + d.name + '" })');
+                    }
+                    Quickshell.execDetached(["sh", "-c",
+                        "mkdir -p \"$HOME/.config/macshell\"; printf '%s\\n' \"$1\" > \"$HOME/.config/macshell/keybinds.lua\"; hyprctl reload >/dev/null 2>&1",
+                        "sh", lines.join("\n")]);
+                }
+                Component.onCompleted: scPane.write()
+                SLabel { t: pal; text: "Click a shortcut, then press the keys you want. Esc clears it, and Restore Defaults puts them all back." }
+                SCard {
+                    t: pal
+                    Repeater {
+                        model: scPane.defs
+                        delegate: SRow {
+                            required property var modelData
+                            t: pal
+                            title: modelData.name
+                            Rectangle {
+                                width: 190; height: 26; radius: 7
+                                color: scPane.capturing === modelData.id ? root.accent : pal.ctrl
+                                border.width: 1; border.color: scPane.capturing === modelData.id ? root.accent : pal.cardBorder
+                                Behavior on color { ColorAnimation { duration: 140 } }
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: scPane.capturing === modelData.id ? "Press keys\u2026" : scPane.keyOf(modelData.id).replace(/ \+ /g, "  ")
+                                    color: scPane.capturing === modelData.id ? "white" : pal.text
+                                    font.family: pal.fam; font.pixelSize: 12
+                                }
+                                MouseArea {
+                                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                    onClicked: { scPane.capturing = scPane.capturing === modelData.id ? "" : modelData.id; if (scPane.capturing !== "") keyCatcher.forceActiveFocus(); }
+                                }
+                            }
+                        }
+                    }
+                }
+                Row {
+                    spacing: 8
+                    SButton { t: pal; text: "Restore Defaults"; onClicked: { root.shortcuts = ({}); root.saveSettings(); scPane.write(); } }
+                }
+                // catches the key you press while a shortcut is listening
+                Item {
+                    id: keyCatcher
+                    width: 0; height: 0
+                    focus: scPane.capturing !== ""
+                    Keys.onPressed: event => {
+                        if (scPane.capturing === "") return;
+                        event.accepted = true;
+                        if (event.key === Qt.Key_Escape) { scPane.setKey(scPane.capturing, ""); scPane.capturing = ""; return; }
+                        if (event.key === Qt.Key_Control || event.key === Qt.Key_Shift || event.key === Qt.Key_Alt || event.key === Qt.Key_Meta) return;
+                        var parts = [];
+                        if (event.modifiers & Qt.MetaModifier) parts.push("SUPER");
+                        if (event.modifiers & Qt.ControlModifier) parts.push("CTRL");
+                        if (event.modifiers & Qt.AltModifier) parts.push("ALT");
+                        if (event.modifiers & Qt.ShiftModifier) parts.push("SHIFT");
+                        var name = root.keyName(event.key, event.text);
+                        if (name === "") return;
+                        parts.push(name);
+                        scPane.setKey(scPane.capturing, parts.join(" + "));
+                        scPane.capturing = "";
+                    }
+                }
+            }
+        }
+
         // ── Software Update ──
         Component {
             id: paneUpdate
@@ -3661,6 +3763,21 @@ Scope {
     readonly property real totalW0: Math.max(0, appCount * (iconSize + spacing) + sepCount * (sepWidth + spacing) - spacing)
     property var launching: ({})
     Timer { id: floatOnce; interval: 1200; onTriggered: root.applyWindowsFloat() }
+    property var shortcuts: ({})            // shortcut id → key combo, empty = the default
+    // Qt key code → the name Hyprland uses
+    function keyName(k, text) {
+        if (k >= Qt.Key_A && k <= Qt.Key_Z) return String.fromCharCode(65 + (k - Qt.Key_A));
+        if (k >= Qt.Key_0 && k <= Qt.Key_9) return String.fromCharCode(48 + (k - Qt.Key_0));
+        if (k >= Qt.Key_F1 && k <= Qt.Key_F12) return "F" + (1 + k - Qt.Key_F1);
+        var m = {};
+        m[Qt.Key_Space] = "Space"; m[Qt.Key_Tab] = "Tab"; m[Qt.Key_Return] = "Return"; m[Qt.Key_Enter] = "Return";
+        m[Qt.Key_Period] = "Period"; m[Qt.Key_Comma] = "Comma"; m[Qt.Key_Slash] = "Slash"; m[Qt.Key_Backslash] = "Backslash";
+        m[Qt.Key_Semicolon] = "Semicolon"; m[Qt.Key_Apostrophe] = "Apostrophe"; m[Qt.Key_Minus] = "Minus"; m[Qt.Key_Equal] = "Equal";
+        m[Qt.Key_BracketLeft] = "BracketLeft"; m[Qt.Key_BracketRight] = "BracketRight"; m[Qt.Key_Backspace] = "BackSpace";
+        m[Qt.Key_Delete] = "Delete"; m[Qt.Key_Home] = "Home"; m[Qt.Key_End] = "End"; m[Qt.Key_PageUp] = "Prior"; m[Qt.Key_PageDown] = "Next";
+        m[Qt.Key_Left] = "Left"; m[Qt.Key_Right] = "Right"; m[Qt.Key_Up] = "Up"; m[Qt.Key_Down] = "Down"; m[Qt.Key_Grave] = "Grave";
+        return m[k] !== undefined ? m[k] : "";
+    }
     property var sysInfo: ({ os: "", kernel: "", cpu: "", mem: "", gpu: "", hypr: "", qs: "" })
     property var knownKeys: ({})
     // the Dock's cells live in a keyed ListModel updated in place: a cell is only created when its item appears and
@@ -3730,7 +3847,7 @@ Scope {
 
     function saveSettings() {
         var o = {
-            dockEnabled: dockEnabled, windowsFloat: windowsFloat, iconSize: iconSize, magnification: magnification, magnificationEnabled: magnificationEnabled,
+            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, iconSize: iconSize, magnification: magnification, magnificationEnabled: magnificationEnabled,
             spacing: spacing, margin: margin, cornerRadius: cornerRadius,
             darkMode: darkMode, glassOpacity: glassOpacity, dockStyle: dockStyle, wallpaperPath: wallpaperPath, glassDebug: glassDebug,
             glassRim: glassRim, glassGrain: glassGrain, glassLiquid: glassLiquid, glassBlur: glassBlur,
@@ -3744,7 +3861,7 @@ Scope {
 
     function applySettings(o) {
         if (!o || typeof o !== "object") return;
-        var keys = ["dockEnabled", "windowsFloat", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
+        var keys = ["dockEnabled", "windowsFloat", "shortcuts", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
                     "darkMode", "glassOpacity", "dockStyle", "wallpaperPath", "glassDebug", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "accent", "fontFamily", "hideMode", "hideDelay", "monitor",
                     "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture"];
         for (var i = 0; i < keys.length; i++) {

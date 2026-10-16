@@ -44,3 +44,6 @@ hl.window_rule({ match = { class = "^org\\.quickshell$", title = "^App Store$" }
 
 -- Settings → Desktop & Dock → "Open windows floating": MacShell writes this file
 pcall(dofile, os.getenv("HOME") .. "/.config/macshell/windows.lua")
+
+-- Settings → Keyboard → Keyboard Shortcuts: MacShell writes this file (it overrides the binds above)
+pcall(dofile, os.getenv("HOME") .. "/.config/macshell/keybinds.lua")
