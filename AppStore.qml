@@ -52,6 +52,7 @@ Scope {
         { id: "Education",  name: "Learn",    c1: "#32D74B", c2: "#15A52F", glyph: "book" },
         { id: "Utility",    name: "Utilities", c1: "#8E8E93", c2: "#5A5A5F", glyph: "tool" }
     ]
+    function collName(k) { return k === "popular" ? "Popular on Flathub" : (k === "trending" ? "Trending" : "Recently Updated"); }
     function catName(id) { for (var i = 0; i < cats.length; i++) if (cats[i].id === id) return cats[i].name; return id; }
 
     property var coll: ({})                 // key → [app]        (key: "popular", "trending", "cat:Graphics", "search")
@@ -59,6 +60,20 @@ Scope {
     property var installed: ({})            // app id → { version, user }
     property var updatable: ({})            // app id → true
     property var busy: ({})                 // app id → "install" | "remove" | "update"
+    property string userName: Quickshell.env("USER") || ""
+    property string avatar: ""
+    Process {
+        running: true
+        command: ["sh", "-c", "n=$(getent passwd \"$USER\" | cut -d: -f5 | cut -d, -f1); printf '%s\\n' \"${n:-$USER}\"; "
+                            + "for a in \"$HOME/.face\" \"$HOME/.face.icon\" \"/var/lib/AccountsService/icons/$USER\"; do [ -f \"$a\" ] && { printf '%s' \"$a\"; break; }; done; echo"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var l = text.split("\n");
+                if ((l[0] || "").trim() !== "") root.userName = l[0].trim();
+                root.avatar = (l[1] || "").trim();
+            }
+        }
+    }
     property int tick: 0                    // bumped so bindings re-read the maps above
 
     function put(key, val) { var m = {}; for (var k in coll) m[k] = coll[k]; m[key] = val; coll = m; }
@@ -215,6 +230,8 @@ Scope {
             readonly property color text3: dark ? Qt.rgba(1, 1, 1, 0.3) : Qt.rgba(0, 0, 0, 0.28)
             readonly property color sep: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.09)
             readonly property color pill: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.07)
+            readonly property color selRow: dark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(0, 0, 0, 0.09)
+            readonly property color getPill: dark ? Qt.rgba(1, 1, 1, 0.13) : "#E7E7EA"
             readonly property color pillHover: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.12)
             readonly property color field: dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06)
             readonly property color border: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.2)
@@ -284,6 +301,34 @@ Scope {
                     }
                 }
 
+                // who you are (macOS puts the Apple ID here; this is your user, since Flathub needs no account)
+                Item {
+                    anchors.bottom: parent.bottom; anchors.bottomMargin: 10
+                    x: 10; width: parent.width - 20; height: 40
+                    Rectangle {
+                        id: avatar
+                        width: 26; height: 26; radius: 13
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: root.accent
+                        Text { anchors.centerIn: parent; text: (root.userName || "?").charAt(0).toUpperCase(); color: "white"; font.family: root.fam; font.pixelSize: 12; font.weight: Font.DemiBold }
+                        Item { id: avMask; anchors.fill: parent; visible: false; layer.enabled: true; Rectangle { anchors.fill: parent; radius: width / 2; color: "black" } }
+                        Image {
+                            anchors.fill: parent
+                            source: root.avatar !== "" ? "file://" + root.avatar : ""
+                            fillMode: Image.PreserveAspectCrop; asynchronous: true; smooth: true
+                            sourceSize: Qt.size(64, 64)
+                            layer.enabled: true
+                            layer.effect: MultiEffect { maskEnabled: true; maskSource: avMask; maskThresholdMin: 0.5; maskSpreadAtMin: 1.0 }
+                        }
+                    }
+                    Text {
+                        x: 34; anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - 40; elide: Text.ElideRight
+                        text: root.userName
+                        color: pal.text; font.family: root.fam; font.pixelSize: 12
+                    }
+                }
+
                 // navigation
                 Column {
                     x: 8; y: 90; width: parent.width - 16
@@ -296,22 +341,19 @@ Scope {
                             id: navItem
                             required property var modelData
                             readonly property bool sel: root.page === modelData.p && root.appId === ""
-                            width: parent.width; height: 30; radius: 7
-                            color: sel ? root.accent : (navMa.containsMouse ? pal.pill : "transparent")
+                            width: parent.width; height: 30; radius: 6
+                            color: sel ? pal.selRow : (navMa.containsMouse ? pal.pill : "transparent")
                             Behavior on color { ColorAnimation { duration: 130 } }
-                            Rectangle {
-                                x: 8; anchors.verticalCenter: parent.verticalCenter
-                                width: 20; height: 20; radius: 5
-                                gradient: Gradient {
-                                    GradientStop { position: 0; color: navItem.modelData.c1 }
-                                    GradientStop { position: 1; color: navItem.modelData.c2 }
-                                }
-                                ASGlyph { anchors.centerIn: parent; width: 13; height: 13; kind: navItem.modelData.g; color: "white" }
+                            ASGlyph {
+                                x: 10; anchors.verticalCenter: parent.verticalCenter
+                                width: 15; height: 15
+                                kind: navItem.modelData.g
+                                color: navItem.sel ? pal.text : pal.text2
                             }
                             Text {
-                                x: 36; anchors.verticalCenter: parent.verticalCenter
+                                x: 34; anchors.verticalCenter: parent.verticalCenter
                                 text: navItem.modelData.n
-                                color: navItem.sel ? "white" : pal.text
+                                color: pal.text
                                 font.family: root.fam; font.pixelSize: 13; font.weight: navItem.sel ? Font.DemiBold : Font.Normal
                             }
                             // how many updates are waiting
@@ -319,8 +361,8 @@ Scope {
                                 visible: navItem.modelData.p === "updates" && root.updateCount > 0
                                 anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter
                                 width: Math.max(18, cnt.implicitWidth + 10); height: 18; radius: 9
-                                color: navItem.sel ? "white" : root.accent
-                                Text { id: cnt; anchors.centerIn: parent; text: root.updateCount; color: navItem.sel ? root.accent : "white"; font.family: root.fam; font.pixelSize: 11; font.weight: Font.DemiBold }
+                                color: root.accent
+                                Text { id: cnt; anchors.centerIn: parent; text: root.updateCount; color: "white"; font.family: root.fam; font.pixelSize: 11; font.weight: Font.DemiBold }
                             }
                             MouseArea {
                                 id: navMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
@@ -361,7 +403,7 @@ Scope {
                         x: 54; anchors.verticalCenter: parent.verticalCenter
                         text: root.appId !== "" ? (root.details[root.appId] ? root.details[root.appId].name : " ")
                             : (root.page === "discover" ? "Discover" : (root.page === "updates" ? "Updates"
-                            : (root.page === "search" ? "Results for “" + root.query + "”" : root.catName(root.page.substring(4)))))
+                            : (root.page === "search" ? "Results for “" + root.query + "”" : (root.page.indexOf("coll:") === 0 ? root.collName(root.page.substring(5)) : root.catName(root.page.substring(4))))))
                         color: pal.text; font.family: root.fam; font.pixelSize: 15; font.weight: Font.DemiBold
                         duration: 300
                     }
@@ -443,8 +485,10 @@ Scope {
                         }
                     }
                 }
-                AppSection { title: "Popular on Flathub"; apps: root.coll["popular"] || [] }
-                AppSection { title: "Recently Updated"; apps: (root.coll["recently-updated"] || []).slice(0, 9); Component.onCompleted: root.fetchCollection("recently-updated") }
+                AppSection { title: "Popular on Flathub"; apps: (root.coll["popular"] || []).slice(0, 12); seeAll: "coll:popular" }
+                AppSection { title: "Recently Updated"; apps: (root.coll["recently-updated"] || []).slice(0, 10); seeAll: "coll:recently-updated"
+                             Component.onCompleted: root.fetchCollection("recently-updated") }
+                AppSection { title: "Trending"; apps: (root.coll["trending"] || []).slice(8, 20); seeAll: "coll:trending" }
             }
         }
 
@@ -455,7 +499,8 @@ Scope {
                 width: parent.width
                 AppSection {
                     title: ""
-                    apps: root.page === "search" ? (root.coll["search"] || []) : (root.coll[root.page] || [])
+                    apps: root.page === "search" ? (root.coll["search"] || [])
+                        : (root.page.indexOf("coll:") === 0 ? (root.coll[root.page.substring(5)] || []) : (root.coll[root.page] || []))
                     empty: root.page === "search" ? (root.query.trim() === "" ? "Type to search Flathub." : "No results.") : "Loading…"
                 }
             }
@@ -656,21 +701,20 @@ Scope {
         readonly property bool hasUpdate: { root.tick; return root.updatable[appId] === true && isInstalled; }
         readonly property string working: { root.tick; return root.busy[appId] || ""; }
         readonly property string label: working !== "" ? "" : (hasUpdate ? "UPDATE" : (isInstalled ? "OPEN" : "GET"))
-        width: big ? 92 : 78; height: big ? 30 : 26
+        width: big ? 92 : 62; height: big ? 30 : 22
         Rectangle {
             anchors.fill: parent
             radius: height / 2
             color: gb.onDark ? Qt.rgba(1, 1, 1, gbMa.containsMouse ? 0.35 : 0.22)
-                             : (gb.hasUpdate || !gb.isInstalled ? (gbMa.containsMouse ? Qt.darker(root.accent, 1.12) : root.accent)
-                                                                : (gbMa.containsMouse ? pal.pillHover : pal.pill))
+                             : (gbMa.containsMouse ? root.accent : pal.getPill)
             Behavior on color { ColorAnimation { duration: 140 } }
             scale: gbMa.pressed ? 0.94 : 1
             Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutQuint } }
             Text {
                 anchors.centerIn: parent
                 text: gb.label
-                color: gb.onDark ? "white" : (gb.hasUpdate || !gb.isInstalled ? "white" : pal.text)
-                font.family: root.fam; font.pixelSize: gb.big ? 13 : 12; font.weight: Font.Bold; font.letterSpacing: 0.3
+                color: gb.onDark ? "white" : (gbMa.containsMouse ? "white" : root.accent)
+                font.family: root.fam; font.pixelSize: gb.big ? 13 : 11.5; font.weight: Font.Bold; font.letterSpacing: 0.4
             }
             // working: a spinner, like the App Store's progress ring
             Canvas {
@@ -684,7 +728,7 @@ Scope {
                 onPaint: {
                     var c = getContext("2d"); c.reset();
                     c.lineWidth = 2; c.lineCap = "round";
-                    c.strokeStyle = gb.onDark || !gb.isInstalled ? "white" : pal.text;
+                    c.strokeStyle = gb.onDark ? "white" : root.accent;
                     c.beginPath(); c.arc(width / 2, height / 2, width / 2 - 1, a, a + 1.9); c.stroke();
                 }
             }
@@ -706,34 +750,35 @@ Scope {
         id: rowItem
         property string appId: ""
         property var app: null                   // a collection hit, when we have one
+        property bool divider: true
         width: parent ? parent.width : 0
-        height: 72
+        height: 58
         readonly property var det: root.details[appId] || null
         Component.onCompleted: if (!app && !det) root.fetchDetail(appId)
-        Rectangle { anchors.fill: parent; color: rowMa.containsMouse ? pal.pill : "transparent"; opacity: 0.55; Behavior on opacity { NumberAnimation { duration: 120 } } }
-        Rectangle { x: 92; width: parent.width - 116; height: 1; color: pal.sep; anchors.bottom: parent.bottom }
+        Rectangle { anchors.fill: parent; anchors.margins: -2; radius: 6; color: rowMa.containsMouse ? pal.pill : "transparent"; opacity: 0.5; Behavior on opacity { NumberAnimation { duration: 120 } } }
+        Rectangle { visible: rowItem.divider; x: 52; width: parent.width - 52; height: 1; color: pal.sep; anchors.bottom: parent.bottom }
         AppIcon {
-            x: 24; anchors.verticalCenter: parent.verticalCenter
-            width: 48; height: 48
+            anchors.verticalCenter: parent.verticalCenter
+            width: 42; height: 42
             appId: rowItem.appId
             url: rowItem.app ? rowItem.app.icon : (rowItem.det ? rowItem.det.icon : "")
         }
         Column {
-            x: 88; anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - 88 - 120
-            spacing: 2
+            x: 52; anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - 52 - 74
+            spacing: 1
             Text {
                 width: parent.width; elide: Text.ElideRight
                 text: rowItem.app ? rowItem.app.name : (rowItem.det ? rowItem.det.name : rowItem.appId)
-                color: pal.text; font.family: root.fam; font.pixelSize: 14; font.weight: Font.DemiBold
+                color: pal.text; font.family: root.fam; font.pixelSize: 13; font.weight: Font.DemiBold
             }
             Text {
                 width: parent.width; elide: Text.ElideRight
                 text: rowItem.app ? (rowItem.app.summary || "") : (rowItem.det ? (rowItem.det.summary || "") : "")
-                color: pal.text2; font.family: root.fam; font.pixelSize: 12
+                color: pal.text2; font.family: root.fam; font.pixelSize: 11
             }
         }
-        GetButton { anchors.right: parent.right; anchors.rightMargin: 24; anchors.verticalCenter: parent.verticalCenter; appId: rowItem.appId }
+        GetButton { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; appId: rowItem.appId }
         MouseArea { id: rowMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; z: -1; onClicked: root.go(root.page, rowItem.appId) }
     }
 
@@ -742,26 +787,45 @@ Scope {
         property string title: ""
         property var apps: []
         property string empty: ""
+        property string seeAll: ""               // page "See All" opens
+        readonly property real colW: (width - 48 - 36) / 2
         width: parent ? parent.width : 0
         spacing: 0
         Item {
-            width: parent.width; height: sec.title === "" ? 10 : 50
-            visible: sec.title !== ""
+            width: parent.width; height: sec.title === "" ? 14 : 48
+            visible: sec.title !== "" || sec.seeAll !== ""
             Text { x: 24; anchors.verticalCenter: parent.verticalCenter; text: sec.title; color: pal.text; font.family: root.fam; font.pixelSize: 17; font.weight: Font.Bold }
+            Text {
+                visible: sec.seeAll !== ""
+                anchors.right: parent.right; anchors.rightMargin: 24; anchors.verticalCenter: parent.verticalCenter
+                text: "See All"; color: root.accent; font.family: root.fam; font.pixelSize: 12
+                MouseArea { anchors.fill: parent; anchors.margins: -6; cursorShape: Qt.PointingHandCursor; onClicked: root.go(sec.seeAll, "") }
+            }
         }
         Text {
             visible: sec.apps.length === 0 && sec.empty !== ""
             x: 24; topPadding: 20
             text: sec.empty; color: pal.text3; font.family: root.fam; font.pixelSize: 13
         }
-        Repeater {
-            model: sec.apps
-            delegate: AppRow {
-                required property var modelData
-                app: modelData
-                appId: modelData.app_id || modelData.id || ""
+        // two columns, like the App Store's lists
+        Grid {
+            x: 24
+            width: parent.width - 48
+            columns: 2
+            columnSpacing: 36
+            Repeater {
+                model: sec.apps
+                delegate: AppRow {
+                    required property var modelData
+                    required property int index
+                    width: sec.colW
+                    app: modelData
+                    appId: modelData.app_id || modelData.id || ""
+                    divider: index < sec.apps.length - 2
+                }
             }
         }
+        Item { width: 1; height: 14 }
     }
 
     // small vector glyphs for the sidebar (no icon theme needed)
