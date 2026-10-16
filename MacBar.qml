@@ -6473,18 +6473,30 @@ Scope {
                     }
                     // name of the selected app, under its icon
                     // the name blur-morphs into the next app's while it glides under the new icon
-                    MorphText {
-                        id: swName
+                    // (a fixed-width box centred on the new icon: it starts moving the instant the selection changes, so the
+                    //  name glides and morphs at the same time — its position never waits on the morphing text's width)
+                    TextMetrics { id: swNameM; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.Medium; text: swName.text }
+                    Item {
+                        id: swNameBox
                         visible: swPanel.n > 0
-                        text: root.swApps.length > root.swIndex ? root.swApps[root.swIndex].name : ""
-                        color: swPanel.style === "opaque" ? (root.effDark ? "white" : "#1D1D1F") : pal.fg
-                        font.family: pal.fam; font.pixelSize: 13; font.weight: Font.Medium
-                        horizontalAlignment: Text.AlignHCenter
-                        duration: 320
+                        width: 260; height: swName.implicitHeight
                         readonly property real cx: swPanel.pad + root.swIndex * swPanel.cw + swPanel.cw / 2
-                        x: Math.max(10, Math.min(swPanel.width - width - 10, cx - width / 2))
+                        readonly property real tw: Math.min(swNameM.advanceWidth, swPanel.width - 20)
+                        // keep the whole name inside the panel
+                        readonly property real cxc: Math.max(10 + tw / 2, Math.min(swPanel.width - 10 - tw / 2, cx))
+                        x: cxc - width / 2
                         y: swPanel.padY + swPanel.cellH + 3
                         Behavior on x { NumberAnimation { duration: 320; easing.type: Easing.OutQuint } }
+                        MorphText {
+                            id: swName
+                            width: parent.width
+                            text: root.swApps.length > root.swIndex ? root.swApps[root.swIndex].name : ""
+                            color: swPanel.style === "opaque" ? (root.effDark ? "white" : "#1D1D1F") : pal.fg
+                            font.family: pal.fam; font.pixelSize: 13; font.weight: Font.Medium
+                            horizontalAlignment: Text.AlignHCenter
+                            animateWidth: false
+                            duration: 320
+                        }
                     }
                 }
             }
