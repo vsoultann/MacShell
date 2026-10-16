@@ -2394,6 +2394,12 @@ Scope {
                     t: pal
                     SRow {
                         t: pal
+                        title: "Animate when it opens"
+                        subtitle: "Off: it simply appears, with no slide or stagger"
+                        SSwitch { t: pal; checked: root.bar ? root.bar.ccAnimate : true; onToggled: v => { if (root.bar) root.bar.ccAnimate = v; } }
+                    }
+                    SRow {
+                        t: pal
                         title: "Style"
                         subtitle: "Tiles gives every control its own piece of Liquid Glass; macOS puts them on one frosted panel"
                         SSegmented {
@@ -3294,8 +3300,61 @@ Scope {
                     }
                 }
 
+                SLabel { t: pal; header: true; text: "System" }
                 SCard {
                     t: pal
+                    Component.onCompleted: sysProc.running = true
+                    Process {
+                        id: sysProc
+                        command: ["sh", "-c",
+                            ". /etc/os-release 2>/dev/null; printf '%s\\n' \"${PRETTY_NAME:-Linux}\"; "
+                            + "uname -r; "
+                            + "LC_ALL=C lscpu 2>/dev/null | sed -n 's/^Model name:[[:space:]]*//p' | head -1; "
+                            + "awk '/MemTotal/ {printf \"%.0f GB\\n\", $2/1048576}' /proc/meminfo; "
+                            + "(lspci 2>/dev/null | sed -n 's/.*VGA compatible controller: //p' | head -2 | paste -sd ', ') ; echo; "
+                            + "hyprctl version 2>/dev/null | head -1 | sed 's/^Hyprland //; s/ built.*//'; "
+                            + "qs --version 2>/dev/null | head -1"]
+                        stdout: StdioCollector {
+                            onStreamFinished: {
+                                var l = text.split("\n");
+                                root.sysInfo = { os: (l[0] || "").trim(), kernel: (l[1] || "").trim(), cpu: (l[2] || "").trim(),
+                                                 mem: (l[3] || "").trim(), gpu: (l[4] || "").trim(), hypr: (l[5] || "").trim(), qs: (l[6] || "").trim() };
+                            }
+                        }
+                    }
+                    Repeater {
+                        model: [["Operating System", root.sysInfo.os], ["Kernel", root.sysInfo.kernel], ["Processor", root.sysInfo.cpu],
+                                ["Memory", root.sysInfo.mem], ["Graphics", root.sysInfo.gpu], ["Compositor", root.sysInfo.hypr ? "Hyprland " + root.sysInfo.hypr : ""],
+                                ["Shell", root.sysInfo.qs]]
+                        delegate: SRow {
+                            required property var modelData
+                            t: pal
+                            visible: String(modelData[1] || "") !== ""
+                            title: modelData[0]
+                            Text {
+                                width: 330; horizontalAlignment: Text.AlignRight; elide: Text.ElideRight
+                                text: modelData[1] || ""
+                                color: pal.text2; font.family: pal.fam; font.pixelSize: 13
+                            }
+                        }
+                    }
+                }
+
+                SCard {
+                    t: pal
+                    SRow {
+                        t: pal
+                        title: "Restart the shell"
+                        subtitle: "Reloads MacShell. Your settings, pinned apps and widgets are kept."
+                        SButton {
+                            t: pal
+                            text: "Restart"
+                            onClicked: {
+                                prefsWindow.visible = false;
+                                Quickshell.execDetached(["sh", "-c", "sleep 0.2; pkill -x -f 'qs -c MacShell'"]);
+                            }
+                        }
+                    }
                     SRow {
                         t: pal
                         title: "Install dependencies"
@@ -3443,6 +3502,7 @@ Scope {
     property int sepCount: 0
     readonly property real totalW0: Math.max(0, appCount * (iconSize + spacing) + sepCount * (sepWidth + spacing) - spacing)
     property var launching: ({})
+    property var sysInfo: ({ os: "", kernel: "", cpu: "", mem: "", gpu: "", hypr: "", qs: "" })
     property var knownKeys: ({})
     // the Dock's cells live in a keyed ListModel updated in place: a cell is only created when its item appears and
     // only destroyed after it has animated out — every other cell (and its live window preview) keeps running

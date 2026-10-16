@@ -92,6 +92,7 @@ Scope {
     property bool spotlightEnabled: true     // Spotlight (the magnifier / its keybind)
     property bool ccEnabled: true            // Control Center
     property string ccStyle: "tiles"         // tiles = every control its own glass | macos = one frosted panel behind them
+    property bool ccAnimate: true            // false = it just appears, with no slide / stagger
     property bool notificationsEnabled: true // banners + Notification Center (off = no D-Bus daemon at all, so mako/dunst can take over)
     property bool clockAppEnabled: true      // the Clock app (alarms and timers still ring while it is on)
     readonly property bool barLayerNeeded: barEnabled || spotlightEnabled || ccEnabled || notificationsEnabled
@@ -241,7 +242,7 @@ Scope {
     readonly property var settingKeys: ["barEnabled", "darkMode", "accent", "fontFamily", "barHeight", "glassOpacity",
         "barStyle", "barGlass", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "barBgOpacity", "glassRealtime", "glassDebug", "wallpaperPath", "use24h", "showDate",
         "showSeconds", "showBatteryPercent", "showTray", "showSearch",
-        "spotlightEnabled", "ccEnabled", "notificationsEnabled", "clockAppEnabled", "ccStyle", "barLogoMode", "barCustomLogoPath", "barWidgets", "weekStartsMonday", "terminal", "launcher",
+        "spotlightEnabled", "ccEnabled", "notificationsEnabled", "clockAppEnabled", "ccStyle", "ccAnimate", "barLogoMode", "barCustomLogoPath", "barWidgets", "weekStartsMonday", "terminal", "launcher",
         "filesCmd", "clipboardCmd", "appUsage", "clipHistory", "clipAutoPaste", "emojiRecent", "screenshotDir", "screenshotSave", "screenshotClipboard", "screenshotNotify", "nightTemp", "ccControls", "ccMigRec", "wallpaperDir", "wallpaperFavs", "wallpaperCmd", "wallpaperVideo", "uiSounds", "gamingMode", "gamingAuto", "ccMigGame", "lockArtBackground",
         "lockClockStyle", "switcherStyle", "lockClockFont", "lockClockWeight", "lockClockMaterial", "lockClockIntensity", "lockClockTint", "lockClockTall", "lockClockDate", "autoContrast", "wallpaperAppearance", "wpPairLight", "wpPairDark",
         "notifDnd", "dnd", "nightOn", "keepAwake",
@@ -2937,7 +2938,7 @@ Scope {
         darkMode = true; accent = "#0a84ff"; fontFamily = "Inter Variable"; glassOpacity = 0.42; glassBlur = 5; barBgOpacity = 0.10; glassRealtime = false;
         barStyle = "liquid"; use24h = true; showDate = true; showSeconds = false; showBatteryPercent = true;
         showTray = true; showSearch = true;
-        spotlightEnabled = true; ccEnabled = true; notificationsEnabled = true; clockAppEnabled = true; ccStyle = "tiles";
+        spotlightEnabled = true; ccEnabled = true; notificationsEnabled = true; clockAppEnabled = true; ccStyle = "tiles"; ccAnimate = true;
         barLogoMode = "arch"; barCustomLogoPath = "";
         barWidgets = ["appleMenu", "appMenus", "workspaces", "volume", "keyboard", "notifications", "wifi", "bluetooth", "privacy", "controlCenter", "clock"];
         ccControls = ccDefault.slice();
@@ -5819,8 +5820,8 @@ Scope {
                     property real openT: opening ? 1 : 0
                     Behavior on openT {
                         NumberAnimation {
-                            duration: cc.opening ? 520 : 150
-                            easing.type: cc.opening ? Easing.OutBack : Easing.OutCubic
+                            duration: !root.ccAnimate ? 110 : (cc.opening ? 520 : 150)
+                            easing.type: (root.ccAnimate && cc.opening) ? Easing.OutBack : Easing.OutCubic
                             easing.overshoot: 1.5
                         }
                     }
@@ -6312,8 +6313,8 @@ Scope {
                                     }
                                     SequentialAnimation {
                                         id: tileIn
-                                        PauseAnimation { duration: ct.slot ? Math.min(220, ct.slot.row * 55 + ct.slot.col * 18) : 0 }
-                                        NumberAnimation { target: ct; property: "ap"; from: 0; to: 1; duration: 460; easing.type: Easing.OutBack; easing.overshoot: 1.8 }
+                                        PauseAnimation { duration: (root.ccAnimate && ct.slot) ? Math.min(220, ct.slot.row * 55 + ct.slot.col * 18) : 0 }
+                                        NumberAnimation { target: ct; property: "ap"; from: 0; to: 1; duration: root.ccAnimate ? 460 : 1; easing.type: Easing.OutBack; easing.overshoot: 1.8 }
                                     }
                                     transform: Translate { y: (1 - ct.ap) * 16 }
                                     opacity: Math.max(0, Math.min(1, ct.ap * 1.6))
@@ -6429,7 +6430,21 @@ Scope {
 
                         // ── edit controls / done ──
                         Item {
+                            id: ccEditRow
                             width: parent.width; height: 28
+                            // comes in with the controls, a beat after the last row
+                            property real ap: 1
+                            Connections {
+                                target: cc
+                                function onOpenSeqChanged() { ccEditRow.ap = 0; editIn.restart(); }
+                            }
+                            SequentialAnimation {
+                                id: editIn
+                                PauseAnimation { duration: root.ccAnimate ? Math.min(260, root.ccPlan.rows * 55 + 40) : 0 }
+                                NumberAnimation { target: ccEditRow; property: "ap"; from: 0; to: 1; duration: root.ccAnimate ? 460 : 1; easing.type: Easing.OutBack; easing.overshoot: 1.8 }
+                            }
+                            opacity: Math.max(0, Math.min(1, ap * 1.6))
+                            transform: Translate { y: (1 - ccEditRow.ap) * 16 }
                             Row {
                                 anchors.centerIn: parent
                                 spacing: 8
