@@ -1303,6 +1303,8 @@ Scope {
     readonly property string activeAppId: activeTl ? (activeTl.appId || "") : ""
     readonly property string appName: {
         if (activeAppId === "") return "Desktop";
+        // MacShell's own windows (all "org.quickshell")
+        if (activeAppId === "org.quickshell") return activeTl.title === "Clock" ? "Clock" : (activeTl.title === "macshell Settings" ? "System Settings" : "MacShell");
         var e = lookup(activeAppId);
         return e ? e.name : activeAppId;
     }
@@ -3053,6 +3055,28 @@ Scope {
         try { n.summaryChanged.connect(function () { upd("summary", n.summary); }); } catch (e) {}
         try { n.bodyChanged.connect(function () { upd("body", n.body); }); } catch (e) {}
     }
+    // ── lock screen: the unread notifications, privacy-safe (app name, app icon, time — never the text) ──
+    // written to ~/.cache/macshell/lock-notifs.json, which MacLock watches
+    onNotifUnreadChanged: lockNotifSave.restart()
+    Connections { target: notifHist; function onCountChanged() { lockNotifSave.restart(); } }
+    Timer { id: lockNotifSave; interval: 300; onTriggered: root.lockNotifWrite() }
+    function appIconFor(app) {
+        if (!app) return "";
+        var e = null;
+        try { e = DesktopEntries.heuristicLookup ? DesktopEntries.heuristicLookup(app) : null; } catch (err) { e = null; }
+        var nm = (e && e.icon) ? e.icon : app.toLowerCase();
+        return Quickshell.iconPath(nm, true) || "";
+    }
+    function lockNotifWrite() {
+        var out = [], n = Math.min(notifUnread, notifHist.count, 20);
+        for (var i = 0; i < n; i++) {
+            var r = notifHist.get(i);
+            out.push({ id: r.nid, app: r.app || "Notification", icon: appIconFor(r.app), time: r.time });
+        }
+        Quickshell.execDetached(["sh", "-c", "mkdir -p \"$HOME/.cache/macshell\" && printf '%s\\n' \"$1\" > \"$HOME/.cache/macshell/lock-notifs.json.tmp\" && mv -f \"$HOME/.cache/macshell/lock-notifs.json.tmp\" \"$HOME/.cache/macshell/lock-notifs.json\"",
+            "sh", JSON.stringify(out)]);
+    }
+
     property bool notifOpen: false
     function notifToastRemove(id) {
         var i = notifIndex(notifToasts, id);

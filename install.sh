@@ -15,9 +15,12 @@
 #   --fonts         install Inter + Roboto Flex (the lock screen's stretch clock)
 #   --apply         set the icon theme + font for GTK / Qt / KDE apps
 #   --wallpapers    download the macOS 27 "Golden Gate" light + dark wallpapers
-#   --sounds        generate the UI sound effects
+#   --sounds        generate the UI sound effects (+ the Clock's alarm / timer tones)
+#   --update        pull the latest version of this repo, then reinstall the shell (keeps every setting)
+#   --check         show what's installed and what's missing; changes nothing
 #   --uninstall     remove MacShell (your settings in ~/.config/macbar, macdock, macshell are kept)
 #   -y, --yes       don't ask questions (for --all / scripts)
+#   -h, --help      this help
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,7 +37,7 @@ die()  { printf '%sxx%s %s\n' "$c_r$c_b" "$c_0" "$*" >&2; exit 1; }
 ask()  { [ "$YES" = 1 ] && return 0; local a; read -r -p "$1 [Y/n] " a; [ -z "$a" ] || [[ "$a" =~ ^[Yy] ]]; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
-PKGS=(quickshell qt6-shadertools qt6-multimedia qt6-svg jq curl git ffmpeg imagemagick libnotify grim slurp wl-clipboard cliphist
+PKGS=(quickshell rsync qt6-shadertools qt6-multimedia qt6-svg jq curl git ffmpeg imagemagick libnotify grim slurp wl-clipboard cliphist
       playerctl brightnessctl bluez-utils networkmanager power-profiles-daemon hypridle hyprlock hyprsunset wf-recorder
       mpvpaper awww inter-font noto-fonts-emoji python-numpy zenity openbsd-netcat libwebp)
 
@@ -81,6 +84,9 @@ do_shell() {
     find "$SESS" -type f \( -name '*.conf' -o -name '*.lua' -o -name '*.sh' \) -exec sed -i "s|@HOME@|$HOME|g" {} +
     chmod +x "$SESS"/scripts/*.sh "$SESS"/hyprland/scripts/*.sh 2>/dev/null || true
     cp "$REPO/install.sh" "$SHARE/install.sh"; chmod +x "$SHARE/install.sh"
+    # MacShell's own apps (Clock) in the app launcher / Spotlight / Dock
+    mkdir -p "$HOME/.local/share/applications"
+    cp "$REPO"/session/applications/*.desktop "$HOME/.local/share/applications/" 2>/dev/null || true
     note "shell: $QS/MacShell   lock screen: $QS/MacLock   session config: $SESS"
 }
 
@@ -174,6 +180,7 @@ do_uninstall() {
     say "Removing MacShell"
     pkill -f 'qs -c MacShell' 2>/dev/null || true
     rm -rf "$QS/MacShell" "$QS/MacLock" "$SHARE"
+    rm -f "$HOME/.local/share/applications/macshell-clock.desktop"
     rm -f "$HOME/.config/hypr/macshell.conf" "$HOME/.config/hypr/macshell.lua"
     sed -i '/macshell.conf/d' "$HOME/.config/hypr/hyprland.conf" 2>/dev/null || true
     sed -i '/require("macshell")/d' "$HOME/.config/hypr/hyprland.lua" 2>/dev/null || true
@@ -181,6 +188,24 @@ do_uninstall() {
         sudo rm -f /usr/share/wayland-sessions/hyprland-macshell.desktop /usr/local/bin/start-hyprland-macshell
     fi
     note "kept: $SESS and your settings (~/.config/macbar, ~/.config/macdock, ~/.config/macshell). Delete them yourself for a clean slate."
+}
+
+do_update() {
+    say "Updating MacShell"
+    have git && [ -d "$REPO/.git" ] || die "$REPO is not a git checkout — download the new version and run ./install.sh --shell"
+    git -C "$REPO" pull --ff-only || die "couldn't update (local changes in $REPO?)"
+    exec "$REPO/install.sh" --shell
+}
+
+do_check() {
+    say "Checking"
+    local miss=() c
+    for c in qs qsb hyprctl jq curl ffmpeg magick grim slurp wl-copy cliphist playerctl brightnessctl nmcli hypridle mpvpaper awww pw-play python3 rsync; do
+        if have "$c" || { [ "$c" = qsb ] && [ -x /usr/lib/qt6/bin/qsb ]; }; then note "ok       $c"; else miss+=("$c"); printf '%s  ✗%s missing  %s\n' "$c_r" "$c_0" "$c"; fi
+    done
+    [ -d "$QS/MacShell" ] && note "shell installed: $QS/MacShell" || warn "shell not installed yet (./install.sh --shell)"
+    [ -f /usr/share/wayland-sessions/hyprland-macshell.desktop ] && note "login session: Hyprland (MacShell)" || note "login session: not added (./install.sh --session)"
+    [ ${#miss[@]} -eq 0 ] && say "Everything's there." || warn "${#miss[@]} missing — ./install.sh --deps installs them"
 }
 
 menu() {
@@ -215,7 +240,9 @@ for a in "$@"; do
         --deps-only) do_deps; exit 0 ;;
         --deps|--shell|--session|--existing|--icons|--fonts|--apply|--wallpapers|--sounds) todo+=("${a#--}") ;;
         --uninstall) do_uninstall; exit 0 ;;
-        -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
+        --update) do_update ;;
+        --check) do_check; exit 0 ;;
+        -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
         *) die "unknown option: $a (see --help)" ;;
     esac
 done

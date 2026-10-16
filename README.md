@@ -23,28 +23,54 @@ cd MacShell
 | `--fonts` | Installs Inter + Roboto Flex |
 | `--apply` | Sets the icons + font for GTK, Qt and KDE apps |
 | `--wallpapers` | Downloads the macOS 27 Golden Gate light & dark wallpapers |
-| `--sounds` | Generates the UI sound effects |
+| `--sounds` | Generates the UI sound effects (and the Clock's alarm / timer tones) |
+| `--update` | Pulls the latest version of this repo and reinstalls the shell (keeps every setting) |
+| `--check` | Shows what's installed and what's missing, changes nothing |
 | `--uninstall` | Removes the shell (keeps your settings) |
 
 Settings live in the shell itself: Apple menu → **System Settings…** (Install dependencies and Reset MacShell are in About / General).
 
-## What's new in this edition
+## What this fork adds to the original
 
-- **Lock screen (MacLock)** — glass clock that stretches like iOS 26's, Now Playing with album-tinted bubble, shuffle / repeat,
-  in-bubble or side-by-side synced lyrics, enlarge-the-cover artwork mode with blurred album background, Caps Lock
-  indicator, drag the bubble between spots, PAM unlock, animated wallpapers.
+The original MacShell is the menu bar, the Dock and the Liquid Glass shader. Everything below is new in this fork:
+
+**New apps & screens**
+- **Lock screen (MacLock)** — its own process (a shell crash can't take the lock down), PAM unlock, glass clock that stretches
+  like iOS 26's, Caps Lock indicator, animated wallpapers, per-character password dots, and:
+  - **Now Playing** bubble tinted from the album art, shuffle / repeat, synced lyrics (in the bubble or side by side),
+    enlarge-the-cover artwork mode with a blurred album background, drag the bubble between two spots.
+  - **Notifications, hidden** like macOS ("previews when unlocked"): app icon, app name, time. Clicking one makes the
+    password field glow.
+  - **Live activity**: a running timer or stopwatch, or a ringing alarm with Stop / Snooze.
+- **Clock app** — World Clock (day / night faces), Alarms (repeat days, snooze, on/off), Stopwatch with laps, Timers with a
+  progress ring. Alarms ring even with the window closed, and everything survives restarts.
 - **System Settings** rebuilt like macOS: Wi-Fi (with Ethernet), Bluetooth, Network, Battery & Energy Mode, Control Center,
-  Desktop & Dock, Displays & Night Shift, Notifications, Sound (devices + input), Focus, Lock Screen, Users & Groups,
-  Keyboard, Mouse, Trackpad, Wallpaper (with light/dark/dynamic Golden Gate), Reset, Install dependencies.
-- **Desktop widgets** — Clock, World Clock, Calendar, Weather (macOS large layout), Batteries, Music, Notes, Photos,
-  Reminders, Stocks; Liquid Glass / Frosted / Tinted / Opaque, drag, resize with motion-morph, glass that follows a live wallpaper.
-- **Animated wallpapers** that are cheap: an optimized 30 fps copy decoded on the iGPU, one player per monitor, paused
-  automatically while windows cover the desktop or the screen is locked.
-- **Notifications** — Liquid Glass banners that morph into the Notification Center, disintegrate on Clear All, sounds only for
-  system notifications.
-- Spotlight hover glow + smooth fade, blur + morph text transitions everywhere, auto contrast (dark text on bright backgrounds),
-  Game Mode, UI sounds, drag Dock icons / window previews / clipboard items onto the desktop to open them,
-  state that survives a crash (Do Not Disturb, Night Shift, …), ~4 % idle CPU.
+  Desktop & Dock, **Displays** (main display, resolution, refresh rate, with the macOS "keep or revert" countdown) & Night Shift,
+  Notifications, Sound, Focus, Lock Screen, Users & Groups, Keyboard, Mouse, Trackpad, Wallpaper, Reset, Install dependencies.
+  macOS pop-up menus and controls throughout.
+- **Desktop widgets** — Clock, World Clock, **Clock (timer / stopwatch / alarms with switches)**, Calendar, Weather, Batteries, Music,
+  Notes, Photos, Reminders, Stocks; Liquid Glass / Frosted / Tinted / Opaque, drag, resize with motion-morph, glass that follows
+  a live wallpaper.
+
+**Dock**
+- Live window previews next to the Trash that keep running while other apps open and close.
+- Items grow in when an app opens and shrink out when it closes.
+- Pull a window preview out of the Dock: it grows into the window, then the real window follows your pointer until you let go.
+- Pull an app icon onto the desktop to open it.
+
+**Everywhere**
+- **Notifications** — Liquid Glass banners that morph into Notification Center and disintegrate on Clear All.
+- **Animated wallpapers** that stay cheap: an optimized copy decoded on the iGPU, paused while windows cover the desktop or the screen is locked.
+- Blur + morph text transitions, auto contrast (panels switch text color only when it would be unreadable), Spotlight glow,
+  Game Mode, UI sounds, drag clipboard items onto the desktop.
+- State that survives a crash (Do Not Disturb, Night Shift, alarms, timers, …), about 4 % CPU when idle.
+- A CLI installer with an interactive menu, a separate login session option, `--update`, `--check` and `--uninstall`.
+
+## Contributors
+
+- **[@0-ss](https://github.com/0-ss) (Rickky)** — original author of MacShell: the menu bar, the Dock, the Liquid Glass shader and
+  the foundation everything here is built on, plus help along the way. Their commits are part of this repository's history.
+- **[@vsoultann](https://github.com/vsoultann)** — this fork (Tahoe edition).
 
 ## Credits
 

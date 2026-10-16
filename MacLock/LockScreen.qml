@@ -221,6 +221,164 @@ Item {
         }
     }
 
+    // ═════════════ NOTIFICATIONS + LIVE ACTIVITY (top right, under the status) ═════════════
+    // Notifications are hidden like macOS ("Show previews: When Unlocked"): app icon, app name, "Notification", time.
+    // Clicking one asks for the password: the field glows and fades (1 s). MacShell writes the list.
+    FileView {
+        id: notifFile
+        path: Quickshell.env("HOME") + "/.cache/macshell/lock-notifs.json"
+        watchChanges: true; printErrors: false
+        onFileChanged: reload()
+    }
+    readonly property var lockNotifs: { try { return notifFile.loaded ? JSON.parse(notifFile.text()) : []; } catch (e) { return []; } }
+    // Clock app state: a running timer / stopwatch, or an alarm ringing
+    FileView {
+        id: clockFile
+        path: Quickshell.env("HOME") + "/.config/macshell/clock.json"
+        watchChanges: true; printErrors: false
+        onFileChanged: reload()
+    }
+    readonly property var clockSt: { try { return clockFile.loaded ? JSON.parse(clockFile.text()) : null; } catch (e) { return null; } }
+    property real nowMs: Date.now()
+    Timer { interval: 250; repeat: true; running: ls.liveKind !== ""; onTriggered: ls.nowMs = Date.now() }
+    readonly property string liveKind: !clockSt ? "" : (clockSt.ringing ? "ring" : ((clockSt.timer && clockSt.timer.state && clockSt.timer.state !== "idle") ? "timer"
+                                       : ((clockSt.sw && (clockSt.sw.running || clockSt.sw.acc > 0)) ? "sw" : "")))
+    function pad2(n) { return (n < 10 ? "0" : "") + n; }
+    function fmtDur(ms) { var s = Math.ceil(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return (h > 0 ? h + ":" + pad2(m) : pad2(m)) + ":" + pad2(s % 60); }
+    function notifAge(t) {
+        var d = Math.floor((nowMs2 - t) / 60000);
+        if (d < 1) return "now";
+        if (d < 60) return d + "m ago";
+        var dt = new Date(t);
+        return ls.st.use24h ? pad2(dt.getHours()) + ":" + pad2(dt.getMinutes()) : Qt.formatTime(dt, "h:mm AP");
+    }
+    property real nowMs2: Date.now()
+    Timer { interval: 30000; repeat: true; running: ls.lockNotifs.length > 0; onTriggered: ls.nowMs2 = Date.now() }
+    function askPassword() { ls.forceActiveFocus(); ls.st.poke(); pwPulse.restart(); }
+
+    Column {
+        id: rightCol
+        visible: ls.isPrimary
+        anchors.right: parent.right; anchors.rightMargin: 18 * ls.u
+        y: 48 * ls.u
+        width: 340 * ls.u
+        spacing: 8 * ls.u
+        opacity: ls.shown && !ls.leaving ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
+
+        // live activity
+        Item {
+            id: liveCard
+            width: parent.width
+            readonly property bool on: ls.liveKind !== ""
+            height: on ? (ls.liveKind === "ring" ? 110 : 76) * ls.u : 0
+            opacity: on ? 1 : 0
+            visible: opacity > 0.01
+            Behavior on height { NumberAnimation { duration: 420; easing.type: Easing.OutQuint } }
+            Behavior on opacity { NumberAnimation { duration: 320 } }
+            clip: true
+            Glass { anchors.fill: parent; src: glassTex; frame: ls; cornerR: 22 * ls.u; thickness: 20; tint: 0.42; shadowAmt: 0.35 }
+            readonly property var tm: ls.clockSt ? ls.clockSt.timer : null
+            readonly property real remain: !tm ? 0 : (tm.state === "running" ? Math.max(0, tm.endAt - ls.nowMs) : tm.left)
+            readonly property real swMs: (ls.clockSt && ls.clockSt.sw) ? ls.clockSt.sw.acc + (ls.clockSt.sw.running ? ls.nowMs - ls.clockSt.sw.startAt : 0) : 0
+            // timer ring / stopwatch glyph
+            Canvas {
+                id: liveRing
+                x: 16 * ls.u; y: 14 * ls.u
+                width: 48 * ls.u; height: width
+                property real f: ls.liveKind === "timer" && liveCard.tm && liveCard.tm.total > 0 ? liveCard.remain / liveCard.tm.total : 1
+                onFChanged: requestPaint()
+                onPaint: {
+                    var c = getContext("2d"); c.reset();
+                    var lw = 4.5 * ls.u, r = width / 2 - lw / 2;
+                    c.lineWidth = lw; c.lineCap = "round";
+                    c.strokeStyle = Qt.rgba(1, 1, 1, 0.22); c.beginPath(); c.arc(width / 2, height / 2, r, 0, Math.PI * 2); c.stroke();
+                    c.strokeStyle = "#FF9F0A"; c.beginPath(); c.arc(width / 2, height / 2, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0.0001, f)); c.stroke();
+                }
+                Text { anchors.centerIn: parent; text: ls.liveKind === "sw" ? "\u23F1" : (ls.liveKind === "ring" ? "\u23F0" : ""); font.pixelSize: 20 * ls.u; color: "white" }
+            }
+            Column {
+                x: 78 * ls.u; y: 14 * ls.u
+                width: parent.width - x - 16 * ls.u
+                Text {
+                    text: ls.liveKind === "timer" && liveCard.tm ? (liveCard.tm.label || "Timer") + (liveCard.tm.state === "paused" ? " · Paused" : "")
+                        : (ls.liveKind === "sw" ? "Stopwatch" : (ls.liveKind === "ring" && ls.clockSt.ringing ? (ls.clockSt.ringing.kind === "timer" ? "Timer" : "Alarm") : ""))
+                    color: "#FF9F0A"; font.family: ls.fam; font.pixelSize: 13 * ls.u; font.weight: Font.DemiBold
+                }
+                Text {
+                    text: ls.liveKind === "timer" && liveCard.tm ? ls.fmtDur(liveCard.remain)
+                        : (ls.liveKind === "sw" ? ls.fmtDur(liveCard.swMs).replace(/^(\d\d:\d\d)$/, "$1")
+                        : (ls.liveKind === "ring" && ls.clockSt.ringing ? (ls.clockSt.ringing.kind === "timer" ? "Done" : ls.clockSt.ringing.time) : ""))
+                    color: "white"; font.family: ls.fam; font.pixelSize: 30 * ls.u; font.weight: Font.Medium
+                    font.features: { "tnum": 1 }
+                }
+            }
+            // ringing: Stop / Snooze right here (MacShell does the stopping)
+            Row {
+                visible: ls.liveKind === "ring"
+                x: 16 * ls.u; anchors.bottom: parent.bottom; anchors.bottomMargin: 12 * ls.u
+                spacing: 8 * ls.u
+                Repeater {
+                    model: ls.liveKind === "ring" ? (ls.clockSt.ringing.kind === "timer" ? ["Stop"] : ["Snooze", "Stop"]) : []
+                    delegate: Rectangle {
+                        required property string modelData
+                        width: (liveCard.width - 40 * ls.u) / (ls.clockSt.ringing.kind === "timer" ? 1 : 2); height: 30 * ls.u; radius: height / 2
+                        color: modelData === "Stop" ? "#FF9F0A" : Qt.rgba(1, 1, 1, ringBtn.pressed ? 0.32 : 0.2)
+                        Text { anchors.centerIn: parent; text: parent.modelData; color: parent.modelData === "Stop" ? "black" : "white"; font.family: ls.fam; font.pixelSize: 13 * ls.u; font.weight: Font.DemiBold }
+                        MouseArea { id: ringBtn; anchors.fill: parent; onClicked: Quickshell.execDetached(["qs", "-c", "MacShell", "ipc", "call", "clock", parent.modelData === "Stop" ? "stop" : "snooze"]) }
+                    }
+                }
+            }
+        }
+
+        // notifications (newest first; past four they stack, like macOS)
+        Repeater {
+            model: ls.lockNotifs.slice(0, 4)
+            delegate: Item {
+                id: nc
+                required property var modelData
+                required property int index
+                width: rightCol.width; height: 62 * ls.u
+                property real appear: 0
+                Component.onCompleted: appearAnim.start()
+                NumberAnimation { id: appearAnim; target: nc; property: "appear"; from: 0; to: 1; duration: 560; easing.type: Easing.OutQuint }
+                opacity: appear
+                transform: Translate { x: (1 - nc.appear) * 40 * ls.u }
+                Glass { anchors.fill: parent; src: glassTex; frame: ls; cornerR: 20 * ls.u; thickness: 20; tint: 0.40; shadowAmt: 0.3 }
+                Rectangle { anchors.fill: parent; radius: 20 * ls.u; color: "white"; opacity: ncMa.pressed ? 0.12 : (ncMa.containsMouse ? 0.06 : 0); Behavior on opacity { NumberAnimation { duration: 140 } } }
+                Image {
+                    x: 14 * ls.u; anchors.verticalCenter: parent.verticalCenter
+                    width: 34 * ls.u; height: width
+                    source: nc.modelData.icon || ""
+                    sourceSize: Qt.size(96, 96)
+                    smooth: true; mipmap: true
+                }
+                Column {
+                    x: 60 * ls.u; anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - x - 70 * ls.u
+                    Text { width: parent.width; elide: Text.ElideRight; text: nc.modelData.app; color: "white"; font.family: ls.fam; font.pixelSize: 14 * ls.u; font.weight: Font.DemiBold }
+                    Text { text: "Notification"; color: Qt.rgba(1, 1, 1, 0.72); font.family: ls.fam; font.pixelSize: 13 * ls.u }
+                }
+                Text {
+                    anchors.right: parent.right; anchors.rightMargin: 14 * ls.u; y: 13 * ls.u
+                    text: ls.notifAge(nc.modelData.time); color: Qt.rgba(1, 1, 1, 0.6); font.family: ls.fam; font.pixelSize: 12 * ls.u
+                }
+                MouseArea { id: ncMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: ls.askPassword() }
+            }
+        }
+        // "+N more": the rest, stacked under the last card
+        Item {
+            visible: ls.lockNotifs.length > 4
+            width: parent.width; height: 26 * ls.u
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter; anchors.verticalCenter: parent.verticalCenter
+                text: (ls.lockNotifs.length - 4) + " more notification" + (ls.lockNotifs.length - 4 === 1 ? "" : "s")
+                color: Qt.rgba(1, 1, 1, 0.75); font.family: ls.fam; font.pixelSize: 12 * ls.u; font.weight: Font.Medium
+            }
+            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: ls.askPassword() }
+        }
+    }
+
     // ═════════════ CLOCK ═════════════
     Item {
         id: clock
@@ -1210,10 +1368,27 @@ Item {
             }
             Connections { target: ls.st; function onFailsChanged() { if (ls.st.fails > 0) shake.restart(); } }
 
+            Item {
+                id: pwGlow
+                anchors.fill: parent
+                opacity: 0
+                RectangularShadow { anchors.fill: parent; radius: height / 2; blur: 26 * ls.u; spread: 2 * ls.u; color: Qt.rgba(1, 1, 1, 0.55) }
+            }
+            SequentialAnimation {
+                id: pwPulse
+                NumberAnimation { target: pwGlow; property: "opacity"; to: 1; duration: 280; easing.type: Easing.OutCubic }
+                PauseAnimation { duration: 220 }
+                NumberAnimation { target: pwGlow; property: "opacity"; to: 0; duration: 500; easing.type: Easing.InOutCubic }
+            }
             Glass {
                 anchors.fill: parent
                 src: glassTex; frame: ls
                 cornerR: height / 2; thickness: 18; tint: 0.50; shadowAmt: 0.4
+            }
+            Rectangle {
+                anchors.fill: parent; radius: height / 2; color: "transparent"
+                border.width: 1.5; border.color: "white"
+                opacity: pwGlow.opacity * 0.9
             }
             // hover / press: contour glow along the pill, brighter while held
             MouseArea {
@@ -1241,22 +1416,49 @@ Item {
                 Behavior on opacity { NumberAnimation { duration: 140 } }
             }
 
-            // password dots, each one pops in
-            Row {
+            // password dots: one entry per character, so only the dot you just typed animates in (and only the one you
+            // deleted animates out) — the row slides over smoothly as it grows / shrinks; the rest never move or blink
+            ListModel { id: dotModel }
+            function syncDots() {
+                var want = ls.st.pass.length, alive = 0, i;
+                for (i = 0; i < dotModel.count; i++) if (!dotModel.get(i).dying) alive++;
+                while (alive < want) { dotModel.append({ dying: false }); alive++; }
+                for (i = dotModel.count - 1; i >= 0 && alive > want; i--)
+                    if (!dotModel.get(i).dying) { dotModel.setProperty(i, "dying", true); alive--; }
+            }
+            Connections { target: ls.st; function onPassChanged() { pwBox.syncDots(); } }
+            Item {
                 anchors.left: parent.left; anchors.leftMargin: 16 * ls.u
                 anchors.right: ls.st.capsLock ? capsIcon.left : goBtn.left; anchors.rightMargin: 8 * ls.u
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 5 * ls.u
+                height: 12 * ls.u
                 clip: true
-                layoutDirection: implicitWidth > width ? Qt.RightToLeft : Qt.LeftToRight
-                Repeater {
-                    model: ls.st.pass.length
-                    delegate: Rectangle {
-                        width: 7 * ls.u; height: width; radius: width / 2
-                        color: "white"
-                        scale: 0
-                        Component.onCompleted: scale = 1
-                        Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutQuint } }
+                Row {
+                    id: dotRow
+                    anchors.verticalCenter: parent.verticalCenter
+                    x: Math.min(0, parent.width - width)          // long passwords: the newest dots stay in view
+                    Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                    Repeater {
+                        model: dotModel
+                        delegate: Item {
+                            id: dotCell
+                            required property int index
+                            required property bool dying
+                            readonly property real step: 12 * ls.u
+                            property real grow: 0
+                            width: step * grow; height: 12 * ls.u
+                            Component.onCompleted: grow = 1
+                            onDyingChanged: if (dying) { grow = 0; dotGone.start(); }
+                            Behavior on grow { NumberAnimation { duration: dotCell.dying ? 200 : 240; easing.type: Easing.OutCubic } }
+                            Rectangle {
+                                x: 2.5 * ls.u; anchors.verticalCenter: parent.verticalCenter
+                                width: 7 * ls.u; height: width; radius: width / 2
+                                color: "white"
+                                opacity: dotCell.grow
+                                scale: 0.35 + 0.65 * dotCell.grow
+                            }
+                            Timer { id: dotGone; interval: 230; onTriggered: { for (var i = dotModel.count - 1; i >= 0; i--) if (dotModel.get(i).dying) { dotModel.remove(i); break; } } }
+                        }
                     }
                 }
             }

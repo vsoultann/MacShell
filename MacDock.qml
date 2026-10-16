@@ -118,6 +118,7 @@ Scope {
     }
     readonly property bool captureCut: hub ? hub.captureCut : false
     readonly property bool glassHold: hub ? hub.glassHold : false          // windows opening / closing: the glass's live captures pause, source stays attached
+    readonly property bool previewHold: hub ? hub.previewHold : false
     readonly property bool captureHold: hub ? hub.captureHold : false     // windows opening / closing: the dock PREVIEW capture stops (source released 0.5 s later); the glass is not affected
     // appearance values shared by Dock and Menu Bar
     function setLook(k, v) { root[k] = v; if (bar) bar[k] = v; }
@@ -3191,6 +3192,21 @@ Scope {
     readonly property real totalW0: Math.max(0, appCount * (iconSize + spacing) + sepCount * (sepWidth + spacing) - spacing)
     property var launching: ({})
     property var knownKeys: ({})
+    // the Dock's cells live in a keyed ListModel updated in place: a cell is only created when its item appears and
+    // only destroyed after it has animated out — every other cell (and its live window preview) keeps running
+    property var itemMap: ({})
+    ListModel { id: dockModel }
+    function syncModel(list) {
+        var m = dockModel;
+        for (var i = 0; i < list.length; i++) {
+            var k = list[i].key;
+            if (i < m.count && m.get(i).key === k) continue;
+            var j = -1;
+            for (var x = i + 1; x < m.count; x++) if (m.get(x).key === k) { j = x; break; }
+            if (j >= 0) m.move(j, i, 1); else m.insert(i, { key: k });
+        }
+        while (m.count > list.length) m.remove(m.count - 1);
+    }
     property var leaving: ({})          // key → time it started leaving
     readonly property int leaveMs: 340
     Timer { id: leaveTimer; interval: root.leaveMs + 30; onTriggered: root.rebuild() }
@@ -3376,11 +3392,13 @@ Scope {
         return w.length > 0 ? w[0] : null;
     }
 
+    // MacShell's own windows all have the app id "org.quickshell": the Clock window counts as the Clock app
+    function appOf(tl) { return (tl.appId === "org.quickshell" && tl.title === "Clock") ? "macshell-clock" : tl.appId; }
     function windowsFor(key) {
         var out = [];
         var tls = ToplevelManager.toplevels.values;
         for (var i = 0; i < tls.length; i++) {
-            if (tls[i].appId && keyOf(tls[i].appId) === key) out.push(tls[i]);
+            if (tls[i].appId && keyOf(appOf(tls[i])) === key) out.push(tls[i]);
         }
         return out;
     }
@@ -3511,7 +3529,7 @@ Scope {
         var running = {};
         var runOrder = [];
         for (var i = 0; i < tls.length; i++) {
-            var id = tls[i].appId;
+            var id = appOf(tls[i]);
             if (!id) continue;
             var k = keyOf(id);
             if (!running[k]) { running[k] = true; runOrder.push({ key: k, appId: id }); }
@@ -3553,8 +3571,8 @@ Scope {
                 var tl = tls[w];
                 if (!tl.appId || tl.title === "macshell Settings") continue;
                 // live capture off: a preview cell is only an app icon, so a pinned app (its icon is already in the Dock) gets none; unpinned apps keep theirs
-                if (!windowCapture && seen[keyOf(tl.appId)]) continue;
-                var e3 = lookup(tl.appId);
+                if (!windowCapture && seen[keyOf(appOf(tl))]) continue;
+                var e3 = lookup(appOf(tl));
                 var wid = winIdFor(tl);
                 liveWins.push(tl);
                 if (winAge(tl) < 200) { if (!youngWin.running) youngWin.start(); continue; }     // no preview (= no capture) for brand-new windows
@@ -3626,7 +3644,14 @@ Scope {
         knownKeys = nowKeys;
 
         var s = sig.join("|");
-        if (s !== lastSig) { lastSig = s; items = list; }
+        if (s !== lastSig) {
+            lastSig = s;
+            var map = {};
+            for (var mi = 0; mi < list.length; mi++) map[list[mi].key] = list[mi];
+            itemMap = map;
+            items = list;
+            syncModel(list);
+        }
     }
 
     // ═════════════ LIQUID GLASS BACKEND ═════════════
@@ -3792,7 +3817,7 @@ Scope {
             PanelWindow {
                 id: tearWin
                 screen: win.modelData
-                visible: ui.tearing || tearLaunch.running || tearHome.running || tearPlace.running
+                visible: ui.tearing || tearLaunch.running || tearHome.running || ghostFade.running || oldOut.running
                 anchors { left: true; right: true; top: true; bottom: true }
                 exclusionMode: ExclusionMode.Ignore
                 color: "transparent"
@@ -3800,6 +3825,31 @@ Scope {
                 WlrLayershell.namespace: "macdock-drag"
                 WlrLayershell.layer: WlrLayer.Overlay
                 WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+                // the window where it WAS: a still copy that takes its place the instant the real window jumps to the
+                // pointer, then fades and sinks away — so the old spot never just blinks empty
+                Item {
+                    id: oldSnap
+                    property bool shown: false
+                    visible: shown && opacity > 0.01
+                    opacity: 0
+                    transformOrigin: Item.Center
+                    RectangularShadow { anchors.fill: parent; radius: 10; blur: 30; offset.y: 8; color: Qt.rgba(0, 0, 0, 0.30) }
+                    Rectangle { anchors.fill: parent; radius: 10; color: Qt.rgba(0.09, 0.08, 0.09, 0.88) }
+                    ScreencopyView {
+                        id: oldSv
+                        anchors.fill: parent
+                        live: false
+                        layer.enabled: true
+                        layer.effect: MultiEffect { maskEnabled: true; maskSource: oldMask; maskThresholdMin: 0.5; maskSpreadAtMin: 1.0 }
+                    }
+                    Item { id: oldMask; anchors.fill: parent; visible: false; layer.enabled: true; Rectangle { anchors.fill: parent; radius: 10; color: "black" } }
+                    ParallelAnimation {
+                        id: oldOut
+                        NumberAnimation { target: oldSnap; property: "opacity"; from: 1; to: 0; duration: 340; easing.type: Easing.OutCubic }
+                        NumberAnimation { target: oldSnap; property: "scale"; from: 1; to: 0.94; duration: 420; easing.type: Easing.OutQuint }
+                        onFinished: { oldSnap.shown = false; oldSv.captureSource = null; }
+                    }
+                }
                 Item {
                     id: tearGhost
                     property real zoom: 1
@@ -3809,15 +3859,16 @@ Scope {
                     // closer it gets to the window's real size, held near its title bar (no wiggle — it's a window)
                     readonly property real liftRaw: isWin ? Math.max(0, Math.min(1, (ui.activeTop - ui.tearY) / 240)) : 0
                     property real lift: 1 - Math.pow(1 - liftRaw, 3)
-                    Behavior on lift { enabled: !ui.placing; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                    Behavior on lift { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
                     readonly property real thumbW: 170
                     readonly property real liftW: thumbW + (ui.tearW - thumbW) * lift
                     readonly property real grabFy: 0.5 + (0.035 - 0.5) * lift
                     readonly property real offY: tearWin.height - win.height   // Dock surface → screen coordinates
-                    width: ui.placing ? ui.placeW : (isWin ? liftW : root.iconSize * 1.12)
-                    height: ui.placing ? ui.placeH : (isWin ? liftW * ui.tearH / ui.tearW : width)
-                    x: ui.placing ? ui.placeX : ui.tearX - width / 2
-                    y: ui.placing ? ui.placeY : offY + ui.tearY - height * (isWin ? grabFy : 0.5)
+                    visible: opacity > 0.01
+                    width: isWin ? liftW : root.iconSize * 1.12
+                    height: isWin ? liftW * ui.tearH / ui.tearW : width
+                    x: ui.tearX - width / 2
+                    y: offY + ui.tearY - height * (isWin ? grabFy : 0.5)
                     scale: zoom
                     rotation: isWin ? 0 : wob
                     Image {
@@ -3845,7 +3896,7 @@ Scope {
                         visible: tearGhost.isWin
                         anchors.fill: parent
                         captureSource: tearGhost.isWin && tearWin.visible ? ui.tearItem.tl : null
-                        live: tearGhost.isWin && tearWin.visible
+                        live: tearGhost.isWin && tearWin.visible && tearGhost.visible
                         layer.enabled: true
                         layer.effect: MultiEffect { maskEnabled: true; maskSource: gsvMask; maskThresholdMin: 0.5; maskSpreadAtMin: 1.0 }
                     }
@@ -3898,15 +3949,56 @@ Scope {
                 property real tearY: 0
                 property real tearHomeX: 0
                 property real tearHomeY: 0
-                // window being dragged: its real size and Hyprland address; placing = the ghost settling into its new spot
+                // window being dragged: its real size (capped) and Hyprland address
                 property real tearW: 900
                 property real tearH: 600
                 property string tearAddr: ""
-                property bool placing: false
-                property real placeX: 0
-                property real placeY: 0
-                property real placeW: 0
-                property real placeH: 0
+                // the real window: once its preview (pulled out of the Dock) has grown to the window's size, the real window
+                // takes over under the pointer and follows it (like Super + drag) until the button is let go; a still copy
+                // fades away where it used to be
+                property bool following: false
+                property bool oldVisible: false
+                NumberAnimation { id: ghostFade; target: tearGhost; property: "opacity"; to: 0; duration: 180; easing.type: Easing.OutCubic }
+                onTearXChanged: if (following) Qt.callLater(moveReal)
+                onTearYChanged: {
+                    if (following) Qt.callLater(moveReal);
+                    else if (tearing && tearAddr && tearGhost.liftRaw >= 1) handoff();
+                }
+                function wsel() { return 'window = "address:' + tearAddr + '"'; }
+                function realPos() {
+                    return { x: Math.round(win.modelData.x + tearX - tearW / 2),
+                             y: Math.round(win.modelData.y + tearGhost.offY + tearY - tearH * 0.035) };
+                }
+                function moveReal() {
+                    if (!following || !tearAddr) return;
+                    var p = realPos();
+                    Hyprland.dispatch('hl.dsp.window.move({ x = ' + p.x + ', y = ' + p.y + ', "exact", ' + wsel() + ' })');
+                }
+                function handoff() {
+                    if (following || !tearAddr) return;
+                    following = true;
+                    var mon = Hyprland.monitorFor(win.modelData);
+                    var ws = (mon && mon.activeWorkspace) ? String(mon.activeWorkspace.name) : "";
+                    var p = realPos(), sel = wsel();
+                    if (ws) Hyprland.dispatch('hl.dsp.window.move({ workspace = "' + ws + '", follow = false, ' + sel + ' })');
+                    Hyprland.dispatch('hl.dsp.window.fullscreen_state({ internal = 0, client = 0, ' + sel + ' })');
+                    Hyprland.dispatch('hl.dsp.window.float({ action = "enable", ' + sel + ' })');
+                    Hyprland.dispatch('hl.dsp.window.set_prop({ prop = "no_anim", value = "1", ' + sel + ' })');
+                    Hyprland.dispatch('hl.dsp.window.resize({ x = ' + Math.round(tearW) + ', y = ' + Math.round(tearH) + ', "exact", ' + sel + ' })');
+                    Hyprland.dispatch('hl.dsp.window.move({ x = ' + p.x + ', y = ' + p.y + ', "exact", ' + sel + ' })');
+                    if (tearItem && tearItem.tl) tearItem.tl.activate();
+                    if (oldVisible) { oldSnap.scale = 1; oldSnap.opacity = 1; oldSnap.shown = true; oldOut.restart(); }
+                    // the real window appears exactly where its preview is, the preview fades off it
+                    ghostFade.restart();
+                }
+                function finishFollow() {
+                    following = false;
+                    tearing = false;
+                    if (tearAddr) Hyprland.dispatch('hl.dsp.window.set_prop({ prop = "no_anim", value = "0", ' + wsel() + ' })');
+                    tearAddr = "";
+                    if (!ghostFade.running) tearItem = null;
+                    else ghostFade.finished.connect(function () { if (!ui.tearing) ui.tearItem = null; });
+                }
                 function hyprOf(tl) {
                     var v = Hyprland.toplevels.values;
                     for (var i = 0; i < v.length; i++) if (v[i].wayland === tl) return v[i];
@@ -3917,7 +4009,8 @@ Scope {
                     menuItem = null;
                     tearItem = item; tearSrc = src; tearHomeX = homeX; tearHomeY = homeY;
                     tearGhost.opacity = 1; tearGhost.zoom = 1;
-                    placing = false;
+                    following = false; ghostFade.stop();
+                    tearAddr = "";
                     if (item.kind === "win") {
                         var h = hyprOf(item.tl), o = h ? h.lastIpcObject : null;
                         tearAddr = h ? ("0x" + h.address.replace(/^0x/, "")) : "";
@@ -3927,47 +4020,36 @@ Scope {
                         // a fullscreen / huge window comes off as a comfortable floating size, like macOS restoring it
                         var k = Math.min(1, (sw * 0.78) / w, (sh * 0.78) / hh);
                         tearW = Math.round(w * k); tearH = Math.round(hh * k);
+                        // where it is now: if that's on screen here, a still copy will stand in for it at the hand-off
+                        var mon0 = Hyprland.monitorFor(win.modelData);
+                        oldSnap.shown = false; oldOut.stop();
+                        oldVisible = !!(o && o.at && o.workspace && mon0 && mon0.activeWorkspace && o.workspace.id === mon0.activeWorkspace.id);
+                        if (oldVisible) {
+                            oldSnap.x = o.at[0] - win.modelData.x; oldSnap.y = o.at[1] - win.modelData.y;
+                            oldSnap.width = o.size[0]; oldSnap.height = o.size[1];
+                            oldSv.captureSource = item.tl;          // one still frame (live: false)
+                        }
                     }
                     tearing = true;
                 }
-                // dropped on the desktop: the ghost settles exactly where the window will be, the real window is moved
-                // there (this monitor's workspace, floating, same size), focused, and the ghost fades off on top of it
-                function placeWindow() {
-                    var sw = tearWin.width, sh = tearWin.height, top = root.bar ? root.bar.barHeight : 34;
-                    var w = tearW, h = tearH;
-                    var cx = tearX, ty = tearGhost.offY + tearY - h * 0.035;
-                    var x = Math.round(Math.max(8, Math.min(sw - w - 8, cx - w / 2)));
-                    var y = Math.round(Math.max(top + 6, Math.min(sh - h - 8, ty)));
-                    placeX = tearGhost.x; placeY = tearGhost.y; placeW = tearGhost.width; placeH = tearGhost.height;
-                    placing = true;
-                    tearPlace.toX = x; tearPlace.toY = y; tearPlace.toW = w; tearPlace.toH = h;
-                    tearPlace.item = tearItem;
-                    tearPlace.restart();
-                    if (!tearAddr) return;
-                    var mon = Hyprland.monitorFor(win.modelData);
-                    var ws = (mon && mon.activeWorkspace) ? String(mon.activeWorkspace.name) : "";
-                    var gx = Math.round(win.modelData.x + x), gy = Math.round(win.modelData.y + y);
-                    var sel = 'window = "address:' + tearAddr + '"';
-                    var cmds = [];
-                    if (ws) cmds.push('hl.dsp.window.move({ workspace = "' + ws + '", follow = false, ' + sel + ' })');
-                    cmds.push('hl.dsp.window.fullscreen_state({ internal = 0, client = 0, ' + sel + ' })');
-                    cmds.push('hl.dsp.window.float({ action = "enable", ' + sel + ' })');
-                    cmds.push('hl.dsp.window.resize({ x = ' + w + ', y = ' + h + ', "exact", ' + sel + ' })');
-                    cmds.push('hl.dsp.window.move({ x = ' + gx + ', y = ' + gy + ', "exact", ' + sel + ' })');
-                    var sh2 = "";
-                    for (var i = 0; i < cmds.length; i++) sh2 += "hyprctl dispatch '" + cmds[i] + "' >/dev/null; ";
-                    Quickshell.execDetached(["sh", "-c", sh2]);
-                }
                 function endTear() {
                     if (!tearing) return;
+                    // a window: let go wherever the pointer is — it simply stays there
+                    if (tearAddr && (following || tearY < activeTop - 30)) {
+                        if (!following) handoff();
+                        finishFollow();
+                        justDragged = true;
+                        Qt.callLater(function () { ui.justDragged = false; });
+                        return;
+                    }
                     tearing = false;
                     justDragged = true;
                     Qt.callLater(function () { ui.justDragged = false; });
                     if (tearY < activeTop - 30) {
-                        if (tearItem && tearItem.kind === "win") { placeWindow(); return; }
                         tearLaunch.item = tearItem;
                         tearLaunch.restart();               // enlarge + fade, then open / focus
                     } else {
+                        // back on the Dock: the preview flies home and the window fades back in where it was
                         tearHome.restart();                 // back to its place
                     }
                 }
@@ -4032,30 +4114,12 @@ Scope {
                     }
                     ScriptAction { script: { if (tearLaunch.item) root.activate(tearLaunch.item, false); ui.tearItem = null; } }
                 }
-                SequentialAnimation {
-                    id: tearPlace
-                    property var item: null
-                    property real toX: 0
-                    property real toY: 0
-                    property real toW: 0
-                    property real toH: 0
-                    ParallelAnimation {
-                        NumberAnimation { target: ui; property: "placeX"; to: tearPlace.toX; duration: 340; easing.type: Easing.OutQuint }
-                        NumberAnimation { target: ui; property: "placeY"; to: tearPlace.toY; duration: 340; easing.type: Easing.OutQuint }
-                        NumberAnimation { target: ui; property: "placeW"; to: tearPlace.toW; duration: 340; easing.type: Easing.OutQuint }
-                        NumberAnimation { target: ui; property: "placeH"; to: tearPlace.toH; duration: 340; easing.type: Easing.OutQuint }
-                    }
-                    ScriptAction { script: { if (tearPlace.item && tearPlace.item.tl) tearPlace.item.tl.activate(); } }
-                    PauseAnimation { duration: 160 }
-                    NumberAnimation { target: tearGhost; property: "opacity"; to: 0; duration: 200; easing.type: Easing.OutCubic }
-                    ScriptAction { script: { ui.placing = false; ui.tearItem = null; } }
-                }
                 ParallelAnimation {
                     id: tearHome
                     NumberAnimation { target: ui; property: "tearX"; to: ui.tearHomeX; duration: 420; easing.type: Easing.OutQuint }
                     NumberAnimation { target: ui; property: "tearY"; to: ui.tearHomeY; duration: 420; easing.type: Easing.OutQuint }
                     NumberAnimation { target: tearGhost; property: "wob"; to: 0; duration: 200 }
-                    onFinished: ui.tearItem = null
+                    onFinished: { ui.tearItem = null; ui.tearAddr = ""; }
                 }
 
                 readonly property bool tucked: wantsHide && !revealed && !menuOpen && !dragging && !tearing
@@ -4335,12 +4399,13 @@ Scope {
 
                         Repeater {
                             id: rep
-                            model: root.items
+                            model: dockModel
 
                             delegate: Item {
                                 id: cell
-                                required property var modelData
+                                required property string key
                                 required property int index
+                                readonly property var modelData: root.itemMap[key] || ({ kind: "sep", key: key, nA: 0, nS: 0 })
                                 readonly property bool isSep: modelData.kind === "sep"
                                 readonly property bool canDrag: !isSep && modelData.pinned === true && !modelData.special
                                 readonly property bool torn: ui.tearing && ui.tearItem && !isSep && ui.tearItem.key === modelData.key
@@ -4351,6 +4416,12 @@ Scope {
                                 // app cells always show their plain icon; only window cells show a live preview
                                 // (with the app's icon as a badge), grouped next to the Trash
                                 readonly property var thumbWin: (!isSep && modelData.kind === "win") ? modelData.tl : null
+                                // the capture only restarts when the window itself changes — refreshed Dock data hands the cell
+                                // the same window again, and re-binding it used to blank the live preview for ~2 s
+                                property var heldTl: null
+                                readonly property string winAddr: { if (!thumbWin) return ""; var h = ui.hyprOf(thumbWin); return h ? String(h.address).replace(/^0x/, "") : ""; }
+                                readonly property bool closingWin: winAddr !== "" && root.hub && root.hub.closingWins[winAddr] === true
+                                onThumbWinChanged: if (thumbWin !== heldTl) heldTl = thumbWin
                                 readonly property bool useThumb: thumbWin !== null
                                 readonly property bool thumbReady: useThumb && (sv.hasContent === undefined || sv.hasContent === true)
 
@@ -4367,10 +4438,10 @@ Scope {
                                 z: isDragged ? 100 : 0
 
                                 readonly property bool leavingCell: modelData.leaving === true
-                                property real appear: modelData.fresh ? 0
-                                    : (leavingCell ? Math.max(0, 1 - (Date.now() - modelData.leaveAt) / root.leaveMs) : 1)
+                                property real appear: modelData.fresh ? 0 : 1
                                 Behavior on appear { NumberAnimation { duration: cell.leavingCell ? root.leaveMs : 320; easing.type: cell.leavingCell ? Easing.InOutCubic : Easing.OutCubic } }
-                                Component.onCompleted: Qt.callLater(function () { cell.appear = cell.leavingCell ? 0 : 1; })
+                                Component.onCompleted: { heldTl = thumbWin; Qt.callLater(function () { cell.appear = cell.leavingCell ? 0 : 1; }); }
+                                onLeavingCellChanged: appear = leavingCell ? 0 : 1
                                 enabled: !leavingCell
 
                                 readonly property real c0: modelData.nA * (root.iconSize + root.spacing)
@@ -4443,13 +4514,13 @@ Scope {
                                     ScreencopyView {
                                         id: sv
                                         anchors.centerIn: parent
-                                        captureSource: root.captureCut ? null : cell.thumbWin
+                                        captureSource: (root.hub && !root.hub.windowCapture) ? null : cell.heldTl
                                         // live only while the pointer is on the Dock (where you look at them); otherwise one fresh
                                         // frame every 2 s — live previews of every window were ~8% CPU at idle
-                                        live: !ui.tucked && !root.captureHold && hh.hovered
+                                        live: !ui.tucked && !root.previewHold && !cell.closingWin && hh.hovered
                                         Timer {
                                             interval: 2000; repeat: true; triggeredOnStart: true
-                                            running: !sv.live && !ui.tucked && !root.captureHold && sv.captureSource !== null
+                                            running: !sv.live && !ui.tucked && !root.previewHold && !cell.closingWin && sv.captureSource !== null
                                             onTriggered: if (typeof sv.captureFrame === "function") sv.captureFrame()
                                         }
                                         readonly property real ar: (implicitWidth > 0 && implicitHeight > 0)

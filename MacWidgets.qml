@@ -50,7 +50,8 @@ Scope {
         { type: "notes",     name: "Notes",       sizes: ["s", "m", "l"], hint: "notes.md" },
         { type: "photos",    name: "Photos",      sizes: ["s", "m", "l"], hint: "Featured photo" },
         { type: "reminders", name: "Reminders",   sizes: ["s", "m", "l"], hint: "reminders.md" },
-        { type: "stocks",    name: "Stocks",      sizes: ["s", "m"], hint: "Watchlist" }
+        { type: "stocks",    name: "Stocks",      sizes: ["s", "m"], hint: "Watchlist" },
+        { type: "alarms",    name: "Clock",       sizes: ["s", "m", "l"], hint: "Timer · Stopwatch · Alarms" }
     ]
     function dims(size) {
         if (size === "l") return { w: 356, h: 356 };
@@ -968,6 +969,153 @@ Scope {
         }
     }
 
+    // Clock app widget: a running timer (ring) or stopwatch, then alarms with their on / off switches
+    Component {
+        id: cAlarms
+        Item {
+            id: ca
+            readonly property var ctx: parent ? parent.ctx : null
+            readonly property var ck: root.hub ? root.hub.clock : null
+            readonly property string size: ctx ? ctx.size : "s"
+            readonly property color fg: ctx ? ctx.fg : "white"
+            readonly property color fg2: ctx ? ctx.fg2 : Qt.rgba(1, 1, 1, 0.6)
+            readonly property color orange: ctx && ctx.mono ? fg : "#FF9F0A"
+            readonly property bool hasTimer: ck !== null && ck.timerActive
+            readonly property bool hasSw: ck !== null && ck.swActive
+            readonly property bool live: hasTimer || hasSw
+            readonly property var alarmList: ck ? ck.alarms : []
+            readonly property int maxAlarms: size === "l" ? (live ? 4 : 6) : (size === "m" ? 3 : 1)
+
+            // ── live activity (timer ring / stopwatch) ──
+            Item {
+                id: liveBox
+                visible: ca.live
+                width: ca.size === "m" ? 140 : parent.width
+                height: ca.size === "s" ? parent.height : (ca.size === "m" ? parent.height : 132)
+                // timer
+                Item {
+                    visible: ca.hasTimer
+                    anchors.fill: parent
+                    readonly property real remain: ca.ck ? ca.ck.timerLeft() : 0
+                    readonly property real frac: ca.ck && ca.ck.timer.total > 0 ? remain / ca.ck.timer.total : 0
+                    Canvas {
+                        id: tring
+                        width: Math.min(parent.width, parent.height) - (ca.size === "l" ? 12 : 4); height: width
+                        anchors.left: ca.size === "l" ? parent.left : undefined
+                        anchors.horizontalCenter: ca.size === "l" ? undefined : parent.horizontalCenter
+                        anchors.verticalCenter: parent.verticalCenter
+                        property real f: parent.frac
+                        property color ink: ca.orange
+                        Behavior on f { NumberAnimation { duration: 1000; easing.type: Easing.Linear } }
+                        onFChanged: requestPaint()
+                        onInkChanged: requestPaint()
+                        onPaint: {
+                            var c = getContext("2d"); c.reset();
+                            var lw = width * 0.07, r = width / 2 - lw / 2;
+                            c.lineWidth = lw; c.lineCap = "round";
+                            c.strokeStyle = Qt.rgba(0.5, 0.5, 0.5, 0.3);
+                            c.beginPath(); c.arc(width / 2, height / 2, r, 0, Math.PI * 2); c.stroke();
+                            c.strokeStyle = ink;
+                            c.beginPath(); c.arc(width / 2, height / 2, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0.0001, f)); c.stroke();
+                        }
+                        Column {
+                            anchors.centerIn: parent
+                            spacing: 0
+                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: ca.ck ? ca.ck.fmtDur(parent.parent.parent.remain) : ""; color: ca.fg; font.family: root.fam; font.pixelSize: tring.width * 0.2; font.weight: Font.Medium; font.features: { "tnum": 1 } }
+                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: ca.ck ? (ca.ck.timer.state === "paused" ? "Paused" : (ca.ck.timer.label || "Timer")) : ""; color: ca.fg2; font.family: root.fam; font.pixelSize: Math.max(10, tring.width * 0.085) }
+                        }
+                    }
+                    // large: a second line with the stopwatch next to the ring
+                }
+                // stopwatch (when no timer, or next to it on the large size)
+                Column {
+                    visible: ca.hasSw && (!ca.hasTimer || ca.size === "l")
+                    anchors.verticalCenter: parent.verticalCenter
+                    x: ca.hasTimer ? tring.width + 22 : (ca.size === "s" ? 0 : 6)
+                    width: parent.width - x
+                    spacing: 2
+                    Text { text: "⏱ Stopwatch"; color: ca.orange; font.family: root.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                    Text {
+                        width: parent.width; fontSizeMode: Text.HorizontalFit; minimumPixelSize: 14
+                        text: ca.ck ? ca.ck.fmtSw(ca.ck.swElapsed()).replace(/,\d\d$/, "") : ""
+                        color: ca.fg; font.family: root.fam; font.pixelSize: ca.size === "s" ? 34 : 30; font.weight: Font.Medium; font.features: { "tnum": 1 }
+                    }
+                    Text { text: ca.ck && ca.ck.sw.running ? "Running" : "Paused"; color: ca.fg2; font.family: root.fam; font.pixelSize: 12 }
+                }
+            }
+
+            // ── alarms ──
+            Column {
+                id: alarmCol
+                visible: !(ca.size === "s" && ca.live)
+                x: ca.size === "m" && ca.live ? 156 : 0
+                y: ca.size === "l" && ca.live ? liveBox.height + 12 : 0
+                width: parent.width - x
+                spacing: ca.size === "s" ? 2 : 6
+                Text { visible: ca.size !== "s" || ca.alarmList.length > 0; text: "⏰ Alarms"; color: ca.orange; font.family: root.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                Repeater {
+                    model: ca.alarmList.slice(0, ca.maxAlarms)
+                    delegate: Item {
+                        id: arow
+                        required property var modelData
+                        width: alarmCol.width
+                        height: ca.size === "s" ? 120 : 34
+                        // small: one big alarm
+                        Column {
+                            visible: ca.size === "s"
+                            y: 6
+                            Text {
+                                text: ca.ck ? ca.ck.fmtHM(arow.modelData.h, arow.modelData.m) + (ca.ck.ampm(arow.modelData.h) ? " " + ca.ck.ampm(arow.modelData.h) : "") : ""
+                                color: arow.modelData.on ? ca.fg : ca.fg2
+                                font.family: root.fam; font.pixelSize: 36; font.weight: Font.Light
+                            }
+                            Text { text: (arow.modelData.label || "Alarm") + (arow.modelData.days.length ? ", " + ca.ck.repeatText(arow.modelData.days) : ""); color: ca.fg2; font.family: root.fam; font.pixelSize: 12; width: alarmCol.width; elide: Text.ElideRight }
+                        }
+                        Column {
+                            visible: ca.size !== "s"
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - asw.width - 8
+                            Text {
+                                text: ca.ck ? ca.ck.fmtHM(arow.modelData.h, arow.modelData.m) + (ca.ck.ampm(arow.modelData.h) ? " " + ca.ck.ampm(arow.modelData.h) : "") : ""
+                                color: arow.modelData.on ? ca.fg : ca.fg2
+                                font.family: root.fam; font.pixelSize: 17; font.weight: Font.Medium
+                                Behavior on color { ColorAnimation { duration: 200 } }
+                            }
+                            Text { width: parent.width; elide: Text.ElideRight; text: (arow.modelData.label || "Alarm") + (arow.modelData.days.length ? ", " + ca.ck.repeatText(arow.modelData.days) : ""); color: ca.fg2; font.family: root.fam; font.pixelSize: 11 }
+                        }
+                        // on / off
+                        Rectangle {
+                            id: asw
+                            anchors.right: parent.right
+                            anchors.verticalCenter: ca.size === "s" ? undefined : parent.verticalCenter
+                            anchors.bottom: ca.size === "s" ? parent.bottom : undefined
+                            width: 36; height: 21; radius: 10.5
+                            color: arow.modelData.on ? (ctx && ctx.mono ? ca.fg : "#30D158") : Qt.rgba(0.5, 0.5, 0.5, 0.35)
+                            Behavior on color { ColorAnimation { duration: 200 } }
+                            Rectangle {
+                                width: 17; height: 17; radius: 8.5; y: 2
+                                x: arow.modelData.on ? parent.width - width - 2 : 2
+                                Behavior on x { NumberAnimation { duration: 260; easing.type: Easing.OutQuint } }
+                                color: "white"
+                            }
+                            MouseArea { anchors.fill: parent; anchors.margins: -6; enabled: !root.editing; cursorShape: Qt.PointingHandCursor; onClicked: if (ca.ck) ca.ck.setAlarmOn(arow.modelData.id, !arow.modelData.on) }
+                        }
+                    }
+                }
+                Text {
+                    visible: ca.alarmList.length === 0
+                    text: ca.size === "s" && !ca.live ? "No Alarms" : "No alarms"
+                    color: ca.fg2; font.family: root.fam; font.pixelSize: ca.size === "s" ? 15 : 13
+                }
+            }
+            // anywhere else: open the Clock app
+            MouseArea {
+                z: -1; anchors.fill: parent; enabled: !root.editing; cursorShape: Qt.PointingHandCursor
+                onClicked: if (ca.ck) ca.ck.open(ca.hasTimer ? "timers" : (ca.hasSw ? "stopwatch" : "alarms"))
+            }
+        }
+    }
+
     Component {
         id: cStocks
         Item {
@@ -1112,6 +1260,7 @@ Scope {
         case "photos": return cPhotos;
         case "reminders": return cReminders;
         case "stocks": return cStocks;
+        case "alarms": return cAlarms;
         }
         return null;
     }

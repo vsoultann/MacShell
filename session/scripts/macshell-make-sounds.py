@@ -131,4 +131,24 @@ for _ in range(70):
 trash *= np.concatenate([np.linspace(0.6, 1, n // 3), np.linspace(1, 0.15, n - n // 3)])
 write("trash", finish(trash, -12))
 
+# Alarm: a bright marimba arpeggio in the spirit of Apple's "Radial" (original synthesis) — one 2 s phrase, looped
+# by the Clock while it rings
+def marimba(f, sec=0.5):
+    t = t_axis(sec)
+    return bell(t, f, [1.0, 3.93, 9.0], [1.0, 0.28, 0.06], [0.22, 0.05, 0.02], 0.001)
+phrase = [(0.00, 1318.5), (0.12, 1567.98), (0.24, 1975.5), (0.36, 1567.98),
+          (0.72, 1318.5), (0.84, 1567.98), (0.96, 1975.5), (1.08, 2637.0)]
+alarm = np.zeros(int(SR * 2.0))
+for at, f in phrase:
+    m = marimba(f); o = int(at * SR)
+    alarm[o: o + len(m)] += m[: max(0, min(len(m), len(alarm) - o))]
+write("alarm", finish(alarm, -8))
+
+# Timer done: the same voice, a shorter three-note phrase
+tdone = np.zeros(int(SR * 1.2))
+for at, f in [(0.0, 1567.98), (0.14, 1975.5), (0.28, 2349.3)]:
+    m = marimba(f, 0.7); o = int(at * SR)
+    tdone[o: o + len(m)] += m[: max(0, min(len(m), len(tdone) - o))]
+write("timer", finish(tdone, -8))
+
 print("wrote", ", ".join(sorted(os.listdir(OUT))), "to", OUT)

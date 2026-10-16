@@ -33,6 +33,7 @@ ShellRoot {
         property var bar: macBar
         property var dock: macDock
         property var widgets: macWidgets
+        property var clock: clockApp
         function openSettings(pane) { macDock.openPrefs(pane); }
 
         // set by MacBar / MacDock (Binding elements) when their glass needs live data
@@ -69,8 +70,14 @@ ShellRoot {
         // source stays attached, so nothing goes blank), then resumes. Not tied to the previews switch, never cut.
         readonly property bool glassHold: churn || macBar.gaming
         property bool captureCut: false
+        // Dock previews no longer pause as a whole while windows open / close (that froze every preview for ~1.5 s):
+        // only the CLOSING window's own preview stops its live capture, the moment Hyprland announces the close
+        // (before the toplevel is destroyed, so no frame is ever aborted in flight). Everything else keeps running.
+        readonly property bool previewHold: !windowCapture || macBar.gaming
+        property var closingWins: ({})
         onCaptureHoldChanged: { if (captureHold) cutDelay.restart(); else { cutDelay.stop(); captureCut = false; } }
         Timer { id: cutDelay; interval: 500; onTriggered: sharedHub.captureCut = true }
+        Timer { id: closingForget; interval: 3000; onTriggered: sharedHub.closingWins = ({}) }
         Timer { id: churnRelease; interval: 1200; onTriggered: sharedHub.churn = false }
         // forget admission records of windows that no longer exist (the table grew by one entry per window ever opened)
         function tlPrune() {
@@ -103,6 +110,13 @@ ShellRoot {
             target: Hyprland
             function onRawEvent(event) {
                 if (event.name === "openwindow" || event.name === "closewindow") { sharedHub.churn = true; churnRelease.restart(); }
+                if (event.name === "closewindow") {
+                    var cw = {}, a = String(event.data).replace(/^0x/, "");
+                    for (var k in sharedHub.closingWins) cw[k] = true;
+                    cw[a] = true;
+                    sharedHub.closingWins = cw;
+                    closingForget.restart();
+                }
                 sharedHub.geoHot = true; geoCool.restart(); tlDebounce.restart();
             }
         }
@@ -236,6 +250,7 @@ ShellRoot {
     MacBar { id: macBar; hub: sharedHub }
     MacDock { id: macDock; hub: sharedHub }
     MacWidgets { id: macWidgets; hub: sharedHub }
+    ClockApp { id: clockApp; hub: sharedHub }
 
     // reopen settings even when both the Dock and the Menu Bar are disabled:
     //   qs -c macbar ipc call settings open
@@ -244,6 +259,14 @@ ShellRoot {
         function open(): void { macDock.openPrefs("general"); }
         // qs -c MacShell ipc call settings pane wallpaper   (general, dock, menubar, appearance, wallpaper, behavior, apps, about)
         function pane(id: string): void { macDock.openPrefs(id); }
+    }
+    // qs -c MacShell ipc call clock open | tab alarms | stop | snooze
+    IpcHandler {
+        target: "clock"
+        function open(): void { clockApp.open(); }
+        function tab(name: string): void { clockApp.open(name); }
+        function stop(): void { clockApp.stopRing(); }
+        function snooze(): void { clockApp.snooze(); }
     }
     IpcHandler {
         target: "notifications"
