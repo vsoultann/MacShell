@@ -648,6 +648,7 @@ Scope {
         readonly property var panes: [
             { id: "wifi",       sec: 1, name: "Wi-Fi",           wg: "wifi",       c1: "#3D9BFF", c2: "#0A6CFF", keys: "wireless network internet ssid join" },
             { id: "bluetooth",  sec: 1, name: "Bluetooth",       wg: "bluetooth",  c1: "#3D9BFF", c2: "#0A6CFF", keys: "devices pair headphones mouse keyboard" },
+            { id: "sharing",    sec: 1, name: "Internet Sharing", wg: "wifi",      c1: "#30D158", c2: "#15A52F", keys: "hotspot tether share wifi ap access point 2.0 passpoint" },
             { id: "network",    sec: 1, name: "Network",         wg: "ethernet",   c1: "#3D9BFF", c2: "#0A6CFF", keys: "ethernet ip address vpn tailscale connection" },
             { id: "battery",    sec: 1, name: "Battery",         wg: "bolt",       c1: "#4CD964", c2: "#28A745", keys: "power energy charge profile performance game mode" },
             { id: "general",    sec: 2, name: "General",         glyph: "behavior", c1: "#8E8E93", c2: "#636366", keys: "enable disable dock menu bar panel show hide off on widgets sound game" },
@@ -1175,7 +1176,7 @@ Scope {
                         general: paneGeneral, appearance: paneAppearance, controlcenter: paneCC, dock: paneDesktopDock,
                         displays: paneDisplays, menubar: paneMenuBar, wallpaper: paneWallpaper,
                         notifications: paneNotif, sound: paneSound, focus: paneFocus,
-                        update: paneUpdate, shortcuts: paneShortcuts, lockscreen: paneLock, users: paneUsers, keyboard: paneKeyboard, mouse: paneMouse, trackpad: paneTrackpad,
+                        update: paneUpdate, shortcuts: paneShortcuts, sharing: paneSharing, lockscreen: paneLock, users: paneUsers, keyboard: paneKeyboard, mouse: paneMouse, trackpad: paneTrackpad,
                         apps: paneApps, about: paneAbout
                     })[prefsWindow.panes[prefsWindow.cur].id]
                     onLoaded: fadeIn.restart()
@@ -2754,6 +2755,118 @@ Scope {
                         t: pal; title: "Keep Awake"
                         subtitle: "Stop the computer from going to sleep or locking"
                         SSwitch { t: pal; checked: root.bar ? root.bar.keepAwake : false; onToggled: v => { if (root.bar) root.bar.keepAwake = v; } }
+                    }
+                }
+            }
+        }
+
+        // ── Internet Sharing (a Wi-Fi hotspot, what Windows calls Mobile Hotspot) ──
+        Component {
+            id: paneSharing
+            Column {
+                id: shPane
+                spacing: 10
+                property bool on: false
+                property string ssid: ""
+                property string pass: ""
+                property string band: "bg"          // bg = 2.4 GHz (reaches further), a = 5 GHz (faster)
+                property string status: ""
+                property int clients: 0
+                Component.onCompleted: shPane.refresh()
+                Timer { interval: 4000; repeat: true; running: prefsWindow.visible && prefsWindow.panes[prefsWindow.cur].id === "sharing"; onTriggered: shPane.refresh() }
+                function refresh() { if (!hsProc.running) hsProc.running = true; }
+                Process {
+                    id: hsProc
+                    command: ["sh", "-c",
+                        "nmcli -t -f NAME con show --active 2>/dev/null | grep -Fx MacShell-Hotspot | head -1; "
+                        + "dev=$(nmcli -t -f NAME,DEVICE con show --active 2>/dev/null | awk -F: '$1==\"MacShell-Hotspot\"{print $2; exit}'); "
+                        + "[ -n \"$dev\" ] && iw dev \"$dev\" station dump 2>/dev/null | grep -c '^Station' || echo 0"]
+                    stdout: StdioCollector {
+                        onStreamFinished: {
+                            var l = text.split("\n");
+                            shPane.on = (l[0] || "").trim() === "MacShell-Hotspot";
+                            shPane.clients = parseInt((l[1] || "0").trim()) || 0;
+                            if (shPane.ssid === "") shPane.ssid = (Quickshell.env("USER") || "MacShell") + "'s MacShell";
+                        }
+                    }
+                }
+                function start() {
+                    shPane.status = "Starting\u2026";
+                    hsStart.running = false;
+                    hsStart.command = ["sh", "-c",
+                        "nmcli con delete MacShell-Hotspot >/dev/null 2>&1; "
+                        + "dev=$(nmcli -t -f DEVICE,TYPE dev | grep ':wifi$' | cut -d: -f1 | head -1); "
+                        + "[ -n \"$dev\" ] || { echo 'no Wi-Fi adapter'; exit 1; }; "
+                        + "nmcli dev wifi hotspot ifname \"$dev\" con-name MacShell-Hotspot ssid \"$1\" band \"$3\" password \"$2\" 2>&1 | tail -1",
+                        "sh", shPane.ssid, shPane.pass.length >= 8 ? shPane.pass : "macshell1", shPane.band];
+                    hsStart.running = true;
+                }
+                Process {
+                    id: hsStart
+                    stdout: StdioCollector { onStreamFinished: { shPane.status = text.trim().indexOf("success") >= 0 || text.trim() === "" ? "" : text.trim(); shPane.refresh(); } }
+                    onExited: (code) => { if (code !== 0 && shPane.status === "") shPane.status = "Couldn't start the hotspot."; shPane.refresh(); }
+                }
+                Process { id: hsStop; command: ["sh", "-c", "nmcli con down MacShell-Hotspot >/dev/null 2>&1; nmcli con delete MacShell-Hotspot >/dev/null 2>&1"]; onExited: shPane.refresh() }
+
+                SCard {
+                    t: pal
+                    SRow {
+                        t: pal
+                        title: "Share this computer's connection"
+                        subtitle: shPane.on ? (shPane.clients > 0 ? shPane.clients + (shPane.clients === 1 ? " device connected" : " devices connected") : "On \u2014 waiting for devices")
+                                            : "Turns the Wi-Fi adapter into a hotspot other devices can join"
+                        SSwitch {
+                            t: pal
+                            checked: shPane.on
+                            onToggled: v => { if (v) shPane.start(); else hsStop.running = true; }
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        title: "Network name"
+                        Rectangle {
+                            width: 230; height: 26; radius: 7; color: pal.field
+                            TextInput {
+                                x: 9; width: parent.width - 18; anchors.verticalCenter: parent.verticalCenter
+                                text: shPane.ssid
+                                onTextChanged: shPane.ssid = text
+                                enabled: !shPane.on
+                                color: shPane.on ? pal.text3 : pal.text; font.family: pal.fam; font.pixelSize: 13
+                                selectByMouse: true
+                            }
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        title: "Password"
+                        subtitle: "At least 8 characters. Left empty, it uses \"macshell1\"."
+                        Rectangle {
+                            width: 230; height: 26; radius: 7; color: pal.field
+                            TextInput {
+                                x: 9; width: parent.width - 18; anchors.verticalCenter: parent.verticalCenter
+                                text: shPane.pass
+                                onTextChanged: shPane.pass = text
+                                enabled: !shPane.on
+                                echoMode: TextInput.Password
+                                color: shPane.on ? pal.text3 : pal.text; font.family: pal.fam; font.pixelSize: 13
+                                selectByMouse: true
+                            }
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        title: "Band"
+                        subtitle: "5 GHz is faster, 2.4 GHz reaches further and more devices support it"
+                        SSegmented {
+                            t: pal; model: ["2.4 GHz", "5 GHz"]; segWidth: 80
+                            current: shPane.band === "a" ? 1 : 0
+                            onPicked: i => shPane.band = i === 1 ? "a" : "bg"
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        visible: shPane.status !== ""
+                        title: shPane.status
                     }
                 }
             }
