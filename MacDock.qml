@@ -38,6 +38,79 @@ Scope {
     property bool dockEnabled: true      // false = no Dock at all (settings window stays available)
     readonly property var bar: hub ? hub.bar : null
     property string userName: Quickshell.env("USER") || ""
+
+    // ═════ Displays: main display + resolution / refresh, with a macOS-style "keep or revert" safety net ═════
+    property var displays: ({ primary: "", modes: {} })      // saved in ~/.config/macshell/displays.json
+    property var monList: []                                  // hyprctl monitors (live)
+    property string pendingOut: ""                            // a mode change waiting for "Keep"
+    property string pendingPrev: ""
+    property int revertLeft: 0
+    FileView {
+        id: dispFile
+        path: Quickshell.env("HOME") + "/.config/macshell/displays.json"
+        printErrors: false
+        onLoaded: { try { root.displays = JSON.parse(text()); } catch (e) {} root.applySavedModes(); }
+    }
+    function saveDisplays() { dispFile.setText(JSON.stringify(root.displays, null, 2)); }
+    function refreshMons() { if (!monListProc.running) monListProc.running = true; }
+    Process {
+        id: monListProc
+        command: ["hyprctl", "-j", "monitors"]
+        stdout: StdioCollector { onStreamFinished: { try { root.monList = JSON.parse(text); } catch (e) {} } }
+    }
+    function modeOf(m) { return m.width + "x" + m.height + "@" + Number(m.refreshRate).toFixed(2); }
+    function applyMode(out, mode) {
+        var m = null;
+        for (var i = 0; i < monList.length; i++) if (monList[i].name === out) m = monList[i];
+        var pos = m ? (m.x + "x" + m.y) : "auto", sc = m ? m.scale : 1;
+        Quickshell.execDetached(["hyprctl", "eval", "hl.monitor({ output = \"" + out + "\", mode = \"" + mode + "\", position = \"" + pos + "\", scale = " + sc + " })"]);
+        monRefreshSoon.restart();
+    }
+    Timer { id: monRefreshSoon; interval: 700; onTriggered: root.refreshMons() }
+    // change a monitor's mode; it reverts by itself after 15 s unless kept
+    function tryMode(out, mode) {
+        var m = null;
+        for (var i = 0; i < monList.length; i++) if (monList[i].name === out) m = monList[i];
+        if (!m) return;
+        if (pendingOut === "") pendingPrev = modeOf(m);
+        pendingOut = out;
+        applyMode(out, mode);
+        pendingMode = mode;
+        revertLeft = 15;
+        revertTimer.restart();
+    }
+    property string pendingMode: ""
+    Timer {
+        id: revertTimer; interval: 1000; repeat: true
+        onTriggered: { root.revertLeft--; if (root.revertLeft <= 0) root.revertMode(); }
+    }
+    function keepMode() {
+        revertTimer.stop();
+        var d = displays, mm = {}; for (var k in d.modes) mm[k] = d.modes[k];
+        mm[pendingOut] = pendingMode;
+        displays = { primary: d.primary || "", modes: mm };
+        saveDisplays();
+        pendingOut = ""; pendingMode = "";
+    }
+    function revertMode() {
+        revertTimer.stop();
+        if (pendingOut !== "" && pendingPrev !== "") applyMode(pendingOut, pendingPrev);
+        pendingOut = ""; pendingMode = "";
+    }
+    function applySavedModes() {
+        var mm = displays.modes || {};
+        for (var k in mm) Quickshell.execDetached(["hyprctl", "eval", "hl.monitor({ output = \"" + k + "\", mode = \"" + mm[k] + "\", position = \"auto\", scale = 1 })"]);
+        if (displays.primary) root.monitorPrimary = displays.primary;
+        refreshMons();
+    }
+    property string monitorPrimary: ""
+    function setPrimary(name) {
+        var d = displays;
+        displays = { primary: name, modes: d.modes || {} };
+        saveDisplays();
+        monitorPrimary = name;
+        root.monitor = name;                                         // the Dock lives on the main display
+    }
     Process {
         running: true
         command: ["sh", "-c", "n=$(getent passwd \"$USER\" | cut -d: -f5 | cut -d, -f1); printf '%s' \"${n:-$USER}\""]
@@ -2339,7 +2412,7 @@ Scope {
                 id: dispPane
                 spacing: 10
                 property var mons: []
-                Component.onCompleted: monList.running = true
+                Component.onCompleted: { monList.running = true; root.refreshMons(); }
                 Process {
                     id: monList
                     command: ["hyprctl", "-j", "monitors"]
@@ -2366,15 +2439,202 @@ Scope {
                     }
                 }
                 SLabel { t: pal; header: true; text: "Displays" }
+                // keep / revert sheet (macOS: "Keep these display settings?")
+                Rectangle {
+                    visible: root.pendingOut !== ""
+                    width: parent.width; height: 64; radius: 10
+                    color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22)
+                    border.width: 1; border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.6)
+                    Text {
+                        x: 14; anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - 220; wrapMode: Text.WordWrap
+                        text: "Keep these display settings? Reverting in " + root.revertLeft + " s."
+                        color: pal.text; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold
+                    }
+                    Row {
+                        anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
+                        spacing: 8
+                        SButton { t: pal; text: "Revert"; onClicked: root.revertMode() }
+                        SButton { t: pal; text: "Keep Changes"; onClicked: root.keepMode() }
+                    }
+                }
                 SCard {
                     t: pal
-                    Repeater {
-                        model: dispPane.mons
-                        delegate: SRow {
-                            required property var modelData
+                    visible: root.monList.length > 1
+                    SRow {
+                        t: pal; title: "Main display"
+                        subtitle: "The Dock, the lock screen controls and new widgets go here"
+                        SSegmented {
                             t: pal
-                            title: (modelData.description || modelData.name).replace(/\s*\(.*\)$/, "") + (modelData.focused ? "  · Main" : "")
+                            model: root.monList.map(function (m) { return m.name; })
+                            segWidth: 96
+                            current: { var p = root.monitorPrimary || root.monitor; for (var i = 0; i < root.monList.length; i++) if (root.monList[i].name === p) return i; return -1; }
+                            onPicked: i => root.setPrimary(root.monList[i].name)
+                        }
+                    }
+                }
+                Repeater {
+                    model: root.monList
+                    delegate: SCard {
+                        id: monCard
+                        required property var modelData
+                        t: pal
+                        // available modes → resolutions (largest first) and the refresh rates of the chosen one
+                        readonly property var modes: {
+                            var seen = {}, out = [];
+                            var am = modelData.availableModes || [];
+                            for (var i = 0; i < am.length; i++) {
+                                var m = /^(\d+)x(\d+)@([\d.]+)Hz$/.exec(am[i]); if (!m) continue;
+                                var k = m[1] + "x" + m[2] + "@" + parseFloat(m[3]).toFixed(2);
+                                if (seen[k]) continue; seen[k] = true;
+                                out.push({ w: parseInt(m[1]), h: parseInt(m[2]), hz: parseFloat(m[3]) });
+                            }
+                            return out;
+                        }
+                        readonly property var resolutions: {
+                            var seen = {}, out = [];
+                            for (var i = 0; i < modes.length; i++) { var r = modes[i].w + "x" + modes[i].h; if (!seen[r]) { seen[r] = true; out.push(modes[i]); } }
+                            out.sort(function (a, b) { return b.w * b.h - a.w * a.h; });
+                            var cur = modelData.width + "x" + modelData.height;
+                            if (!seen[cur]) out.unshift({ w: modelData.width, h: modelData.height, hz: modelData.refreshRate, custom: true });
+                            return out;
+                        }
+                        property string selRes: modelData.width + "x" + modelData.height
+                        readonly property var rates: {
+                            var out = [];
+                            for (var i = 0; i < modes.length; i++) if (modes[i].w + "x" + modes[i].h === selRes && out.indexOf(Math.round(modes[i].hz)) < 0) out.push(Math.round(modes[i].hz));
+                            out.sort(function (a, b) { return b - a; });
+                            if (out.length === 0) out.push(Math.round(modelData.refreshRate));
+                            return out;
+                        }
+                        function bestHz(res, hz) {
+                            var best = null;
+                            for (var i = 0; i < modes.length; i++) if (modes[i].w + "x" + modes[i].h === res && (best === null || Math.abs(modes[i].hz - hz) < Math.abs(best - hz))) best = modes[i].hz;
+                            return best === null ? hz : best;
+                        }
+                        SRow {
+                            t: pal
+                            title: (modelData.description || modelData.name).replace(/\s*\(.*\)$/, "")
                             subtitle: modelData.name + " · " + modelData.width + " × " + modelData.height + " @ " + Math.round(modelData.refreshRate) + " Hz · Scale " + modelData.scale
+                        }
+                        SRow {
+                            t: pal; title: "Resolution"
+                            ComboBox {
+                                width: 200
+                                font.family: pal.fam; font.pixelSize: 13
+                                // macOS pop-up button look
+                                background: Rectangle {
+                                    radius: 7
+                                    color: parent.down ? pal.buttonPressed : pal.button
+                                    border.width: 1; border.color: pal.buttonBorder
+                                }
+                                contentItem: Text {
+                                    leftPadding: 10; rightPadding: 26
+                                    text: parent.displayText
+                                    font: parent.font; color: pal.text
+                                    verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
+                                }
+                                // the opened list: a rounded macOS menu with an accent highlight
+                                delegate: ItemDelegate {
+                                    required property var modelData
+                                    required property int index
+                                    width: ListView.view ? ListView.view.width : 200
+                                    height: 26
+                                    highlighted: ListView.view ? ListView.view.currentIndex === index : false
+                                    background: Rectangle { radius: 5; color: parent.hovered ? pal.accent : "transparent" }
+                                    contentItem: Text {
+                                        leftPadding: 8
+                                        text: parent.modelData
+                                        color: parent.hovered ? "white" : pal.text
+                                        font.family: pal.fam; font.pixelSize: 13
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                }
+                                popup.background: Rectangle {
+                                    radius: 9
+                                    color: pal.dark ? Qt.rgba(0.17, 0.17, 0.19, 0.97) : Qt.rgba(0.97, 0.97, 0.98, 0.98)
+                                    border.width: 1; border.color: pal.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
+                                }
+                                popup.padding: 5
+                                // macOS pop-up button: stacked up/down chevrons in a small accent capsule
+                                indicator: Rectangle {
+                                    x: parent.width - width - 3; anchors.verticalCenter: parent.verticalCenter
+                                    width: 18; height: parent.height - 6; radius: 5
+                                    color: pal.accent
+                                    Column {
+                                        anchors.centerIn: parent; spacing: -5
+                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "\u2303"; color: "white"; font.pixelSize: 10; font.bold: true }
+                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "\u2304"; color: "white"; font.pixelSize: 10; font.bold: true }
+                                    }
+                                }
+                                model: monCard.resolutions.map(function (r) { return r.w + " × " + r.h + (r.custom ? "  (current)" : ""); })
+                                currentIndex: { for (var i = 0; i < monCard.resolutions.length; i++) if (monCard.resolutions[i].w + "x" + monCard.resolutions[i].h === monCard.selRes) return i; return 0; }
+                                onActivated: i => {
+                                    var r = monCard.resolutions[i];
+                                    if (r.custom) return;
+                                    monCard.selRes = r.w + "x" + r.h;
+                                    var hz = monCard.bestHz(monCard.selRes, monCard.modelData.refreshRate);
+                                    root.tryMode(monCard.modelData.name, monCard.selRes + "@" + hz.toFixed(2));
+                                }
+                            }
+                        }
+                        SRow {
+                            t: pal; title: "Refresh rate"
+                            ComboBox {
+                                width: 200
+                                font.family: pal.fam; font.pixelSize: 13
+                                // macOS pop-up button look
+                                background: Rectangle {
+                                    radius: 7
+                                    color: parent.down ? pal.buttonPressed : pal.button
+                                    border.width: 1; border.color: pal.buttonBorder
+                                }
+                                contentItem: Text {
+                                    leftPadding: 10; rightPadding: 26
+                                    text: parent.displayText
+                                    font: parent.font; color: pal.text
+                                    verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
+                                }
+                                // the opened list: a rounded macOS menu with an accent highlight
+                                delegate: ItemDelegate {
+                                    required property var modelData
+                                    required property int index
+                                    width: ListView.view ? ListView.view.width : 200
+                                    height: 26
+                                    highlighted: ListView.view ? ListView.view.currentIndex === index : false
+                                    background: Rectangle { radius: 5; color: parent.hovered ? pal.accent : "transparent" }
+                                    contentItem: Text {
+                                        leftPadding: 8
+                                        text: parent.modelData
+                                        color: parent.hovered ? "white" : pal.text
+                                        font.family: pal.fam; font.pixelSize: 13
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                }
+                                popup.background: Rectangle {
+                                    radius: 9
+                                    color: pal.dark ? Qt.rgba(0.17, 0.17, 0.19, 0.97) : Qt.rgba(0.97, 0.97, 0.98, 0.98)
+                                    border.width: 1; border.color: pal.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
+                                }
+                                popup.padding: 5
+                                // macOS pop-up button: stacked up/down chevrons in a small accent capsule
+                                indicator: Rectangle {
+                                    x: parent.width - width - 3; anchors.verticalCenter: parent.verticalCenter
+                                    width: 18; height: parent.height - 6; radius: 5
+                                    color: pal.accent
+                                    Column {
+                                        anchors.centerIn: parent; spacing: -5
+                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "\u2303"; color: "white"; font.pixelSize: 10; font.bold: true }
+                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "\u2304"; color: "white"; font.pixelSize: 10; font.bold: true }
+                                    }
+                                }
+                                model: monCard.rates.map(function (h) { return h + " Hz"; })
+                                currentIndex: { var c = Math.round(monCard.modelData.refreshRate), i = monCard.rates.indexOf(c); return i < 0 ? 0 : i; }
+                                onActivated: i => {
+                                    var hz = monCard.bestHz(monCard.selRes, monCard.rates[i]);
+                                    root.tryMode(monCard.modelData.name, monCard.selRes + "@" + hz.toFixed(2));
+                                }
+                            }
                         }
                     }
                 }
@@ -3585,6 +3845,70 @@ Scope {
 
             mask: Region { item: maskItem }
 
+            // the lifted item lives in its own full-screen, click-through overlay so it can go anywhere on the screen
+            // (the Dock's own surface only covers the bottom of the screen — it used to be cut off half way up)
+            PanelWindow {
+                id: tearWin
+                screen: win.modelData
+                visible: ui.tearing || tearLaunch.running || tearHome.running
+                anchors { left: true; right: true; top: true; bottom: true }
+                exclusionMode: ExclusionMode.Ignore
+                color: "transparent"
+                mask: Region {}
+                WlrLayershell.namespace: "macdock-drag"
+                WlrLayershell.layer: WlrLayer.Overlay
+                WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+                Item {
+                    id: tearGhost
+                    property real zoom: 1
+                    property real wob: 0
+                    readonly property bool isWin: ui.tearItem !== null && ui.tearItem.kind === "win"
+                    readonly property real ar: (gsv.implicitWidth > 0 && gsv.implicitHeight > 0) ? gsv.implicitWidth / gsv.implicitHeight : 16 / 10
+                    width: isWin ? 300 : root.iconSize * 1.12
+                    height: isWin ? width / ar : width
+                    // pointer is in the Dock surface's coordinates: shift by where that surface sits on the screen
+                    x: ui.tearX - width / 2
+                    y: (tearWin.height - win.height) + ui.tearY - height / 2
+                    scale: zoom
+                    rotation: wob
+                    Image {
+                        visible: !tearGhost.isWin
+                        anchors.fill: parent
+                        source: ui.tearSrc
+                        sourceSize: Qt.size(256, 256)
+                        smooth: true; mipmap: true
+                    }
+                    Rectangle {
+                        visible: tearGhost.isWin
+                        x: 0; y: 6; width: parent.width; height: parent.height
+                        radius: 10; color: Qt.rgba(0, 0, 0, 0.35)
+                    }
+                    ScreencopyView {
+                        id: gsv
+                        visible: tearGhost.isWin
+                        anchors.fill: parent
+                        captureSource: tearGhost.isWin && tearWin.visible ? ui.tearItem.tl : null
+                        live: tearGhost.isWin && tearWin.visible
+                        layer.enabled: true
+                        layer.effect: MultiEffect { maskEnabled: true; maskSource: gsvMask; maskThresholdMin: 0.5; maskSpreadAtMin: 1.0 }
+                    }
+                    Item { id: gsvMask; anchors.fill: parent; visible: false; layer.enabled: true; Rectangle { anchors.fill: parent; radius: 10; color: "black" } }
+                    Rectangle {
+                        visible: tearGhost.isWin
+                        anchors.fill: parent; radius: 10; color: "transparent"
+                        border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.25)
+                    }
+                    // light wiggle while held
+                    SequentialAnimation on wob {
+                        running: ui.tearing
+                        loops: Animation.Infinite
+                        NumberAnimation { to: 2.5; duration: 90; easing.type: Easing.InOutSine }
+                        NumberAnimation { to: -2.5; duration: 180; easing.type: Easing.InOutSine }
+                        NumberAnimation { to: 0; duration: 90; easing.type: Easing.InOutSine }
+                    }
+                }
+            }
+
             Item {
                 id: ui
                 anchors.fill: parent
@@ -3687,33 +4011,11 @@ Scope {
                     if (to !== from) root.reorderPinned(from, to);
                 }
 
-                Image {
-                    id: tearGhost
-                    z: 1000
-                    property real zoom: 1
-                    property real wob: 0
-                    visible: ui.tearing || tearLaunch.running || tearHome.running
-                    source: ui.tearSrc
-                    width: root.iconSize * 1.12; height: width
-                    sourceSize: Qt.size(256, 256)
-                    smooth: true; mipmap: true
-                    x: ui.tearX - width / 2; y: ui.tearY - height / 2
-                    scale: zoom
-                    rotation: wob
-                    // light wiggle while held
-                    SequentialAnimation on wob {
-                        running: ui.tearing
-                        loops: Animation.Infinite
-                        NumberAnimation { to: 4; duration: 90; easing.type: Easing.InOutSine }
-                        NumberAnimation { to: -4; duration: 180; easing.type: Easing.InOutSine }
-                        NumberAnimation { to: 0; duration: 90; easing.type: Easing.InOutSine }
-                    }
-                }
                 SequentialAnimation {
                     id: tearLaunch
                     property var item: null
                     ParallelAnimation {
-                        NumberAnimation { target: tearGhost; property: "zoom"; to: 2.6; duration: 460; easing.type: Easing.OutQuint }
+                        NumberAnimation { target: tearGhost; property: "zoom"; to: tearGhost.isWin ? 2.0 : 2.6; duration: 460; easing.type: Easing.OutQuint }
                         NumberAnimation { target: tearGhost; property: "opacity"; to: 0; duration: 460; easing.type: Easing.OutCubic }
                         NumberAnimation { target: tearGhost; property: "wob"; to: 0; duration: 200 }
                     }
@@ -4013,7 +4315,7 @@ Scope {
                                 readonly property bool isSep: modelData.kind === "sep"
                                 readonly property bool canDrag: !isSep && modelData.pinned === true && !modelData.special
                                 readonly property bool torn: ui.tearing && ui.tearItem && !isSep && ui.tearItem.key === modelData.key
-                                opacity: torn ? 0.3 : 1
+                                opacity: torn ? 0.3 : (isDragged ? 0.92 : 1)
                                 Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                                 readonly property bool isDragged: ui.dragging && modelData.key === ui.dragKey
 
@@ -4034,7 +4336,6 @@ Scope {
                                 }
                                 transform: Translate { x: cell.dx }
                                 z: isDragged ? 100 : 0
-                                opacity: isDragged ? 0.92 : 1
 
                                 property real appear: modelData.fresh ? 0 : 1
                                 Behavior on appear { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }

@@ -129,6 +129,8 @@ Scope {
     // widgets without a screen go on the main display: an external monitor if there is one (not the laptop panel)
     readonly property string mainScreen: {
         var sc = Quickshell.screens;
+        var pr = root.dock ? root.dock.monitorPrimary : "";
+        if (pr !== "") for (var j = 0; j < sc.length; j++) if (sc[j].name === pr) return pr;
         for (var i = 0; i < sc.length; i++) if (!/^(eDP|LVDS|DSI)/.test(sc[i].name)) return sc[i].name;
         return sc.length ? sc[0].name : "";
     }
