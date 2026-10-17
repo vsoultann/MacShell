@@ -180,6 +180,14 @@ Scope {
         "code", "discord", "macshell-applemusic", "spotify", "steam", "obsidian"
     ]   // used until you change pins from the dock; unknown ids are skipped
     property var pinned: defaultPinned
+    property var pinnedFolders: []      // folder paths pinned next to the Trash
+    function pinFolder(p) {
+        if (pinnedFolders.indexOf(p) >= 0) return;
+        pinnedFolders = pinnedFolders.concat([p]);
+        saveSettings(); rebuild();
+        if (bar) bar.playSound("pop", 0.6);
+    }
+    function unpinFolder(p) { pinnedFolders = pinnedFolders.filter(function (x) { return x !== p; }); saveSettings(); rebuild(); }
     // ──────────────────────────────────
 
     // ═════════════════════════════════════════════════════════════════
@@ -3977,7 +3985,7 @@ Scope {
 
     function saveSettings() {
         var o = {
-            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, iconSize: iconSize, magnification: magnification, magnificationEnabled: magnificationEnabled,
+            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, pinnedFolders: pinnedFolders, iconSize: iconSize, magnification: magnification, magnificationEnabled: magnificationEnabled,
             spacing: spacing, margin: margin, cornerRadius: cornerRadius,
             darkMode: darkMode, glassOpacity: glassOpacity, dockStyle: dockStyle, wallpaperPath: wallpaperPath, glassDebug: glassDebug,
             glassRim: glassRim, glassGrain: glassGrain, glassLiquid: glassLiquid, glassBlur: glassBlur,
@@ -3991,7 +3999,7 @@ Scope {
 
     function applySettings(o) {
         if (!o || typeof o !== "object") return;
-        var keys = ["dockEnabled", "windowsFloat", "shortcuts", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
+        var keys = ["dockEnabled", "windowsFloat", "shortcuts", "pinnedFolders", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
                     "darkMode", "glassOpacity", "dockStyle", "wallpaperPath", "glassDebug", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "accent", "fontFamily", "hideMode", "hideDelay", "monitor",
                     "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture"];
         for (var i = 0; i < keys.length; i++) {
@@ -4131,6 +4139,7 @@ Scope {
 
     function activate(item, forceNew) {
         if (item.kind === "win") { if (item.tl) item.tl.activate(); return; }
+        if (item.kind === "folder") { if (hub && hub.finder) hub.finder.open(item.path); return; }
         if (item.special === "trash") {
             // the file manager first (Dolphin understands trash:/ natively); xdg-open only as the last resort
             Quickshell.execDetached(["sh", "-c",
@@ -4205,6 +4214,13 @@ Scope {
 
     function menuFor(item) {
         var m = [];
+        if (item.kind === "folder") {
+            m.push({ kind: "item", label: "Open in Finder", run: function () { root.activate(item, false); } });
+            m.push({ kind: "item", label: "Open in File Manager", run: function () { Quickshell.execDetached(["xdg-open", item.path]); } });
+            m.push({ kind: "sep" });
+            m.push({ kind: "item", label: "Remove from Dock", run: function () { root.unpinFolder(item.path); } });
+            return m;
+        }
         if (item.kind === "win") {
             m.push({ kind: "item", label: "Show", run: function () { activate(item, false); } });
             m.push({ kind: "item", label: "Close", run: function () { if (item.tl) item.tl.close(); } });
@@ -4317,6 +4333,11 @@ Scope {
             for (var wj = 0; wj < winItems.length; wj++) list.push(winItems[wj]);
         }
         if (showTrash && winItems.length > 0) list.push({ kind: "sep", key: "sep:trash" });
+        for (var pf = 0; pf < pinnedFolders.length; pf++) {
+            var fp = pinnedFolders[pf];
+            list.push({ kind: "folder", key: "folder:" + fp, name: fp.split("/").pop(), icon: "folder",
+                        path: fp, entry: null, running: false, pinned: true });
+        }
         if (showTrash) {
             list.push({ kind: "app", key: "__trash", name: "Trash", icon: "user-trash",
                         entry: null, running: false, pinned: true, special: "trash" });

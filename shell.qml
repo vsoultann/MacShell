@@ -36,6 +36,7 @@ ShellRoot {
         property var clock: clockApp
         property var appstore: appStore
         property var photos: photosApp
+        property var finder: finderApp
         function openSettings(pane) { macDock.openPrefs(pane); }
 
         // set by MacBar / MacDock (Binding elements) when their glass needs live data
@@ -272,6 +273,7 @@ ShellRoot {
     ClockApp { id: clockApp; hub: sharedHub }
     AppStore { id: appStore; hub: sharedHub }
     Photos { id: photosApp; hub: sharedHub }
+    Finder { id: finderApp; hub: sharedHub }
 
     // reopen settings even when both the Dock and the Menu Bar are disabled:
     //   qs -c macbar ipc call settings open
@@ -291,6 +293,12 @@ ShellRoot {
     }
     // qs -c MacShell ipc call appstore open | page discover|updates | search <text>
     // qs -c MacShell ipc call photos open | folder <path>
+    // qs -c MacShell ipc call finder open | folder <path>
+    IpcHandler {
+        target: "finder"
+        function open(): void { finderApp.open(); }
+        function folder(p: string): void { finderApp.open(p); }
+    }
     IpcHandler {
         target: "photos"
         function open(): void { photosApp.open(); }
