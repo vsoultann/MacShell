@@ -3841,7 +3841,7 @@ Scope {
                 // (keep scrolling…)
                 Item { width: 1; height: 900 }
 
-                // ── AppleCare+ — nobody asked. The button does nothing. ──
+                // ── AppleCare+ — nobody asked. The button does something. ──
                 SCard {
                     t: pal
                     Item {
@@ -3875,7 +3875,15 @@ Scope {
                             scale: careMa.pressed ? 0.96 : 1
                             Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutQuint } }
                             Text { anchors.centerIn: parent; text: "Add AppleCare+"; color: "white"; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
-                            MouseArea { id: careMa; anchors.fill: parent; cursorShape: Qt.PointingHandCursor }
+                            MouseArea {
+                                id: careMa
+                                anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (root.hub && root.hub.player)
+                                        root.hub.player.playYoutube("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "AppleCare+ \u2014 Terms and Conditions");
+                                    if (root.bar) root.bar.playSound("pop", 0.7);
+                                }
+                            }
                         }
                     }
                 }

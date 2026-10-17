@@ -273,6 +273,30 @@ Scope {
         if (bar) bar.playSound("tink", 0.6);
     }
     function openFile(p) { Quickshell.execDetached(["xdg-open", p]); }
+    // the Reminders editor writes the same markdown you would type by hand
+    function addReminder(text) {
+        var t = String(text || "").trim();
+        if (t === "") return;
+        var cur = remFile.loaded ? remFile.text() : "";
+        if (cur !== "" && cur.charAt(cur.length - 1) !== "\n") cur += "\n";
+        remFile.setText(cur + "- [ ] " + t + "\n");
+        if (bar) bar.playSound("pop", 0.5);
+    }
+    function setReminderText(lineNo, text) {
+        var l = remFile.text().split("\n");
+        if (lineNo < 0 || lineNo >= l.length) return;
+        var t = String(text || "").trim();
+        if (t === "") { deleteReminder(lineNo); return; }
+        l[lineNo] = l[lineNo].replace(/^(\s*[-*]\s*\[( |x|X)\]\s*).*$/, "$1" + t.replace(/\$/g, "$$$$"));
+        remFile.setText(l.join("\n"));
+    }
+    function deleteReminder(lineNo) {
+        var l = remFile.text().split("\n");
+        if (lineNo < 0 || lineNo >= l.length) return;
+        l.splice(lineNo, 1);
+        remFile.setText(l.join("\n"));
+        if (bar) bar.playSound("tink", 0.4);
+    }
 
     // photos: a random picture from ~/Pictures (not screenshots / wallpapers), changes every 15 min
     property var photoList: []
@@ -1262,12 +1286,54 @@ Scope {
                 Text { width: parent.width - cnt.width; text: "Reminders"; color: blue; font.family: root.fam; font.pixelSize: 14; font.weight: Font.Bold }
                 MorphText { id: cnt; text: parent.parent.open.length; duration: 420; animateWidth: false; color: blue; font.family: root.fam; font.pixelSize: 22; font.weight: Font.Bold }
             }
+            // + — add one without leaving the widget
+            Rectangle {
+                id: addBtn
+                anchors.right: parent.right; y: 1
+                width: 18; height: 18; radius: 9
+                visible: !root.editing && (ctx === null || parent.width > 150)
+                color: addMa.containsMouse ? Qt.rgba(blue.r, blue.g, blue.b, 0.22) : "transparent"
+                rotation: adding ? 45 : 0
+                Behavior on rotation { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 2 } }
+                Rectangle { anchors.centerIn: parent; width: 10; height: 1.6; radius: 1; color: blue }
+                Rectangle { anchors.centerIn: parent; width: 1.6; height: 10; radius: 1; color: blue }
+                MouseArea {
+                    id: addMa; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                    onClicked: { adding = !adding; if (adding) newInput.forceActiveFocus(); }
+                }
+            }
+            property bool adding: false
+            property int editingLine: -1
             Column {
                 y: rHead.height + 6
                 width: parent.width
                 spacing: 7
                 clip: true
                 height: parent.height - y
+                // new reminder
+                Item {
+                    width: parent.width
+                    height: adding ? 22 : 0
+                    clip: true
+                    opacity: adding ? 1 : 0
+                    Behavior on height { NumberAnimation { duration: 280; easing.type: Easing.OutQuint } }
+                    Behavior on opacity { NumberAnimation { duration: 220 } }
+                    Rectangle {
+                        width: 16; height: 16; radius: 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: "transparent"; border.width: 1.5; border.color: ctx ? ctx.fg2 : "white"
+                    }
+                    TextInput {
+                        id: newInput
+                        x: 24; width: parent.width - 24
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: ctx ? ctx.fg : "white"; font.family: root.fam; font.pixelSize: 13
+                        selectByMouse: true
+                        onAccepted: { root.addReminder(text); text = ""; }
+                        Keys.onEscapePressed: { text = ""; adding = false; }
+                        Text { visible: parent.text === ""; text: "New Reminder"; color: ctx ? ctx.fg2 : "grey"; font: parent.font }
+                    }
+                }
                 Repeater {
                     model: root.reminders
                     delegate: Row {
@@ -1322,12 +1388,47 @@ Scope {
                                 onClicked: { tickPop.restart(); root.toggleReminder(modelData.line); if (root.bar) root.bar.playSound("tink", 0.5); }
                             }
                         }
-                        Text {
-                            width: parent.width - 24; elide: Text.ElideRight
+                        Item {
+                            width: parent.width - 24
+                            height: Math.max(rowTxt.implicitHeight, 18)
                             anchors.verticalCenter: parent.verticalCenter
-                            text: modelData.text; font.strikeout: modelData.done
-                            color: ctx ? (modelData.done ? ctx.fg2 : ctx.fg) : "white"
-                            font.family: root.fam; font.pixelSize: 13
+                            readonly property bool mine: editingLine === modelData.line
+                            Text {
+                                id: rowTxt
+                                width: parent.width - (rowMa.containsMouse && !root.editing ? 18 : 0); elide: Text.ElideRight
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: !parent.mine
+                                text: modelData.text; font.strikeout: modelData.done
+                                color: ctx ? (modelData.done ? ctx.fg2 : ctx.fg) : "white"
+                                font.family: root.fam; font.pixelSize: 13
+                            }
+                            // tap the text to rename it, ⌫ or the × to remove it
+                            TextInput {
+                                id: rowEdit
+                                anchors.fill: parent
+                                visible: parent.mine
+                                verticalAlignment: TextInput.AlignVCenter
+                                color: ctx ? ctx.fg : "white"; font.family: root.fam; font.pixelSize: 13
+                                selectByMouse: true
+                                onVisibleChanged: if (visible) { text = modelData.text; forceActiveFocus(); selectAll(); }
+                                onAccepted: { root.setReminderText(modelData.line, text); editingLine = -1; }
+                                Keys.onEscapePressed: editingLine = -1
+                                onActiveFocusChanged: if (!activeFocus && visible) { root.setReminderText(modelData.line, text); editingLine = -1; }
+                            }
+                            Text {
+                                anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                                visible: rowMa.containsMouse && !root.editing && !parent.mine
+                                text: "\u00D7"; color: ctx ? ctx.fg2 : "grey"; font.family: root.fam; font.pixelSize: 15
+                                MouseArea { anchors.fill: parent; anchors.margins: -5; cursorShape: Qt.PointingHandCursor; onClicked: root.deleteReminder(modelData.line) }
+                            }
+                            MouseArea {
+                                id: rowMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                enabled: !root.editing && !parent.mine
+                                cursorShape: Qt.IBeamCursor
+                                onClicked: editingLine = modelData.line
+                            }
                         }
                     }
                 }

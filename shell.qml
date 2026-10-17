@@ -38,6 +38,7 @@ ShellRoot {
         property var photos: photosApp
         property var finder: finderApp
         property var welcome: welcomeApp
+        property var player: videoPlayer
         function openSettings(pane) { macDock.openPrefs(pane); }
 
         // set by MacBar / MacDock (Binding elements) when their glass needs live data
@@ -276,6 +277,7 @@ ShellRoot {
     Photos { id: photosApp; hub: sharedHub }
     Finder { id: finderApp; hub: sharedHub }
     Welcome { id: welcomeApp; hub: sharedHub }
+    VideoPlayer { id: videoPlayer; hub: sharedHub }
 
     // reopen settings even when both the Dock and the Menu Bar are disabled:
     //   qs -c macbar ipc call settings open
@@ -297,6 +299,12 @@ ShellRoot {
     // qs -c MacShell ipc call photos open | folder <path>
     // qs -c MacShell ipc call finder open | folder <path>
     // qs -c MacShell ipc call welcome open
+    // qs -c MacShell ipc call player play <path|url>
+    IpcHandler {
+        target: "player"
+        function play(src: string): void { videoPlayer.play(src, src.split("/").pop()); }
+        function youtube(url: string): void { videoPlayer.playYoutube(url, "Video"); }
+    }
     IpcHandler {
         target: "welcome"
         function open(): void { welcomeApp.open(); }
