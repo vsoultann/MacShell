@@ -9,6 +9,7 @@ local network, and sending is two HTTPS-less HTTP calls.
     macshell-airdrop.py send <ip> <port> <file…>  send files to a device, print progress as JSON lines
     macshell-airdrop.py serve                     be visible and receive files (answers accept/decline on stdin)
 """
+import hashlib
 import http.server
 import json
 import mimetypes
@@ -25,7 +26,31 @@ import urllib.request
 MULTICAST = "224.0.0.167"
 PORT = 53317
 ALIAS = os.environ.get("MACSHELL_AIRDROP_ALIAS") or socket.gethostname()
-FINGERPRINT = "".join(random.choice(string.hexdigits.lower()) for _ in range(64))
+# Stable per machine: the sending half and the receiving half must agree, or each half sees the other
+# as a stranger and the radar fills up with copies of this computer.
+FINGERPRINT = hashlib.sha256(("macshell:" + socket.gethostname() + ":" + (os.environ.get("USER") or "")).encode()).hexdigest()
+
+
+def _own_addresses():
+    """Every address this machine answers on, so we never list ourselves."""
+    out = {"127.0.0.1", "::1"}
+    try:
+        host = socket.gethostname()
+        for fam, _, _, _, sa in socket.getaddrinfo(host, None):
+            out.add(sa[0])
+    except OSError:
+        pass
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("10.255.255.255", 1))
+        out.add(s.getsockname()[0])
+        s.close()
+    except OSError:
+        pass
+    return out
+
+
+OWN = _own_addresses()
 
 ME = {
     "alias": ALIAS,
@@ -79,7 +104,7 @@ def discover(seconds=3.0):
         except (ValueError, UnicodeDecodeError):
             continue
         fp = d.get("fingerprint")
-        if not fp or fp == FINGERPRINT or fp in seen:
+        if not fp or fp == FINGERPRINT or fp in seen or addr[0] in ("127.0.0.1", "::1"):
             continue
         seen[fp] = True
         print(json.dumps({
@@ -258,12 +283,30 @@ def _wait_for_answer(session, timeout=60.0):
     return False
 
 
+PING = threading.Event()
+
+
 def _read_answers():
     for line in sys.stdin:
         parts = line.strip().split()
         if len(parts) == 2 and parts[0] in ("accept", "decline"):
             with ANSWER_LOCK:
                 ANSWERS[parts[1]] = parts[0] == "accept"
+        elif parts and parts[0] == "search":
+            PING.set()
+
+
+def _announce_on_request(sock):
+    """`search` on stdin: say hello again, so anything new answers."""
+    while True:
+        PING.wait()
+        PING.clear()
+        for _ in range(3):
+            try:
+                sock.sendto(json.dumps(ME).encode(), (MULTICAST, PORT))
+            except OSError:
+                pass
+            time.sleep(0.2)
 
 
 def serve():
@@ -271,10 +314,18 @@ def serve():
     os.makedirs(DOWNLOADS, exist_ok=True)
     threading.Thread(target=_read_answers, daemon=True).start()
 
-    try:
-        httpd = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), _Receiver)
-    except OSError as e:
-        print(json.dumps({"event": "error", "message": "port %d busy (%s)" % (PORT, e)}), flush=True)
+    # a previous instance may still be letting go of the port: wait for it rather than giving up
+    httpd = None
+    for attempt in range(20):
+        try:
+            httpd = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), _Receiver)
+            break
+        except OSError as e:
+            if attempt == 0:
+                print(json.dumps({"event": "waiting", "message": str(e)}), flush=True)
+            time.sleep(1.0)
+    if httpd is None:
+        print(json.dumps({"event": "error", "message": "port %d is busy" % PORT}), flush=True)
         return 1
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     print(json.dumps({"event": "ready", "alias": ALIAS, "port": PORT, "downloads": DOWNLOADS}), flush=True)
@@ -297,6 +348,8 @@ def serve():
     except OSError:
         pass
     sock.settimeout(1.0)
+    announced = {}
+    threading.Thread(target=_announce_on_request, args=(sock,), daemon=True).start()
     while True:
         try:
             data, addr = sock.recvfrom(8192)
@@ -308,8 +361,18 @@ def serve():
             d = json.loads(data.decode())
         except (ValueError, UnicodeDecodeError):
             continue
-        if d.get("fingerprint") == FINGERPRINT:
+        # our own announcement, or our own loopback copy of it
+        if d.get("fingerprint") == FINGERPRINT or addr[0] in ("127.0.0.1", "::1"):
             continue
+        if announced.get(d.get("fingerprint")) == addr[0]:
+            # already on the list; answering again is enough
+            if d.get("announce"):
+                try:
+                    sock.sendto(json.dumps(dict(ME, announce=False)).encode(), addr)
+                except OSError:
+                    pass
+            continue
+        announced[d.get("fingerprint")] = addr[0]
         print(json.dumps({"event": "device", "alias": d.get("alias", addr[0]), "ip": addr[0],
                           "port": d.get("port", PORT), "deviceModel": d.get("deviceModel", ""),
                           "deviceType": d.get("deviceType", "desktop"),

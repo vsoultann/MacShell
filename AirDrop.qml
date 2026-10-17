@@ -41,15 +41,7 @@ Scope {
                 var d;
                 try { d = JSON.parse(t); } catch (e) { return; }
                 if (d.event === "ready") { root.ready = true; }
-                else if (d.event === "device") {
-                    // someone announced themselves: they belong in the list without searching
-                    var f = root.peers.slice();
-                    for (var i = 0; i < f.length; i++) if (f[i].fingerprint === d.fingerprint) return;
-                    d.state = "idle"; d.detail = d.deviceModel || d.ip;
-                    f.push(d);
-                    root.peers = f; root.found = f;
-                    if (root.bar) root.bar.playSound("pop", 0.3);
-                }
+                else if (d.event === "device") root.addPeer(d);
                 else if (d.event === "ask") { root.incoming = d; if (root.bar) root.bar.playSound("pop", 0.8); win.visible = true; win.raise(); }
                 else if (d.event === "accepted" || d.event === "declined") { root.incoming = null; }
                 else if (d.event === "received") {
@@ -71,10 +63,26 @@ Scope {
     function scan() {
         if (scanning) return;
         scanning = true;
-        found = [];
+        scanDone.restart();
+        if (serveProc.running) {
+            // the receiver is already listening: a fresh hello is all that is needed, and every answer
+            // arrives on the one stream (asking twice is what filled the radar with copies of this machine)
+            serveProc.write("search\n");
+            return;
+        }
         discProc.running = false;
         discProc.command = ["python3", "-I", helper, "discover", "6"];
         discProc.running = true;
+    }
+    Timer { id: scanDone; interval: 6000; onTriggered: root.scanning = false }
+    function addPeer(d) {
+        var f = root.peers.slice();
+        for (var i = 0; i < f.length; i++)
+            if (f[i].fingerprint === d.fingerprint || (f[i].ip === d.ip && f[i].port === d.port)) return;
+        d.state = "idle"; d.detail = d.deviceModel || d.ip;
+        f.push(d);
+        root.peers = f; root.found = f;
+        if (root.bar) root.bar.playSound("pop", 0.3);
     }
     property var found: []
     Process {
@@ -83,16 +91,7 @@ Scope {
             onRead: line => {
                 var t = line.trim();
                 if (t === "") return;
-                try {
-                    var d = JSON.parse(t);
-                    var f = root.found.slice();
-                    for (var i = 0; i < f.length; i++) if (f[i].fingerprint === d.fingerprint) return;
-                    d.state = "idle"; d.detail = d.deviceModel || d.ip;
-                    f.push(d);
-                    root.found = f;
-                    root.peers = f;
-                    if (root.bar) root.bar.playSound("pop", 0.35);
-                } catch (e) { }
+                try { root.addPeer(JSON.parse(t)); } catch (e) { }
             }
         }
         onExited: { root.scanning = false; root.peers = root.found; }
@@ -251,8 +250,11 @@ Scope {
                     opacity: root.peers.length === 0 ? 1 : 0
                     Behavior on opacity { NumberAnimation { duration: 300 } }
                     Text {
+                        id: emptyTitle
                         anchors.horizontalCenter: parent.horizontalCenter
-                        text: root.scanning ? "Looking for devices…" : "No one nearby"
+                        property int dots: 0
+                        Timer { interval: 420; repeat: true; running: root.scanning; onTriggered: emptyTitle.dots = (emptyTitle.dots + 1) % 4 }
+                        text: root.scanning ? ("Looking for devices" + "...".substring(0, dots)) : "No one nearby"
                         color: pal.text; font.family: root.fam; font.pixelSize: 15; font.weight: Font.DemiBold
                     }
                     Text {
