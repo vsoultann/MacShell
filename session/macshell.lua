@@ -46,6 +46,7 @@ hl.window_rule({ match = { class = "^org\\.quickshell$", title = "^App Store$" }
 hl.window_rule({ match = { class = "^org\\.quickshell$", title = "^Photos$" }, float = true, size = "1100 740", center = true })
 hl.window_rule({ match = { class = "^org\\.quickshell$", title = "^Finder$" }, float = true, size = "1020 660", center = true })
 hl.window_rule({ match = { class = "^org\\.quickshell$", title = "^AirDrop$" }, float = true, size = "620 500", center = true })
+hl.window_rule({ match = { class = "^org\\.quickshell$", title = "^Preview$" }, float = true, size = "960 660", center = true })
 hl.window_rule({ match = { class = "^org\\.quickshell$", title = "^Player$" }, float = true, size = "900 540", center = true })
 
 -- Settings → Desktop & Dock → "Open windows floating": MacShell writes this file

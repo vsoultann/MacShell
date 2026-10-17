@@ -24,6 +24,50 @@ Scope {
     property bool scanning: false
     property string status: ""
 
+    // ── Receiving: we stay visible on the network and take what people send (saved in ~/Downloads) ──
+    property bool receiving: true
+    property bool ready: false
+    property var incoming: null             // { session, from, files, size }
+    property var landed: []                 // names of files that just arrived
+    Process {
+        id: serveProc
+        running: root.receiving
+        command: ["python3", "-I", root.helper, "serve"]
+        stdinEnabled: true
+        stdout: SplitParser {
+            onRead: line => {
+                var t = line.trim();
+                if (t === "") return;
+                var d;
+                try { d = JSON.parse(t); } catch (e) { return; }
+                if (d.event === "ready") { root.ready = true; }
+                else if (d.event === "device") {
+                    // someone announced themselves: they belong in the list without searching
+                    var f = root.peers.slice();
+                    for (var i = 0; i < f.length; i++) if (f[i].fingerprint === d.fingerprint) return;
+                    d.state = "idle"; d.detail = d.deviceModel || d.ip;
+                    f.push(d);
+                    root.peers = f; root.found = f;
+                    if (root.bar) root.bar.playSound("pop", 0.3);
+                }
+                else if (d.event === "ask") { root.incoming = d; if (root.bar) root.bar.playSound("pop", 0.8); win.visible = true; win.raise(); }
+                else if (d.event === "accepted" || d.event === "declined") { root.incoming = null; }
+                else if (d.event === "received") {
+                    root.landed = root.landed.concat([d.file]).slice(-4);
+                    landedT.restart();
+                    if (root.bar) root.bar.playSound("tink", 0.7);
+                    Quickshell.execDetached(["sh", "-c", "notify-send -a AirDrop 'AirDrop' \"$1 saved to Downloads\"", "sh", d.file]);
+                }
+            }
+        }
+    }
+    Timer { id: landedT; interval: 6000; onTriggered: root.landed = [] }
+    function answer(ok) {
+        if (!incoming) return;
+        serveProc.write((ok ? "accept " : "decline ") + incoming.session + "\n");
+        incoming = null;
+    }
+
     function scan() {
         if (scanning) return;
         scanning = true;
@@ -316,6 +360,81 @@ Scope {
                 }
             }
 
+            // ── someone is sending you something ──
+            Item {
+                id: ask
+                anchors.fill: parent
+                z: 40
+                visible: opacity > 0.01
+                opacity: root.incoming ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                Rectangle { anchors.fill: parent; color: Qt.rgba(0, 0, 0, 0.45); MouseArea { anchors.fill: parent } }
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 320; height: 196; radius: 14
+                    color: pal.dark ? "#232325" : "#FFFFFF"
+                    border.width: 1; border.color: pal.sep
+                    scale: root.incoming ? 1 : 0.94
+                    Behavior on scale { NumberAnimation { duration: 320; easing.type: Easing.OutQuint } }
+                    Column {
+                        anchors.centerIn: parent
+                        width: parent.width - 36
+                        spacing: 8
+                        Rectangle {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: 52; height: 52; radius: 26
+                            color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+                            ADGlyph { anchors.centerIn: parent; width: 26; height: 26; kind: "phone"; color: root.accent }
+                        }
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: root.incoming ? root.incoming.from + " wants to send" : ""
+                            color: pal.text; font.family: root.fam; font.pixelSize: 14; font.weight: Font.DemiBold
+                        }
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: parent.width; horizontalAlignment: Text.AlignHCenter
+                            elide: Text.ElideMiddle; maximumLineCount: 2; wrapMode: Text.Wrap
+                            text: root.incoming ? root.incoming.files.join(", ") : ""
+                            color: pal.text2; font.family: root.fam; font.pixelSize: 12
+                        }
+                        Row {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            spacing: 10
+                            topPadding: 6
+                            Rectangle {
+                                width: 110; height: 30; radius: 8
+                                color: pal.dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.07)
+                                Text { anchors.centerIn: parent; text: "Decline"; color: pal.text; font.family: root.fam; font.pixelSize: 12 }
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.answer(false) }
+                            }
+                            Rectangle {
+                                width: 110; height: 30; radius: 8
+                                color: root.accent
+                                Text { anchors.centerIn: parent; text: "Accept"; color: "white"; font.family: root.fam; font.pixelSize: 12; font.weight: Font.DemiBold }
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.answer(true) }
+                            }
+                        }
+                    }
+                }
+            }
+            // what just arrived
+            Rectangle {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom; anchors.bottomMargin: 76
+                width: Math.min(parent.width - 40, landedText.implicitWidth + 28); height: 28; radius: 14
+                color: pal.dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.07)
+                visible: opacity > 0.01
+                opacity: root.landed.length > 0 ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 300 } }
+                Text {
+                    id: landedText
+                    anchors.centerIn: parent
+                    text: root.landed.length > 0 ? "Saved to Downloads: " + root.landed.join(", ") : ""
+                    color: pal.text2; font.family: root.fam; font.pixelSize: 11
+                }
+            }
+
             // ── the footer ──
             Rectangle {
                 anchors.bottom: parent.bottom
@@ -329,8 +448,13 @@ Scope {
                 }
                 Text {
                     x: 20; y: 32
-                    text: "Everyone on this network"
+                    text: root.receiving ? (root.ready ? "Everyone on this network" : "Starting\u2026") : "No one"
                     color: pal.text; font.family: root.fam; font.pixelSize: 12; font.weight: Font.DemiBold
+                    MouseArea {
+                        anchors.fill: parent; anchors.margins: -6
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.receiving = !root.receiving
+                    }
                 }
                 Rectangle {
                     anchors.right: parent.right; anchors.rightMargin: 18

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Mac Hello
+Comment=Set up MacShell: your name, your picture and the look
+Exec=qs -c MacShell ipc call welcome open
+Icon=macshell-hello
+Categories=Settings;Utility;
+Keywords=welcome;setup;hello;onboarding;first run;
+StartupNotify=false

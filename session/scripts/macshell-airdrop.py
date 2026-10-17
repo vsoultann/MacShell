@@ -7,7 +7,9 @@ local network, and sending is two HTTPS-less HTTP calls.
 
     macshell-airdrop.py discover [seconds]        print one JSON object per device found
     macshell-airdrop.py send <ip> <port> <file…>  send files to a device, print progress as JSON lines
+    macshell-airdrop.py serve                     be visible and receive files (answers accept/decline on stdin)
 """
+import http.server
 import json
 import mimetypes
 import os
@@ -153,6 +155,173 @@ def send(ip, port, paths):
     return 0 if sent else 1
 
 
+class _Receiver(http.server.BaseHTTPRequestHandler):
+    """The receiving half of LocalSend v2: a phone asks first, the person says yes, then the files arrive."""
+
+    server_version = "MacShell-AirDrop"
+
+    def log_message(self, *a):
+        pass
+
+    def _json(self, code, obj):
+        body = json.dumps(obj).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        path = self.path.split("?")[0]
+        if path.endswith("/register"):
+            self._json(200, dict(ME, announce=False))
+            return
+        if path.endswith("/prepare-upload"):
+            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                req = json.loads(self.rfile.read(length).decode())
+            except (ValueError, UnicodeDecodeError):
+                self._json(400, {"message": "bad request"})
+                return
+            who = (req.get("info") or {}).get("alias", self.client_address[0])
+            files = req.get("files") or {}
+            session = "".join(random.choice(string.hexdigits.lower()) for _ in range(16))
+            names = [f.get("fileName", "?") for f in files.values()]
+            size = sum(int(f.get("size") or 0) for f in files.values())
+            print(json.dumps({"event": "ask", "session": session, "from": who,
+                              "files": names, "size": size}), flush=True)
+            if not _wait_for_answer(session):
+                self._json(403, {"message": "declined"})
+                print(json.dumps({"event": "declined", "session": session}), flush=True)
+                return
+            tokens = {}
+            for fid, f in files.items():
+                tok = "".join(random.choice(string.hexdigits.lower()) for _ in range(16))
+                tokens[fid] = tok
+                SESSIONS.setdefault(session, {})[tok] = f.get("fileName", fid)
+            self._json(200, {"sessionId": session, "files": tokens})
+            print(json.dumps({"event": "accepted", "session": session}), flush=True)
+            return
+        if path.endswith("/upload"):
+            q = dict(p.split("=", 1) for p in self.path.split("?", 1)[-1].split("&") if "=" in p)
+            session, token = q.get("sessionId", ""), q.get("token", "")
+            name = SESSIONS.get(session, {}).get(token)
+            if not name:
+                self._json(403, {"message": "unknown token"})
+                return
+            target = _free_path(os.path.join(DOWNLOADS, os.path.basename(name)))
+            length = int(self.headers.get("Content-Length") or 0)
+            got = 0
+            with open(target, "wb") as fh:
+                while got < length:
+                    chunk = self.rfile.read(min(1 << 16, length - got))
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+                    got += len(chunk)
+            print(json.dumps({"event": "received", "file": os.path.basename(target), "path": target}), flush=True)
+            self._json(200, {})
+            return
+        self._json(404, {"message": "not found"})
+
+    def do_GET(self):
+        if self.path.split("?")[0].endswith("/info"):
+            self._json(200, dict(ME, announce=False))
+            return
+        self._json(404, {"message": "not found"})
+
+
+DOWNLOADS = os.path.join(os.path.expanduser("~"), "Downloads")
+SESSIONS = {}
+ANSWERS = {}
+ANSWER_LOCK = threading.Lock()
+
+
+def _free_path(path):
+    if not os.path.exists(path):
+        return path
+    base, ext = os.path.splitext(path)
+    i = 2
+    while os.path.exists("%s (%d)%s" % (base, i, ext)):
+        i += 1
+    return "%s (%d)%s" % (base, i, ext)
+
+
+def _wait_for_answer(session, timeout=60.0):
+    """Block until the UI answers on stdin, or time out as a decline."""
+    end = time.time() + timeout
+    while time.time() < end:
+        with ANSWER_LOCK:
+            if session in ANSWERS:
+                return ANSWERS.pop(session)
+        time.sleep(0.1)
+    return False
+
+
+def _read_answers():
+    for line in sys.stdin:
+        parts = line.strip().split()
+        if len(parts) == 2 and parts[0] in ("accept", "decline"):
+            with ANSWER_LOCK:
+                ANSWERS[parts[1]] = parts[0] == "accept"
+
+
+def serve():
+    """Be visible to the devices around you, and take what they send."""
+    os.makedirs(DOWNLOADS, exist_ok=True)
+    threading.Thread(target=_read_answers, daemon=True).start()
+
+    try:
+        httpd = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), _Receiver)
+    except OSError as e:
+        print(json.dumps({"event": "error", "message": "port %d busy (%s)" % (PORT, e)}), flush=True)
+        return 1
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    print(json.dumps({"event": "ready", "alias": ALIAS, "port": PORT, "downloads": DOWNLOADS}), flush=True)
+
+    # answer every announce on the network, so we show up on their screen without them searching
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    except (AttributeError, OSError):
+        pass
+    try:
+        sock.bind(("", PORT))
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP,
+                        socket.inet_aton(MULTICAST) + socket.inet_aton("0.0.0.0"))
+    except OSError:
+        pass
+    try:
+        sock.sendto(json.dumps(ME).encode(), (MULTICAST, PORT))
+    except OSError:
+        pass
+    sock.settimeout(1.0)
+    while True:
+        try:
+            data, addr = sock.recvfrom(8192)
+        except socket.timeout:
+            continue
+        except OSError:
+            break
+        try:
+            d = json.loads(data.decode())
+        except (ValueError, UnicodeDecodeError):
+            continue
+        if d.get("fingerprint") == FINGERPRINT:
+            continue
+        print(json.dumps({"event": "device", "alias": d.get("alias", addr[0]), "ip": addr[0],
+                          "port": d.get("port", PORT), "deviceModel": d.get("deviceModel", ""),
+                          "deviceType": d.get("deviceType", "desktop"),
+                          "fingerprint": d.get("fingerprint", addr[0])}), flush=True)
+        if d.get("announce"):
+            try:
+                sock.sendto(json.dumps(dict(ME, announce=False)).encode(), addr)
+            except OSError:
+                pass
+    return 0
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -162,6 +331,8 @@ def main(argv):
         return discover(argv[2] if len(argv) > 2 else 3.0)
     if cmd == "send" and len(argv) >= 5:
         return send(argv[2], argv[3], argv[4:])
+    if cmd == "serve":
+        return serve()
     print(__doc__)
     return 2
 

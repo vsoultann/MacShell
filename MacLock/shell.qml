@@ -24,6 +24,13 @@ ShellRoot {
     function pickPrimary() {
         if (primary === "" && Hyprland.focusedMonitor) primary = Hyprland.focusedMonitor.name;
     }
+    // The clock, the media bubble, lyrics and notifications belong on the main display (Settings → Displays →
+    // Main display). Every other screen keeps the wallpaper, the album background and the time only.
+    Process {
+        running: true
+        command: ["sh", "-c", "jq -r '.monitorPrimary // empty' \"$HOME/.config/macdock/settings.json\" 2>/dev/null"]
+        stdout: StdioCollector { onStreamFinished: { var m = text.trim(); if (m !== "") root.primary = m; } }
+    }
     Component.onCompleted: pickPrimary()
     // Hyprland's state arrives a moment after startup; only fall back to the first screen if it never does
     Timer {
@@ -37,6 +44,7 @@ ShellRoot {
         property var now: new Date()
         property string wallpaper: ""
         property string wallpaperVideo: ""      // animated wallpaper set in MacShell (~/.config/macshell/wallpaper-video)
+        property string material: "liquid"      // the system-wide material: liquid | frosted | blur | opaque
         property string userName: Quickshell.env("USER") || ""
         property string avatar: ""
         property int wifiLevel: -1          // -1 unknown/hidden, 0 off, 1..3 bars
@@ -157,7 +165,8 @@ ShellRoot {
             + "[ \"$(jq -r '.uiSounds' \"$HOME/.config/macbar/settings.json\" 2>/dev/null)\" != false ] && [ ! -f \"${XDG_RUNTIME_DIR:-/tmp}/macshell-gaming.state\" ] && echo snd || echo -; "
             + "jq -r '.lockArtBackground' \"$HOME/.config/macbar/settings.json\" 2>/dev/null || echo true; "
             + "jq -r '.use24h' \"$HOME/.config/macbar/settings.json\" 2>/dev/null || echo true; "
-            + "jq -c '{f: .lockClockFont, w: .lockClockWeight, m: .lockClockMaterial, t: .lockClockTall, d: .lockClockDate, i: .lockClockIntensity, c: .lockClockTint}' \"$HOME/.config/macbar/settings.json\" 2>/dev/null || echo '{}'"]
+            + "jq -c '{f: .lockClockFont, w: .lockClockWeight, m: .lockClockMaterial, t: .lockClockTall, d: .lockClockDate, i: .lockClockIntensity, c: .lockClockTint}' \"$HOME/.config/macbar/settings.json\" 2>/dev/null || echo '{}'; "
+            + "jq -r '.material // \"liquid\"' \"$HOME/.config/macbar/settings.json\" 2>/dev/null || echo liquid"]
         stdout: StdioCollector {
             onStreamFinished: {
                 var l = text.split("\n");
@@ -173,6 +182,9 @@ ShellRoot {
                 lockState.artBg = (l[8] || "true").trim() !== "false";
                 lockState.use24h = (l[9] || "true").trim() !== "false";
                 if (!Quickshell.env("MACLOCK_CLOCK")) { try { lockState.clockCfg = JSON.parse((l[10] || "{}").trim() || "{}"); } catch (e) { } }
+                // the system-wide material (Settings → Appearance) reaches the lock screen too
+                var mt = (l[11] || "liquid").trim();
+                lockState.material = (["liquid", "frosted", "blur", "opaque"].indexOf(mt) >= 0) ? mt : "liquid";
                 if (!root.preview) lockState.sound("lock");
             }
         }

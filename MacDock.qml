@@ -104,6 +104,19 @@ Scope {
         refreshMons();
     }
     property string monitorPrimary: ""
+    // Frame budget for the live captures behind the Dock's glass: the main display's own refresh rate, so the
+    // refraction moves as smoothly as the screen it is on (it used to be pinned at 15 fps, which read as lag).
+    readonly property int mainHz: {
+        var ms = hub ? (hub.monData || []) : [], want = monitorPrimary || monitor, best = 0, any = 0;
+        for (var i = 0; i < ms.length; i++) {
+            var hz = Math.round(Number(ms[i].refreshRate) || 0);
+            if (hz > any) any = hz;
+            if (want && ms[i].name === want) best = hz;
+        }
+        var hz2 = best || any || 60;
+        return Math.max(30, Math.min(240, hz2));
+    }
+    readonly property int frameMs: Math.max(4, Math.round(1000 / mainHz))
     function setPrimary(name) {
         var d = displays;
         displays = { primary: name, modes: d.modes || {} };
@@ -174,12 +187,14 @@ Scope {
     ]
     property color accent: "#0A84FF"     // menu highlight (macOS blue)
     readonly property var defaultPinned: [
+        "macshell-finder", "macshell-applemusic", "macshell-photos",
         "org.gnome.Nautilus", "org.kde.dolphin", "thunar",
         "firefox", "zen", "chromium", "google-chrome",
         "kitty", "com.mitchellh.ghostty", "Alacritty", "foot",
-        "code", "discord", "macshell-applemusic", "spotify", "steam", "obsidian"
+        "code", "discord", "spotify", "steam", "obsidian"
     ]   // used until you change pins from the dock; unknown ids are skipped
     property var pinned: defaultPinned
+    property bool pinMigTahoe: false   // one-time: Finder and Apple Music join an existing Dock
     property bool desktopIcons: true    // files, folders and apps shown on the desktop
     property var pinnedFolders: []      // folder paths pinned next to the Trash
     function pinFolder(p) {
@@ -3035,6 +3050,27 @@ Scope {
                     checking = true; status = "Checking for updates\u2026";
                     notesProc.running = false; notesProc.running = true;
                 }
+                // Update, right here: the installer runs in the background and its output scrolls in the card below,
+                // instead of a terminal window opening over Settings.
+                property bool updating: false
+                property string log: ""
+                function runUpdate() {
+                    if (updating) return;
+                    updating = true;
+                    log = "Updating MacShell\u2026\n";
+                    updProc.running = false;
+                    updProc.command = ["sh", "-c", "\"$HOME/.local/share/macshell/install.sh\" --update 2>&1"];
+                    updProc.running = true;
+                }
+                Process {
+                    id: updProc
+                    stdout: SplitParser { onRead: line => { updPane.log += line + "\n"; if (updPane.log.length > 8000) updPane.log = updPane.log.slice(-8000); } }
+                    onExited: {
+                        updPane.updating = false;
+                        updPane.log += (exitCode === 0 ? "\nDone. MacShell reloads itself." : "\nUpdate failed (exit " + exitCode + ").") + "\n";
+                        updPane.check();
+                    }
+                }
                 // what is installed: the commit the shell was installed from
                 Process {
                     id: verProc
@@ -3094,7 +3130,7 @@ Scope {
                     SRow {
                         t: pal
                         title: "Update MacShell"
-                        subtitle: "Pulls the latest version and reinstalls the shell and lock screen in a terminal. Your settings are kept."
+                        subtitle: "Pulls the latest version and reinstalls the shell and lock screen, right here. Your settings are kept."
                         SButton {
                             t: pal
                             text: "Update\u2026"
@@ -4019,7 +4055,7 @@ Scope {
 
     function saveSettings() {
         var o = {
-            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, iconSize: iconSize, magnification: magnification, magnificationEnabled: magnificationEnabled,
+            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, pinMigTahoe: pinMigTahoe, iconSize: iconSize, magnification: magnification, magnificationEnabled: magnificationEnabled,
             spacing: spacing, margin: margin, cornerRadius: cornerRadius,
             darkMode: darkMode, glassOpacity: glassOpacity, dockStyle: dockStyle, wallpaperPath: wallpaperPath, glassDebug: glassDebug,
             glassRim: glassRim, glassGrain: glassGrain, glassLiquid: glassLiquid, glassBlur: glassBlur,
@@ -4035,7 +4071,7 @@ Scope {
         if (!o || typeof o !== "object") return;
         var keys = ["dockEnabled", "windowsFloat", "shortcuts", "pinnedFolders", "desktopIcons", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
                     "darkMode", "glassOpacity", "dockStyle", "wallpaperPath", "glassDebug", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "accent", "fontFamily", "hideMode", "hideDelay", "monitor",
-                    "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture"];
+                    "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture", "pinMigTahoe"];
         for (var i = 0; i < keys.length; i++) {
             if (o[keys[i]] === undefined) continue;
             try { root[keys[i]] = o[keys[i]]; } catch (err) { }
@@ -4083,7 +4119,9 @@ Scope {
     }
     Timer { id: youngWin; interval: 250; onTriggered: root.rebuild() }
 
+    readonly property url folderIcon: Qt.resolvedUrl("folder.svg")
     function iconSrc(icon) {
+        if (icon === "folder") return folderIcon;
         if (!icon) return Quickshell.iconPath("application-x-executable");
         if (icon.charAt(0) === "/") return "file://" + icon;
         return Quickshell.iconPath(icon, "application-x-executable");
@@ -4572,7 +4610,16 @@ Scope {
         onLoaded: {
             try {
                 var a = JSON.parse(text());
-                if (Array.isArray(a)) { root.pinned = a; root.rebuild(); }
+                if (Array.isArray(a)) {
+                    // Finder and Apple Music belong in the Dock; a Dock pinned before they existed gets them once, up front
+                    if (!root.pinMigTahoe) {
+                        root.pinMigTahoe = true;
+                        var add = ["macshell-finder", "macshell-applemusic"], front = [];
+                        for (var i = 0; i < add.length; i++) if (a.indexOf(add[i]) < 0) front.push(add[i]);
+                        if (front.length > 0) { a = front.concat(a); store.setText(JSON.stringify(a, null, 2)); }
+                    }
+                    root.pinned = a; root.rebuild();
+                }
             } catch (err) { }
         }
     }
@@ -4733,7 +4780,7 @@ Scope {
                         if (!path || path === "") { ui.stackItem = null; return; }
                         for (var i = 0; i < root.items.length; i++) {
                             if (root.items[i].kind === "folder" && root.items[i].path === path) {
-                                ui.stackCx = ui.width / 2;
+                                ui.stackCx = ui.naturalCenter(i) || ui.width / 2;
                                 ui.stackItem = root.items[i];
                                 root.loadStack(path);
                                 return;
@@ -4794,6 +4841,10 @@ Scope {
                     var mon = Hyprland.monitorFor(win.modelData);
                     var ws = (mon && mon.activeWorkspace) ? String(mon.activeWorkspace.name) : "";
                     var p = realPos(), sel = wsel();
+                    // Dragging a window out of the Dock while you are somewhere else: bring it to THIS monitor first
+                    // (a workspace lives on one monitor, so moving it to this workspace alone left it on the other screen),
+                    // then onto this workspace.
+                    if (mon && mon.name) Hyprland.dispatch('hl.dsp.window.move({ monitor = "' + mon.name + '", ' + sel + ' })');
                     if (ws) Hyprland.dispatch('hl.dsp.window.move({ workspace = "' + ws + '", follow = false, ' + sel + ' })');
                     Hyprland.dispatch('hl.dsp.window.fullscreen_state({ internal = 0, client = 0, ' + sel + ' })');
                     Hyprland.dispatch('hl.dsp.window.float({ action = "enable", ' + sel + ' })');
@@ -5025,7 +5076,7 @@ Scope {
                                         live: false
                                         readonly property bool wantFrames: !root.glassHold && (root.glassRT || !ui.tucked)
                                         Timer {
-                                            interval: 66; repeat: true
+                                            interval: root.frameMs; repeat: true
                                             running: sc.wantFrames && sc.captureSource !== null
                                             onTriggered: if (typeof sc.captureFrame === "function") sc.captureFrame()
                                         }
@@ -5083,9 +5134,10 @@ Scope {
 
                 Item {
                     id: maskItem
-                    x: ui.menuOpen ? 0 : dock.x
-                    width: ui.menuOpen ? ui.width : dock.width
-                    y: ui.menuOpen ? 0 : (ui.tucked ? ui.height - 3 : (hh.hovered ? ui.activeTop : dock.y))
+                    readonly property bool wide: ui.menuOpen || ui.stackItem !== null
+                    x: wide ? 0 : dock.x
+                    width: wide ? ui.width : dock.width
+                    y: wide ? 0 : (ui.tucked ? ui.height - 3 : (hh.hovered ? ui.activeTop : dock.y))
                     height: ui.height - y
                 }
 
@@ -5486,15 +5538,24 @@ Scope {
                     }
                 }
 
-                // a folder pinned to the Dock fans its contents up into an arc, the way a macOS stack does
+                // A folder pinned to the Dock fans its contents up into an arc, the way a macOS stack does: every item
+                // flies out of the icon along the curve, one after the other, and its name fades in once it lands.
                 Item {
                     id: stack
                     z: 55
                     anchors.fill: parent
-                    visible: ui.stackItem !== null || closing.running
+                    visible: ui.stackItem !== null || stackT.running
                     readonly property bool shown: ui.stackItem !== null
-                    readonly property real baseY: ui.height - root.margin - root.bgHeight - root.iconSize * (root.effMag - 1) - 20
-                    ParallelAnimation { id: closing }
+                    readonly property real baseY: ui.height - root.margin - root.bgHeight - root.iconSize * (root.effMag - 1) - 16
+                    readonly property int n: Math.max(1, root.stackFiles.length)
+                    // the fan leans towards the middle of the screen, like macOS leaning away from the edge
+                    readonly property real lean: (ui.stackCx > ui.width / 2 ? -1 : 1)
+                    // the whole fan (every item plus the title above it) always fits between the Dock and the top of this surface
+                    readonly property real step: Math.max(34, Math.min(54, (baseY - 44) / (n + 1.6)))
+                    // 0 → everything inside the icon, 1 → fully fanned out
+                    property real t: 0
+                    Behavior on t { NumberAnimation { id: stackT; duration: 460; easing.type: Easing.OutQuint } }
+                    onShownChanged: t = shown ? 1 : 0
 
                     MouseArea {
                         anchors.fill: parent
@@ -5507,43 +5568,58 @@ Scope {
                             id: fanItem
                             required property var modelData
                             required property int index
-                            readonly property int n: Math.max(1, root.stackFiles.length)
-                            // the arc: the first item sits just above the Dock, the rest lean outwards as they climb
-                            readonly property real lean: (index / Math.max(1, n - 1) - 0.5) * Math.min(230, n * 26)
-                            width: 58; height: 72
-                            x: ui.stackCx - width / 2 + (stack.shown ? lean : 0)
-                            y: stack.baseY - height - (stack.shown ? (index + 1) * 44 : 0)
-                            opacity: stack.shown ? 1 : 0
-                            scale: stack.shown ? 1 : 0.6
-                            Behavior on x { NumberAnimation { duration: 420 + fanItem.index * 35; easing.type: Easing.OutBack; easing.overshoot: 1.1 } }
-                            Behavior on y { NumberAnimation { duration: 420 + fanItem.index * 35; easing.type: Easing.OutBack; easing.overshoot: 1.1 } }
-                            Behavior on opacity { NumberAnimation { duration: 220 } }
-                            Behavior on scale { NumberAnimation { duration: 380; easing.type: Easing.OutBack; easing.overshoot: 1.4 } }
+                            // each item starts a little after the one below it, and settles with a soft overshoot
+                            readonly property real delay: index * 0.1
+                            readonly property real p: Math.max(0, Math.min(1, (stack.t - delay) / Math.max(0.0001, 1 - delay)))
+                            readonly property real ease: 1 - Math.pow(1 - p, 3)
+                            readonly property real angle: (index / Math.max(1, stack.n - 1)) * 0.22 * stack.lean
+                            readonly property real rr: stack.step * (index + 1) * ease
+                            width: Math.min(44, stack.step - 8); height: width
+                            x: ui.stackCx - width / 2 + Math.sin(angle) * rr * 0.28
+                            y: stack.baseY - height - Math.cos(angle) * rr
+                            opacity: Math.min(1, ease * 1.6)
+                            scale: 0.4 + 0.6 * ease
+                            z: stack.n - index
 
                             Rectangle {
-                                anchors.fill: parent; radius: 10
-                                color: fanMa.containsMouse ? Qt.rgba(1, 1, 1, 0.16) : "transparent"
+                                anchors.fill: parent
+                                anchors.margins: -5
+                                radius: 11
+                                color: fanMa.containsMouse ? Qt.rgba(1, 1, 1, 0.18) : "transparent"
                                 Behavior on color { ColorAnimation { duration: 140 } }
                             }
                             Image {
-                                anchors.horizontalCenter: parent.horizontalCenter; y: 6
-                                width: 40; height: 40
+                                id: fanIcon
+                                anchors.fill: parent
                                 asynchronous: true; cache: true; smooth: true; mipmap: true
                                 sourceSize: Qt.size(80, 80)
                                 fillMode: fanItem.modelData.isImage ? Image.PreserveAspectCrop : Image.PreserveAspectFit
                                 source: fanItem.modelData.isImage ? "file://" + fanItem.modelData.path
-                                      : root.iconSrc(fanItem.modelData.isDir ? "folder" : "text-x-generic")
+                                      : (fanItem.modelData.isDir ? root.folderIcon : root.iconSrc("text-x-generic"))
                             }
-                            Text {
-                                anchors.horizontalCenter: parent.horizontalCenter; y: 48
-                                width: parent.width - 4; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideMiddle
-                                text: fanItem.modelData.name
-                                color: "white"; font.family: root.fontFamily; font.pixelSize: 10
-                                style: Text.Outline; styleColor: Qt.rgba(0, 0, 0, 0.5)
+                            // the name rides in beside the icon and fades in once the icon has arrived, blur and all
+                            Item {
+                                id: labelWrap
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: stack.lean > 0 ? parent.width + 10 : -lbl.implicitWidth - 10
+                                width: lbl.implicitWidth; height: lbl.implicitHeight
+                                readonly property real lp: Math.max(0, Math.min(1, (fanItem.ease - 0.55) / 0.45))
+                                opacity: lp
+                                transform: Translate { x: (1 - labelWrap.lp) * 10 * stack.lean }
+                                Text {
+                                    id: lbl
+                                    text: fanItem.modelData.name
+                                    color: "white"
+                                    font.family: root.fontFamily; font.pixelSize: 11
+                                    style: Text.Outline; styleColor: Qt.rgba(0, 0, 0, 0.55)
+                                }
+                                layer.enabled: labelWrap.lp < 0.98
+                                layer.effect: MultiEffect { blurEnabled: true; blurMax: 16; blur: 1 - labelWrap.lp; autoPaddingEnabled: true }
                             }
                             MouseArea {
                                 id: fanMa
-                                anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                anchors.fill: parent; anchors.margins: -5
+                                hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     var it = fanItem.modelData;
                                     ui.stackItem = null;
@@ -5553,24 +5629,37 @@ Scope {
                             }
                         }
                     }
-                    // the lid of the fan: open the folder itself
-                    Rectangle {
-                        readonly property int n: Math.max(1, root.stackFiles.length)
-                        width: 132; height: 26; radius: 13
-                        x: ui.stackCx - width / 2
-                        y: Math.max(6, stack.baseY - 72 - (stack.shown ? (n + 1) * 44 : 0) - 6)
-                        opacity: stack.shown ? 1 : 0
-                        color: Qt.rgba(0.14, 0.14, 0.15, 0.72)
-                        border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.16)
-                        Behavior on y { NumberAnimation { duration: 520; easing.type: Easing.OutBack; easing.overshoot: 1.1 } }
-                        Behavior on opacity { NumberAnimation { duration: 220 } }
-                        Text { anchors.centerIn: parent; text: "Open in Finder"; color: "white"; font.family: root.fontFamily; font.pixelSize: 11 }
+                    // the lid of the fan rides the same curve, one step further out
+                    Item {
+                        id: fanTop
+                        readonly property real p: Math.max(0, Math.min(1, (stack.t - stack.n * 0.1) / Math.max(0.0001, 1 - stack.n * 0.1)))
+                        readonly property real ease: 1 - Math.pow(1 - p, 3)
+                        readonly property real angle: 0.22 * stack.lean
+                        readonly property real rr: stack.step * (stack.n + 1) * ease
+                        width: 126; height: 24
+                        x: ui.stackCx - width / 2 + Math.sin(angle) * rr * 0.28
+                        y: Math.max(4, stack.baseY - height - Math.cos(angle) * rr)
+                        opacity: Math.min(1, ease * 1.6)
+                        scale: 0.5 + 0.5 * ease
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 12
+                            color: topMa.containsMouse ? Qt.rgba(0.22, 0.22, 0.24, 0.9) : Qt.rgba(0.14, 0.14, 0.15, 0.78)
+                            border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.16)
+                            Behavior on color { ColorAnimation { duration: 140 } }
+                            Text {
+                                anchors.centerIn: parent
+                                text: ui.stackItem ? ui.stackItem.name : ""
+                                color: "white"; font.family: root.fontFamily; font.pixelSize: 11; font.weight: Font.DemiBold
+                            }
+                        }
                         MouseArea {
-                            anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                            id: topMa
+                            anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                var p = ui.stackItem ? ui.stackItem.path : root.stackPath;
+                                var pth = ui.stackItem ? ui.stackItem.path : root.stackPath;
                                 ui.stackItem = null;
-                                if (root.hub && root.hub.finder) root.hub.finder.open(p);
+                                if (root.hub && root.hub.finder) root.hub.finder.open(pth);
                             }
                         }
                     }

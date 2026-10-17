@@ -74,7 +74,7 @@ Scope {
     function openItem(it) {
         if (it.isApp) { Quickshell.execDetached(["sh", "-c", "gio launch \"$1\" 2>/dev/null || dex \"$1\" 2>/dev/null || xdg-open \"$1\"", "sh", it.path]); return; }
         if (it.isDir) { if (hub && hub.finder) hub.finder.open(it.path); else Quickshell.execDetached(["xdg-open", it.path]); return; }
-        if (it.kind === "Image" && hub && hub.photos) { hub.photos.open(root.dir); return; }
+        if (it.kind === "Image" && hub && hub.preview) { hub.preview.open(it.path); return; }
         Quickshell.execDetached(["xdg-open", it.path]);
     }
     function newFolder() {
@@ -160,7 +160,7 @@ Scope {
                             fillMode: icon.modelData.kind === "Image" ? Image.PreserveAspectCrop : Image.PreserveAspectFit
                             sourceSize: Qt.size(96, 96)
                             source: icon.modelData.kind === "Image" ? "file://" + icon.modelData.path
-                                  : (icon.modelData.isDir ? Quickshell.iconPath("folder", "inode-directory")
+                                  : (icon.modelData.isDir ? (root.dock ? root.dock.folderIcon : Quickshell.iconPath("folder"))
                                   : (icon.modelData.isApp ? root.appIcon(icon.modelData.path) : Quickshell.iconPath("text-x-generic", "application-x-executable")))
                             onStatusChanged: if (status === Image.Error) source = Quickshell.iconPath("application-x-executable", true)
                         }

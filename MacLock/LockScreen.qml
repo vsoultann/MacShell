@@ -296,7 +296,8 @@ Item {
             Behavior on height { NumberAnimation { duration: 420; easing.type: Easing.OutQuint } }
             Behavior on opacity { NumberAnimation { duration: 320 } }
             clip: true
-            Glass { anchors.fill: parent; src: glassTex; frame: ls; cornerR: 22 * ls.u; thickness: 20; tint: 0.42; shadowAmt: 0.35 }
+            Glass {
+            material: ls.st ? ls.st.material : "liquid"; anchors.fill: parent; src: glassTex; frame: ls; cornerR: 22 * ls.u; thickness: 20; tint: 0.42; shadowAmt: 0.35 }
             readonly property var tm: ls.clockSt ? ls.clockSt.timer : null
             readonly property real remain: !tm ? 0 : (tm.state === "running" ? Math.max(0, tm.endAt - ls.nowMs) : tm.left)
             readonly property real swMs: (ls.clockSt && ls.clockSt.sw) ? ls.clockSt.sw.acc + (ls.clockSt.sw.running ? ls.nowMs - ls.clockSt.sw.startAt : 0) : 0
@@ -382,7 +383,8 @@ Item {
                     ScriptAction { script: { nc.gone = true; Quickshell.execDetached(["qs", "-c", "MacShell", "ipc", "call", "notifications", "dismiss", String(nc.nid)]); } }
                 }
 
-                Glass { anchors.fill: parent; src: glassTex; frame: ls; cornerR: 20 * ls.u; thickness: 20; tint: 0.40; shadowAmt: 0.3 }
+                Glass {
+            material: ls.st ? ls.st.material : "liquid"; anchors.fill: parent; src: glassTex; frame: ls; cornerR: 20 * ls.u; thickness: 20; tint: 0.40; shadowAmt: 0.3 }
                 Rectangle { anchors.fill: parent; radius: 20 * ls.u; color: "white"; opacity: ncMa.pressed ? 0.12 : (ncMa.containsMouse ? 0.06 : 0); Behavior on opacity { NumberAnimation { duration: 140 } } }
                 Image {
                     x: 14 * ls.u; anchors.verticalCenter: parent.verticalCenter
@@ -802,6 +804,7 @@ Item {
         Component.onCompleted: pl = ls.player
 
         Glass {
+            material: ls.st ? ls.st.material : "liquid"
             anchors.fill: parent
             src: glassTex; frame: ls
             cornerR: 28 * ls.u; thickness: 26; tint: 0.48; shadowAmt: 0.55
@@ -1413,6 +1416,7 @@ Item {
                 NumberAnimation { target: pwGlow; property: "opacity"; to: 0; duration: 500; easing.type: Easing.InOutCubic }
             }
             Glass {
+            material: ls.st ? ls.st.material : "liquid"
                 anchors.fill: parent
                 src: glassTex; frame: ls
                 cornerR: height / 2; thickness: 18; tint: 0.50; shadowAmt: 0.4

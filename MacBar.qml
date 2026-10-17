@@ -203,6 +203,7 @@ Scope {
         }
     }
     property bool ccVisible: false
+    property string ccGeom: ""
     Timer { interval: 1200; running: true; onTriggered: ccPoll.triggered() }
     Timer {
         id: ccPoll
@@ -866,6 +867,50 @@ Scope {
         property bool debug: false
         signal shaderError()
 
+        // Blur / Frosted: the same backdrop the Liquid Glass shader uses, Gaussian-blurred and clipped to the slab.
+        // (It used to be a flat translucent rectangle, which is why "Blur" and "Frosted" looked like nothing happened.)
+        Loader {
+            anchors.fill: parent
+            active: !g.liquid && g.backdrop !== null && g.visible && g.blur > 0.5
+            sourceComponent: Item {
+                id: fl
+                readonly property real m: Math.max(24, g.blur * 1.5)     // backdrop captured around the slab, so the blur has pixels to pull in
+                readonly property real ds: g.blur >= 8 ? 0.5 : 1.0
+                anchors.fill: parent
+                ShaderEffectSource {
+                    id: fsrc
+                    sourceItem: g.backdrop
+                    hideSource: true
+                    live: true
+                    visible: false
+                    sourceRect: Qt.rect(g.bx - fl.m, g.by - fl.m, g.width + 2 * fl.m, g.height + 2 * fl.m)
+                    textureSize: Qt.size(Math.max(1, Math.round(sourceRect.width * fl.ds)), Math.max(1, Math.round(sourceRect.height * fl.ds)))
+                }
+                Rectangle {
+                    id: fmask
+                    width: g.width; height: g.height
+                    radius: g.cornerR
+                    color: "black"
+                    visible: false
+                    layer.enabled: true
+                }
+                Item {
+                    anchors.fill: parent
+                    layer.enabled: true
+                    layer.effect: MultiEffect { maskEnabled: true; maskSource: fmask }
+                    MultiEffect {
+                        x: -fl.m; y: -fl.m
+                        width: g.width + 2 * fl.m; height: g.height + 2 * fl.m
+                        source: fsrc
+                        blurEnabled: true
+                        blurMax: 64
+                        blur: Math.min(1.0, g.blur * 1.4 * fl.ds / 64.0)
+                        autoPaddingEnabled: false
+                        saturation: 0.25            // frosted glass desaturates a little, like macOS
+                    }
+                }
+            }
+        }
         Rectangle {
             visible: !g.liquid
             anchors.fill: parent
@@ -2166,6 +2211,17 @@ Scope {
         function toggle(): void { root.ccRequest(true); }
         function open(): void { root.ccRequest(true); }
         function close(): void { root.ccRequest(false); }
+        // Settings → Control Center → "Animate when opening"; here too, for scripts and demos
+        function animate(on: bool): void { root.ccAnimate = on; }
+        // where the panel is on screen, as "x y w h" (screen coordinates) — empty when it is closed
+        function geometry(): string { return root.ccGeom; }
+    }
+    // qs -c MacShell ipc call appearance material liquid|frosted|blur|opaque — the whole system at once
+    IpcHandler {
+        target: "appearance"
+        function material(m: string): void { root.applyMaterial(m); root.material = m; }
+        function dark(on: bool): void { root.darkMode = on; }
+        function accent(c: string): void { root.accent = c; }
     }
     IpcHandler {
         target: "spotlight"
@@ -3135,6 +3191,9 @@ Scope {
     // ═════════════ LIQUID GLASS BACKEND (same pipeline as macdock) ═════════════
     property string glassState: "idle"       // idle → building → ready | failed
     readonly property bool liquidActive: barStyle === "liquid" && glassState === "ready" && !gaming
+    // Blur and Frosted need the same backdrop (wallpaper + live windows) that Liquid Glass refracts — without it
+    // there is nothing to blur. Opaque needs none.
+    readonly property bool wantBackdrop: liquidActive || (!gaming && material !== "opaque" && glassBlur > 0.5)
     readonly property string glassShaderSrc: decodeURIComponent(Qt.resolvedUrl("liquidglass.frag").toString().replace("file://", ""))
     readonly property string glassShaderOut: configDir + "/liquidglass.frag.qsb"
     readonly property url glassShaderUrl: "file://" + glassShaderOut
@@ -3164,7 +3223,7 @@ Scope {
 
     // wallpaper the glass refracts (override → Noctalia settings.toml → awww/swww/hyprpaper)
     readonly property var wallpaperMap: hub ? hub.wallpaperMap : ({})
-    Binding { target: root.hub; property: "barWantsWallpaper"; value: root.liquidActive }
+    Binding { target: root.hub; property: "barWantsWallpaper"; value: root.wantBackdrop }
     function wallpaperFor(screenName) {
         var p = wallpaperPath !== "" ? wallpaperPath
               : (wallpaperMap["wallpaper.monitors." + screenName] || wallpaperMap["wallpaper.last"]
@@ -3183,7 +3242,7 @@ Scope {
     readonly property var glassClients: hub ? hub.glassClients : []
     property int popCount: 0
     onBarEnabledChanged: { if (!barEnabled) popCount = 0; clipStart(); }
-    Binding { target: root.hub; property: "barWantsGeo"; value: root.liquidActive }
+    Binding { target: root.hub; property: "barWantsGeo"; value: root.wantBackdrop }
     // window captures are admitted by the shared gate in shell.qml (hub.tlFor): 0.2 s after a window appears, one every 110 ms
 
     Component.onCompleted: {
@@ -3963,6 +4022,7 @@ Scope {
                 onAnyVisibleChanged: root.popCount += (anyVisible ? 1 : -1)
                 onPopChanged: {
                     if (ui.toastScreen) root.ccVisible = (pop === "cc");
+                    if (pop === "cc") ccGeomT.restart(); else if (ui.toastScreen) root.ccGeom = "";
                     if (pop !== "" && pop !== "spot") toneT.restart();
                     if (pop === "spot" && ui.toastScreen) root.measureTone(win.modelData.x + ui.width / 2 - 320, win.modelData.y + ui.height * 0.4 - 30, 640, 60);
                     armed = "";
@@ -4040,7 +4100,7 @@ Scope {
                 // ready-made, current window pixels.
                 Loader {
                     id: glassBackdrop
-                    active: root.liquidActive
+                    active: root.wantBackdrop
                     sourceComponent: backdropComp
                     onLoaded: item.region = Qt.binding(function () { return ui.glassRect; })
                 }
@@ -4053,7 +4113,7 @@ Scope {
                     x: 0; y: 0
                     width: win.modelData.width; height: win.modelData.height
                     opacity: 0                      // only ever captured by the glass, never drawn itself
-                    captureSource: root.liquidActive && !root.captureQuiet ? win.modelData : null
+                    captureSource: (root.wantBackdrop && !root.captureQuiet && !root.glassRealtime) ? win.modelData : null
                     live: false
                     paintCursor: false
                     property real takenAt: 0
@@ -4062,6 +4122,15 @@ Scope {
                 property bool snapFresh: false
                 // a moment after a popover starts opening (its rect is known), measure what's behind it
                 Timer {
+                    id: ccGeomT
+                    interval: 60
+                    onTriggered: {
+                        var r = ui.glassRect;
+                        if (r.width > 0) root.ccGeom = Math.round(win.modelData.x + r.x) + " " + Math.round(win.modelData.y + r.y)
+                                                     + " " + Math.round(r.width) + " " + Math.round(r.height);
+                    }
+                }
+                Timer {
                     id: toneT; interval: 20
                     onTriggered: {
                         var r = ui.glassRect;
@@ -4069,13 +4138,17 @@ Scope {
                         root.measureTone(win.modelData.x + r.x + 64, win.modelData.y + r.y + 64, r.width - 128, r.height - 128);
                     }
                 }
-                readonly property Item glassSrc: (snapFresh && screenSnap.hasContent) ? screenSnap : glassBackdrop.item
+                // Real-time glass refracts the LIVE backdrop (wallpaper + every window captured as it changes), so anything
+                // moving under a panel moves under the glass too. The still whole-screen snapshot is the cheap path: it also
+                // catches other layers, but it is frozen for as long as the panel is open — which is what "no real-time
+                // Liquid Glass" looked like. Screen capture can't be used live here: it would contain the glass itself.
+                readonly property Item glassSrc: (!root.glassRealtime && snapFresh && screenSnap.hasContent) ? screenSnap : glassBackdrop.item
                 HoverHandler {
                     id: barHover
-                    onHoveredChanged: if (hovered && ui.pop === "") screenSnap.grab()
+                    onHoveredChanged: if (hovered && ui.pop === "" && !root.glassRealtime) screenSnap.grab()
                 }
                 // refresh while the pointer rests on the bar with nothing open; a snapshot is "fresh" for 3 s
-                Timer { interval: 600; repeat: true; running: barHover.hovered && ui.pop === ""; onTriggered: screenSnap.grab() }
+                Timer { interval: 600; repeat: true; running: barHover.hovered && ui.pop === "" && !root.glassRealtime; onTriggered: screenSnap.grab() }
                 Timer { interval: 250; repeat: true; running: true; onTriggered: ui.snapFresh = (Date.now() - screenSnap.takenAt) < 3000 || (ui.pop !== "" && ui.snapFresh) }
 
                 // keeps the (otherwise unseen) backdrop rendering so its window captures stay valid; draws one 1%-opaque pixel

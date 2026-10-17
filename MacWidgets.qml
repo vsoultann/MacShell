@@ -1280,27 +1280,44 @@ Scope {
             readonly property var ctx: parent ? parent.ctx : null
             readonly property var open: root.reminders.filter(function (r) { return !r.done; })
             readonly property color blue: ctx && ctx.mono ? ctx.fg : "#0A84FF"
-            Row {
+            Item {
                 id: rHead
                 width: parent.width
-                Text { width: parent.width - cnt.width; text: "Reminders"; color: blue; font.family: root.fam; font.pixelSize: 14; font.weight: Font.Bold }
-                MorphText { id: cnt; text: parent.parent.open.length; duration: 420; animateWidth: false; color: blue; font.family: root.fam; font.pixelSize: 22; font.weight: Font.Bold }
-            }
-            // + — add one without leaving the widget
-            Rectangle {
-                id: addBtn
-                anchors.right: parent.right; y: 1
-                width: 18; height: 18; radius: 9
-                visible: !root.editing && (ctx === null || parent.width > 150)
-                color: addMa.containsMouse ? Qt.rgba(blue.r, blue.g, blue.b, 0.22) : "transparent"
-                rotation: adding ? 45 : 0
-                Behavior on rotation { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 2 } }
-                Rectangle { anchors.centerIn: parent; width: 10; height: 1.6; radius: 1; color: blue }
-                Rectangle { anchors.centerIn: parent; width: 1.6; height: 10; radius: 1; color: blue }
-                MouseArea {
-                    id: addMa; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                    onClicked: { adding = !adding; if (adding) newInput.forceActiveFocus(); }
+                height: cnt.height
+                Text {
+                    anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - cnt.width - addBtn.width - 14; elide: Text.ElideRight
+                    text: "Reminders"; color: blue; font.family: root.fam; font.pixelSize: 14; font.weight: Font.Bold
                 }
+                MorphText {
+                    id: cnt
+                    anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    text: parent.parent.open.length; duration: 420; animateWidth: false
+                    color: blue; font.family: root.fam; font.pixelSize: 22; font.weight: Font.Bold
+                }
+                // + — add one without leaving the widget. It lives beside the count, never on top of it,
+                // and fades in on hover the way macOS reveals its controls.
+                Rectangle {
+                    id: addBtn
+                    anchors.right: cnt.left; anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 20; height: 20; radius: 10
+                    visible: opacity > 0.01
+                    opacity: root.editing ? 0 : ((headHover.hovered || adding) ? 1 : 0)
+                    Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                    color: addMa.containsMouse ? Qt.rgba(blue.r, blue.g, blue.b, 0.22) : "transparent"
+                    rotation: adding ? 45 : 0
+                    Behavior on rotation { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 2 } }
+                    scale: addMa.pressed ? 0.88 : 1
+                    Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutQuint } }
+                    Rectangle { anchors.centerIn: parent; width: 11; height: 1.7; radius: 1; color: blue }
+                    Rectangle { anchors.centerIn: parent; width: 1.7; height: 11; radius: 1; color: blue }
+                    MouseArea {
+                        id: addMa; anchors.fill: parent; anchors.margins: -4; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                        onClicked: { adding = !adding; if (adding) newInput.forceActiveFocus(); }
+                    }
+                }
+                HoverHandler { id: headHover }
             }
             property bool adding: false
             property int editingLine: -1
@@ -1337,9 +1354,21 @@ Scope {
                 Repeater {
                     model: root.reminders
                     delegate: Row {
+                        id: remRow
                         required property var modelData
+                        required property int index
                         spacing: 8
                         width: parent.width
+                        // rows arrive one after another; the lift is a transform, so the Column keeps its own layout
+                        property real inT: 0
+                        opacity: inT
+                        transform: Translate { y: (1 - remRow.inT) * 8 }
+                        Component.onCompleted: rowIn.start()
+                        SequentialAnimation {
+                            id: rowIn
+                            PauseAnimation { duration: Math.min(300, remRow.index * 45) }
+                            NumberAnimation { target: remRow; property: "inT"; from: 0; to: 1; duration: 420; easing.type: Easing.OutCubic }
+                        }
                         Rectangle {
                             id: tick
                             width: 16; height: 16; radius: 8

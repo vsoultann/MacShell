@@ -182,8 +182,10 @@ Scope {
         return (i === 0 ? b : b.toFixed(b < 10 ? 1 : 0)) + " " + u[i];
     }
     function openEntry(e) {
-        if (e.isDir) go(e.path);
-        else Quickshell.execDetached(["xdg-open", e.path]);
+        if (e.isDir) { go(e.path); return; }
+        if (e.kind === "Image" && hub && hub.preview) { hub.preview.open(e.path); return; }
+        if (e.kind === "Video" && hub && hub.player) { hub.player.play(e.path, e.name); return; }
+        Quickshell.execDetached(["xdg-open", e.path]);
     }
     function newFolder() {
         Quickshell.execDetached(["sh", "-c", "cd \"$1\" && n='untitled folder'; i=2; while [ -e \"$n\" ]; do n=\"untitled folder $i\"; i=$((i+1)); done; mkdir \"$n\"", "sh", dir]);
