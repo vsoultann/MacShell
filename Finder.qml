@@ -18,7 +18,8 @@ Scope {
     readonly property var bar: hub ? hub.bar : null
     readonly property bool darkMode: dock ? dock.darkMode : true
     readonly property string fam: dock ? dock.fontFamily : "Inter Variable"
-    readonly property color accent: dock ? dock.accent : "#0A84FF"
+    property color accent: dock ? dock.accent : "#0A84FF"
+    Behavior on accent { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
     readonly property string home: Quickshell.env("HOME")
 
     // ── where we are ──
@@ -231,17 +232,28 @@ Scope {
         QtObject {
             id: pal
             readonly property bool dark: root.darkMode
-            readonly property color bg: dark ? "#1E1E1E" : "#FFFFFF"
-            readonly property color side: dark ? "#2A2A2C" : "#F2F2F4"
-            readonly property color text: dark ? "#F5F5F7" : "#1D1D1F"
-            readonly property color text2: dark ? Qt.rgba(1, 1, 1, 0.55) : Qt.rgba(0, 0, 0, 0.5)
-            readonly property color text3: dark ? Qt.rgba(1, 1, 1, 0.3) : Qt.rgba(0, 0, 0, 0.28)
-            readonly property color sep: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.09)
-            readonly property color pill: dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.07)
-            readonly property color selRow: dark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(0, 0, 0, 0.09)
-            readonly property color field: dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06)
-            readonly property color border: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.2)
-            readonly property color lightOff: dark ? Qt.rgba(1, 1, 1, 0.2) : Qt.rgba(0, 0, 0, 0.15)
+            property color bg: dark ? "#1E1E1E" : "#FFFFFF"
+            Behavior on bg { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color side: dark ? "#2A2A2C" : "#F2F2F4"
+            Behavior on side { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color text: dark ? "#F5F5F7" : "#1D1D1F"
+            Behavior on text { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color text2: dark ? Qt.rgba(1, 1, 1, 0.55) : Qt.rgba(0, 0, 0, 0.5)
+            Behavior on text2 { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color text3: dark ? Qt.rgba(1, 1, 1, 0.3) : Qt.rgba(0, 0, 0, 0.28)
+            Behavior on text3 { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color sep: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.09)
+            Behavior on sep { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color pill: dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.07)
+            Behavior on pill { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color selRow: dark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(0, 0, 0, 0.09)
+            Behavior on selRow { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color field: dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06)
+            Behavior on field { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color border: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.2)
+            Behavior on border { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color lightOff: dark ? Qt.rgba(1, 1, 1, 0.2) : Qt.rgba(0, 0, 0, 0.15)
+            Behavior on lightOff { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
         }
 
         Rectangle {
@@ -441,7 +453,8 @@ Scope {
                                 required property int index
                                 width: listCol.width; height: 26
                                 color: root.isSelected(modelData.path) ? root.accent : (index % 2 === 1 ? Qt.rgba(1, 1, 1, pal.dark ? 0.025 : 0.02) : "transparent")
-                                readonly property color ink: root.isSelected(modelData.path) ? "white" : pal.text
+                                property color ink: root.isSelected(modelData.path) ? "white" : pal.text
+                                Behavior on ink { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
                                 FnGlyph {
                                     x: 16; anchors.verticalCenter: parent.verticalCenter; width: 16; height: 16
                                     kind: rowItem.modelData.isDir ? "folder" : root.iconFor(rowItem.modelData.kind)

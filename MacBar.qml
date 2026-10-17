@@ -498,41 +498,71 @@ Scope {
         id: bpal
         readonly property bool dark: root.darkMode
         readonly property string fam: root.fontFamily
-        readonly property color accent: root.accent
-        readonly property color fg: dark ? "#FFFFFF" : "#1D1D1F"
-        readonly property color fg2: dark ? Qt.rgba(1, 1, 1, 0.62) : Qt.rgba(0, 0, 0, 0.55)
-        readonly property color fg3: dark ? Qt.rgba(1, 1, 1, 0.34) : Qt.rgba(0, 0, 0, 0.32)
-        readonly property color tile: dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.42)
-        readonly property color tileBorder: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.70)
-        readonly property color btnOff: dark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.10)
-        readonly property color btnHover: dark ? Qt.rgba(1, 1, 1, 0.30) : Qt.rgba(0, 0, 0, 0.16)
-        readonly property color hover: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.09)
-        readonly property color sep: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
-        readonly property color track: dark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.12)
-        readonly property color content: dark ? "#1E1E1E" : "#F5F5F7"
-        readonly property color card: dark ? "#2B2B2D" : "#FFFFFF"
-        readonly property color cardBorder: dark ? Qt.rgba(1, 1, 1, 0.07) : Qt.rgba(0, 0, 0, 0.08)
-        readonly property color switchOff: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.16)
+        property color accent: root.accent
+        Behavior on accent { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color fg: dark ? "#FFFFFF" : "#1D1D1F"
+        Behavior on fg { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color fg2: dark ? Qt.rgba(1, 1, 1, 0.62) : Qt.rgba(0, 0, 0, 0.55)
+        Behavior on fg2 { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color fg3: dark ? Qt.rgba(1, 1, 1, 0.34) : Qt.rgba(0, 0, 0, 0.32)
+        Behavior on fg3 { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color tile: dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.42)
+        Behavior on tile { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color tileBorder: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.70)
+        Behavior on tileBorder { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color btnOff: dark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.10)
+        Behavior on btnOff { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color btnHover: dark ? Qt.rgba(1, 1, 1, 0.30) : Qt.rgba(0, 0, 0, 0.16)
+        Behavior on btnHover { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color hover: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.09)
+        Behavior on hover { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color sep: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
+        Behavior on sep { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color track: dark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.12)
+        Behavior on track { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color content: dark ? "#1E1E1E" : "#F5F5F7"
+        Behavior on content { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color card: dark ? "#2B2B2D" : "#FFFFFF"
+        Behavior on card { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color cardBorder: dark ? Qt.rgba(1, 1, 1, 0.07) : Qt.rgba(0, 0, 0, 0.08)
+        Behavior on cardBorder { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color switchOff: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.16)
+        Behavior on switchOff { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
     }
     QtObject {
         id: pal
         readonly property bool dark: root.effDark
         readonly property string fam: root.fontFamily
-        readonly property color accent: root.accent
-        readonly property color fg: root.mixc(Qt.color("#1D1D1F"), Qt.color("#FFFFFF"))
-        readonly property color fg2: root.mixc(Qt.rgba(0, 0, 0, 0.55), Qt.rgba(1, 1, 1, 0.62))
-        readonly property color fg3: root.mixc(Qt.rgba(0, 0, 0, 0.32), Qt.rgba(1, 1, 1, 0.34))
-        readonly property color tile: root.mixc(Qt.rgba(1, 1, 1, 0.42), Qt.rgba(1, 1, 1, 0.10))
-        readonly property color tileBorder: root.mixc(Qt.rgba(1, 1, 1, 0.70), Qt.rgba(1, 1, 1, 0.16))
-        readonly property color btnOff: root.mixc(Qt.rgba(0, 0, 0, 0.10), Qt.rgba(1, 1, 1, 0.20))
-        readonly property color btnHover: root.mixc(Qt.rgba(0, 0, 0, 0.16), Qt.rgba(1, 1, 1, 0.30))
-        readonly property color hover: root.mixc(Qt.rgba(0, 0, 0, 0.09), Qt.rgba(1, 1, 1, 0.14))
-        readonly property color sep: root.mixc(Qt.rgba(0, 0, 0, 0.12), Qt.rgba(1, 1, 1, 0.14))
-        readonly property color track: root.mixc(Qt.rgba(0, 0, 0, 0.12), Qt.rgba(1, 1, 1, 0.20))
-        readonly property color content: dark ? "#1E1E1E" : "#F5F5F7"
-        readonly property color card: dark ? "#2B2B2D" : "#FFFFFF"
-        readonly property color cardBorder: root.mixc(Qt.rgba(0, 0, 0, 0.08), Qt.rgba(1, 1, 1, 0.07))
-        readonly property color switchOff: root.mixc(Qt.rgba(0, 0, 0, 0.16), Qt.rgba(1, 1, 1, 0.22))
+        property color accent: root.accent
+        Behavior on accent { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color fg: root.mixc(Qt.color("#1D1D1F"), Qt.color("#FFFFFF"))
+        Behavior on fg { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color fg2: root.mixc(Qt.rgba(0, 0, 0, 0.55), Qt.rgba(1, 1, 1, 0.62))
+        Behavior on fg2 { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color fg3: root.mixc(Qt.rgba(0, 0, 0, 0.32), Qt.rgba(1, 1, 1, 0.34))
+        Behavior on fg3 { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color tile: root.mixc(Qt.rgba(1, 1, 1, 0.42), Qt.rgba(1, 1, 1, 0.10))
+        Behavior on tile { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color tileBorder: root.mixc(Qt.rgba(1, 1, 1, 0.70), Qt.rgba(1, 1, 1, 0.16))
+        Behavior on tileBorder { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color btnOff: root.mixc(Qt.rgba(0, 0, 0, 0.10), Qt.rgba(1, 1, 1, 0.20))
+        Behavior on btnOff { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color btnHover: root.mixc(Qt.rgba(0, 0, 0, 0.16), Qt.rgba(1, 1, 1, 0.30))
+        Behavior on btnHover { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color hover: root.mixc(Qt.rgba(0, 0, 0, 0.09), Qt.rgba(1, 1, 1, 0.14))
+        Behavior on hover { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color sep: root.mixc(Qt.rgba(0, 0, 0, 0.12), Qt.rgba(1, 1, 1, 0.14))
+        Behavior on sep { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color track: root.mixc(Qt.rgba(0, 0, 0, 0.12), Qt.rgba(1, 1, 1, 0.20))
+        Behavior on track { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color content: dark ? "#1E1E1E" : "#F5F5F7"
+        Behavior on content { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color card: dark ? "#2B2B2D" : "#FFFFFF"
+        Behavior on card { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color cardBorder: root.mixc(Qt.rgba(0, 0, 0, 0.08), Qt.rgba(1, 1, 1, 0.07))
+        Behavior on cardBorder { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color switchOff: root.mixc(Qt.rgba(0, 0, 0, 0.16), Qt.rgba(1, 1, 1, 0.22))
+        Behavior on switchOff { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
     }
 
     // ═════════════ REUSABLE COMPONENTS ═════════════
@@ -1927,7 +1957,34 @@ Scope {
     }
     function setBrightness(v) { osdQuiet("brightness", 1800); brightness = Math.max(0.01, Math.min(1, v)); brightApply.restart(); }
     onBrightnessChanged: showOsd("brightness", brightness)
-    Timer { interval: 850; repeat: true; running: true; onTriggered: root.refreshBrightness() }
+    // The backlight file changes the instant the key is pressed, so the HUD appears with the key instead of up to
+    // 850 ms later. The slow poll stays as a safety net for machines where the file cannot be watched.
+    property string backlightDev: ""
+    Process {
+        running: true
+        command: ["sh", "-c", "ls /sys/class/backlight 2>/dev/null | head -n1"]
+        stdout: StdioCollector { onStreamFinished: root.backlightDev = text.trim() }
+    }
+    property real backlightMax: 0
+    FileView {
+        path: root.backlightDev === "" ? "" : "/sys/class/backlight/" + root.backlightDev + "/max_brightness"
+        printErrors: false
+        onLoaded: root.backlightMax = parseFloat(text()) || 0
+    }
+    FileView {
+        id: backlightNow
+        path: root.backlightDev === "" ? "" : "/sys/class/backlight/" + root.backlightDev + "/brightness"
+        printErrors: false
+        watchChanges: true
+        onFileChanged: reload()
+        onLoaded: {
+            if (root.backlightMax <= 0) return;
+            var v = (parseFloat(text()) || 0) / root.backlightMax;
+            if (Math.abs(v - root.brightness) < 0.004) return;
+            root.brightness = Math.max(0, Math.min(1, v));
+        }
+    }
+    Timer { interval: root.backlightDev === "" ? 850 : 5000; repeat: true; running: true; onTriggered: root.refreshBrightness() }
     // ═════════════ KEYBOARD LAYOUT ═════════════
     // Hyprland announces every change with an `activelayout` event, so the label updates immediately (no polling).
     // `hyprctl devices` is only read at start-up and after a config reload, to learn which layouts are configured.
@@ -2238,11 +2295,17 @@ Scope {
     IpcHandler {
         target: "appearance"
         function material(m: string): void { root.applyMaterial(m); root.material = m; }
-        function dark(on: bool): void { root.darkMode = on; }
+        // one switch for the whole system: the bar, the Dock, Settings, every app window and the widgets
+        function dark(on: bool): void {
+            if (root.hub && root.hub.dock && root.hub.dock.setLook) root.hub.dock.setLook("darkMode", on);
+            else root.darkMode = on;
+        }
+        function light(): void { root.hub && root.hub.dock ? root.hub.dock.setLook("darkMode", false) : root.darkMode = false; }
         function accent(c: string): void { root.accent = c; }
         function tint(v: real): void { root.glassOpacity = Math.max(0, Math.min(1, v)); root.materialTouched(); }
         function tintcolor(k: string): void { root.tintAccent = (k === "accent"); root.materialTouched(); }
         function realtime(on: bool): void { root.glassRealtime = on; }
+        function barglass(on: bool): void { root.barGlass = on; }
     }
     IpcHandler {
         target: "spotlight"
@@ -4395,10 +4458,11 @@ Scope {
                     y: root.barHeight + 14
                     visible: ui.toastScreen && opacity > 0
                     opacity: root.osdVisible ? 1 : 0
-                    scale: root.osdVisible ? 1 : 0.94
+                    scale: root.osdVisible ? 1 : 0.88
                     transformOrigin: Item.TopRight
-                    Behavior on opacity { NumberAnimation { duration: 160 } }
-                    Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                    transform: Translate { y: root.osdVisible ? 0 : -10 }
+                    Behavior on opacity { NumberAnimation { duration: root.osdVisible ? 150 : 260; easing.type: Easing.OutCubic } }
+                    Behavior on scale { NumberAnimation { duration: 420; easing.type: Easing.OutBack; easing.overshoot: 1.5 } }
                     LGlass {
                         anchors.fill: parent
                         backdrop: ui.glassSrc
@@ -4417,30 +4481,44 @@ Scope {
                         debug: root.glassDebug
                         onShaderError: root.glassState = "failed"
                     }
+                    // the icon gives a little kick on every step, and the speaker's waves follow the level
                     Glyph {
+                        id: osdIcon
                         x: 20; anchors.verticalCenter: parent.verticalCenter
                         width: 24; height: 24
                         kind: root.osdKind === "brightness" ? "sun" : "speaker"
-                        level: root.osdKind === "brightness" ? 3 : (root.osdValue < 0.34 ? 1 : (root.osdValue < 0.67 ? 2 : 3))
+                        level: root.osdKind === "brightness" ? 3 : (root.osdValue < 0.01 ? 0 : (root.osdValue < 0.34 ? 1 : (root.osdValue < 0.67 ? 2 : 3)))
                         color: "white"
+                        property real kick: 0
+                        scale: 1 + kick * 0.16
+                        rotation: root.osdKind === "brightness" ? kick * 12 : 0
+                        SequentialAnimation {
+                            id: kickAnim
+                            NumberAnimation { target: osdIcon; property: "kick"; to: 1; duration: 90; easing.type: Easing.OutCubic }
+                            NumberAnimation { target: osdIcon; property: "kick"; to: 0; duration: 420; easing.type: Easing.OutBack; easing.overshoot: 2.4 }
+                        }
+                        Connections {
+                            target: root
+                            function onOsdValueChanged() { kickAnim.restart(); }
+                        }
                     }
-                    // segmented level bar: bright segments are filled, the rest are dim
-                    Row {
+                    // one continuous fill that glides to the new level, with the track showing through behind it
+                    Item {
                         id: osdBar
                         x: 62; anchors.verticalCenter: parent.verticalCenter
-                        readonly property int n: 22
-                        readonly property real segW: (levelOsd.width - 62 - 24 - (n - 1) * 3) / n
-                        spacing: 3
-                        Repeater {
-                            model: osdBar.n
-                            Rectangle {
-                                required property int index
-                                width: osdBar.segW; height: 4; radius: 2
-                                color: "white"
-                                // partial last segment fades proportionally
-                                opacity: Math.max(0.28, Math.min(1, root.osdValue * osdBar.n - index) * 0.95)
-                                Behavior on opacity { NumberAnimation { duration: 90 } }
-                            }
+                        width: levelOsd.width - 62 - 24
+                        height: 8
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: height / 2
+                            color: Qt.rgba(1, 1, 1, 0.22)
+                        }
+                        Rectangle {
+                            width: Math.max(parent.height, parent.width * Math.max(0, Math.min(1, root.osdValue)))
+                            height: parent.height
+                            radius: height / 2
+                            color: "white"
+                            Behavior on width { NumberAnimation { duration: 260; easing.type: Easing.OutQuint } }
                         }
                     }
                 }

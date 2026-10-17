@@ -16,7 +16,8 @@ Scope {
     readonly property var bar: hub ? hub.bar : null
     readonly property bool darkMode: dock ? dock.darkMode : true
     readonly property string fam: dock ? dock.fontFamily : "Inter Variable"
-    readonly property color accent: dock ? dock.accent : "#0A84FF"
+    property color accent: dock ? dock.accent : "#0A84FF"
+    Behavior on accent { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
     readonly property string home: Quickshell.env("HOME")
     readonly property string helper: home + "/.config/hypr-macshell/scripts/macshell-airdrop.py"
 
@@ -170,13 +171,20 @@ Scope {
         QtObject {
             id: pal
             readonly property bool dark: root.darkMode
-            readonly property color bg: dark ? "#1E1E1E" : "#FFFFFF"
-            readonly property color text: dark ? "#F5F5F7" : "#1D1D1F"
-            readonly property color text2: dark ? Qt.rgba(1, 1, 1, 0.55) : Qt.rgba(0, 0, 0, 0.5)
-            readonly property color text3: dark ? Qt.rgba(1, 1, 1, 0.3) : Qt.rgba(0, 0, 0, 0.28)
-            readonly property color sep: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.09)
-            readonly property color border: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.2)
-            readonly property color lightOff: dark ? Qt.rgba(1, 1, 1, 0.2) : Qt.rgba(0, 0, 0, 0.15)
+            property color bg: dark ? "#1E1E1E" : "#FFFFFF"
+            Behavior on bg { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color text: dark ? "#F5F5F7" : "#1D1D1F"
+            Behavior on text { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color text2: dark ? Qt.rgba(1, 1, 1, 0.55) : Qt.rgba(0, 0, 0, 0.5)
+            Behavior on text2 { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color text3: dark ? Qt.rgba(1, 1, 1, 0.3) : Qt.rgba(0, 0, 0, 0.28)
+            Behavior on text3 { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color sep: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.09)
+            Behavior on sep { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color border: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.2)
+            Behavior on border { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color lightOff: dark ? Qt.rgba(1, 1, 1, 0.2) : Qt.rgba(0, 0, 0, 0.15)
+            Behavior on lightOff { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
         }
 
         Rectangle {

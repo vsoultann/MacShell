@@ -782,31 +782,53 @@ Scope {
             id: pal
             readonly property bool dark: root.darkMode
             readonly property string fam: root.fontFamily
-            readonly property color accent: root.accent
+            property color accent: root.accent
+            Behavior on accent { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
             readonly property bool glass: root.liquidActive
-            readonly property color content: glass ? (dark ? Qt.rgba(0.09, 0.09, 0.10, 0.58) : Qt.rgba(0.97, 0.97, 0.98, 0.62))
+            property color content: glass ? (dark ? Qt.rgba(0.09, 0.09, 0.10, 0.58) : Qt.rgba(0.97, 0.97, 0.98, 0.62))
                                                    : (dark ? "#1E1E1E" : "#F5F5F7")
-            readonly property color sidebar: dark ? "#292929" : "#E9E9EC"
-            readonly property color card: glass ? (dark ? Qt.rgba(1, 1, 1, 0.065) : Qt.rgba(1, 1, 1, 0.55))
+            Behavior on content { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color sidebar: dark ? "#292929" : "#E9E9EC"
+            Behavior on sidebar { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color card: glass ? (dark ? Qt.rgba(1, 1, 1, 0.065) : Qt.rgba(1, 1, 1, 0.55))
                                                 : (dark ? "#2B2B2D" : "#FFFFFF")
-            readonly property color cardBorder: dark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.07)
-            readonly property color windowBorder: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.22)
-            readonly property color sep: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.09)
-            readonly property color text: dark ? "#F5F5F7" : "#1D1D1F"
-            readonly property color text2: dark ? Qt.rgba(1, 1, 1, 0.56) : Qt.rgba(0, 0, 0, 0.52)
-            readonly property color text3: dark ? Qt.rgba(1, 1, 1, 0.32) : Qt.rgba(0, 0, 0, 0.30)
-            readonly property color track: dark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.13)
-            readonly property color switchOff: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.14)
-            readonly property color ctrl: dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06)
-            readonly property color ctrlSel: dark ? "#636366" : "#FFFFFF"
-            readonly property color button: dark ? Qt.rgba(1, 1, 1, 0.13) : "#FFFFFF"
-            readonly property color buttonPressed: dark ? Qt.rgba(1, 1, 1, 0.24) : "#E4E4E7"
-            readonly property color buttonBorder: dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.14)
-            readonly property color field: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.06)
-            readonly property color hover: dark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05)
-            readonly property color selInactive: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
-            readonly property color lightOff: dark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.15)
-            readonly property color danger: "#FF453A"
+            Behavior on card { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color cardBorder: dark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.07)
+            Behavior on cardBorder { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color windowBorder: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.22)
+            Behavior on windowBorder { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color sep: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.09)
+            Behavior on sep { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color text: dark ? "#F5F5F7" : "#1D1D1F"
+            Behavior on text { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color text2: dark ? Qt.rgba(1, 1, 1, 0.56) : Qt.rgba(0, 0, 0, 0.52)
+            Behavior on text2 { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color text3: dark ? Qt.rgba(1, 1, 1, 0.32) : Qt.rgba(0, 0, 0, 0.30)
+            Behavior on text3 { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color track: dark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.13)
+            Behavior on track { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color switchOff: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.14)
+            Behavior on switchOff { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color ctrl: dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06)
+            Behavior on ctrl { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color ctrlSel: dark ? "#636366" : "#FFFFFF"
+            Behavior on ctrlSel { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color button: dark ? Qt.rgba(1, 1, 1, 0.13) : "#FFFFFF"
+            Behavior on button { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color buttonPressed: dark ? Qt.rgba(1, 1, 1, 0.24) : "#E4E4E7"
+            Behavior on buttonPressed { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color buttonBorder: dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.14)
+            Behavior on buttonBorder { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color field: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.06)
+            Behavior on field { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color hover: dark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05)
+            Behavior on hover { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color selInactive: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
+            Behavior on selInactive { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color lightOff: dark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.15)
+            Behavior on lightOff { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            property color danger: "#FF453A"
+            Behavior on danger { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
         }
 
         NumberAnimation { id: fadeIn; target: paneLoader; property: "opacity"; from: 0; to: 1; duration: 160 }
