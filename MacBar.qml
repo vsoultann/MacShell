@@ -202,9 +202,12 @@ Scope {
             }
         }
     }
+    property bool ccVisible: false
+    Timer { interval: 1200; running: true; onTriggered: ccPoll.triggered() }
     Timer {
         id: ccPoll
-        interval: 5000; repeat: true; running: root.ccOpen !== undefined ? true : true
+        // open: every five seconds. Closed: once at startup, so the tiles are right the moment it opens.
+        interval: 5000; repeat: true; running: root.ccVisible
         triggeredOnStart: true
         onTriggered: {
             if (ccStateProc.running) return;
@@ -3800,6 +3803,7 @@ Scope {
                 anchors.fill: parent
 
                 property string pop: ""          // "", apple, app, file, edit, view, window, help, cc, cal
+                // the Control Center's own state (battery profile, hotspot, keyboard backlight) is only read while it is open
                 property real menuX: 0
                 property var menuModel: []
                 property string armed: ""
@@ -3958,6 +3962,7 @@ Scope {
                 readonly property bool anyVisible: menuPop.visible || cc.visible || cal.visible || wifiPop.visible || trayPop.visible || notifPop.visible || toastArea.visible || volPop.visible || kbPop.visible
                 onAnyVisibleChanged: root.popCount += (anyVisible ? 1 : -1)
                 onPopChanged: {
+                    if (ui.toastScreen) root.ccVisible = (pop === "cc");
                     if (pop !== "" && pop !== "spot") toneT.restart();
                     if (pop === "spot" && ui.toastScreen) root.measureTone(win.modelData.x + ui.width / 2 - 320, win.modelData.y + ui.height * 0.4 - 30, 640, 60);
                     armed = "";

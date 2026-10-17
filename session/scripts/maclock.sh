@@ -14,9 +14,23 @@ trap '"$HOME/.config/hypr-macshell/scripts/macshell-wallpause.sh" all resume' EX
 export QSG_USE_SIMPLE_ANIMATION_DRIVER=1
 # fewer malloc arenas: Qt runs ~50 threads, each would get its own heap arena (RAM that never comes back)
 export MALLOC_ARENA_MAX=2
+# A leftover MacLock that is no longer holding the session lock would keep this script from ever showing one
+# (it answers the flock, then exits instantly). Clear it out before starting.
+for p in $(pgrep -f 'qs -c MacLock' 2>/dev/null); do
+    [ "$p" = "$$" ] && continue
+    kill "$p" 2>/dev/null
+done
+sleep 0.1
+
 n=0
 while [ "$n" -lt 5 ]; do
-    qs -c MacLock && exit 0
+    start=$(date +%s%N)
+    qs -c MacLock
+    rc=$?
+    # exiting at once means the lock never engaged (another locker, no compositor support, a crash on startup):
+    # that is the case where the screen silently stayed unlocked, so try again rather than return happy.
+    ms=$(( ($(date +%s%N) - start) / 1000000 ))
+    [ "$rc" = 0 ] && [ "$ms" -gt 1500 ] && exit 0
     n=$((n + 1))
     sleep 0.3
 done

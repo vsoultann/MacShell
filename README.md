@@ -26,7 +26,7 @@ Measured on an Intel laptop (Hyprland 0.56, Quickshell 0.3, two monitors, 60 Hz 
 
 | | RAM (resident) | CPU at idle |
 |---|---|---|
-| MacShell (menu bar, Dock, widgets, everything) | ~550 MB after start (was ~1.1 GB) | ~2.8 % of one core (was ~7.6 %) |
+| MacShell (menu bar, Dock, widgets, everything) | ~550–680 MB after start (was ~1.1 GB) | ~3–5 % of one core (was ~7.6 %) |
 | Lock screen while locked | ~360 MB | ~0 % |
 
 What made the difference: one variable Inter font file instead of a 13 MB collection mapped once per weight, `MALLOC_ARENA_MAX=2`,
@@ -261,6 +261,16 @@ Also make sure **blur is enabled** in your Hyprland `decoration` settings, or th
 | `switcher` | `next`, `prev`, `commit`, `cancel` |
 | `settings` | `open` (works even if both the bar and the Dock are disabled) |
 | `glass` | `captures true\|false` (window previews on/off, same as Settings → Dock Behavior → *Live window capture*) |
+| `finder` | `open`, `folder <path>` |
+| `photos` | `open`, `folder <path>` |
+| `airdrop` | `open` |
+| `appstore` | `open`, `search <query>`, `page <id>` |
+| `player` | `play <path\|url>`, `youtube <url>` |
+| `welcome` | `open` (the first-run screen; it runs itself once unless `~/.config/macshell/welcome-done` exists) |
+| `desktop` | `toggle`, `refresh` (icons on the desktop) |
+| `dock` | `pinfolder <path>`, `unpinfolder <path>`, `stack <path>` |
+| `controlcenter` | `toggle`, `open`, `close` |
+| `notifications` | `open`, `close`, `clear`, `dismiss <id>`, `dnd on\|off\|toggle` |
 
 ## Wallpaper
 
