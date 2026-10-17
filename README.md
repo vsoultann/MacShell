@@ -189,6 +189,14 @@ Keep all five files in the same folder.
 | Emoji search keywords | `emoji-test.txt` from the `unicode-emoji` package (otherwise `EmojiData.js` is used) |
 | Wallpaper detection / applying | one of: Noctalia, `awww`/`swww`, `hyprpaper`, `swaybg`, `wpaperd` — or set a path yourself (see [Wallpaper](#wallpaper)) |
 | Default apps | terminal `kitty`, file opener `xdg-open` — change `terminal`, `launcher`, `filesCmd`, `clipboardCmd` in `~/.config/macbar/settings.json` |
+| Video in the player and in Finder's Quick Look | `qt6-multimedia` (with `qt6-multimedia-ffmpeg`); hardware decoding through VA-API |
+| The AppleCare+ easter egg | `yt-dlp` (without it the video opens in your browser instead) |
+| PDF previews in Quick Look | `poppler` (`pdftotext`) |
+| Merge Photos in Finder | `imagemagick` (`magick`, `montage`) |
+| Picking files to send in AirDrop | `zenity` |
+| AirDrop itself | `python3` (standard library only) and a device running [LocalSend](https://localsend.org) on the same network |
+| Apple Music | [Cider](https://cider.sh) (`cider`), by the Cider Collective — installed as `macshell-applemusic.desktop` |
+| App Store | `flatpak` with Flathub added (`flatpak remote-add --if-not-exists flathub …`) |
 
 ### Conflicts
 
