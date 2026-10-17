@@ -40,7 +40,7 @@ SHARE="$HOME/.local/share/macshell"
 YES=0
 ORDER=(deps shell applemusic menubar spotlight controlcenter notifications dock widgets clock lock config session existing icons fonts apply wallpapers sounds)
 # the parts of the shell you can pick individually (one set of files, each part switched on or off)
-PARTS=(menubar spotlight controlcenter notifications dock widgets clock)
+PARTS=(menubar spotlight controlcenter notifications dock widgets clock desktop)
 declare -A DESC=(
     [shell]="Shell files + System Settings (needed by every part below)"
     [applemusic]="Apple Music (Cider, by the Cider Collective)"
@@ -50,7 +50,9 @@ declare -A DESC=(
     [notifications]="Notifications (banners + Notification Center)"
     [dock]="Dock"
     [widgets]="Desktop widgets (Clock, Weather, Music, Reminders…)"
+    [desktop]="Desktop icons (files, folders and apps in ~/Desktop)"
     [clock]="Clock app (World Clock, Alarms, Stopwatch, Timers)"
+    [apps]="Finder, Photos, App Store, AirDrop and the video player"
     [lock]="Lock screen (MacLock)"
     [config]="Session config + helper scripts (wallpapers, Game Mode, lock)"
     [session]="\"Hyprland (MacShell)\" login session (separate, needs sudo)"
@@ -78,7 +80,8 @@ known() { local f; for f in "${ORDER[@]}"; do [ "$f" = "$1" ] && return 0; done;
 
 PKGS=(quickshell rsync qt6-shadertools qt6-multimedia qt6-svg jq curl git ffmpeg imagemagick libnotify grim slurp wl-clipboard cliphist
       playerctl brightnessctl bluez-utils networkmanager power-profiles-daemon hypridle hyprlock hyprsunset wf-recorder
-      mpvpaper awww inter-font noto-fonts-emoji python-numpy zenity openbsd-netcat libwebp)
+      mpvpaper awww inter-font noto-fonts-emoji python-numpy zenity openbsd-netcat libwebp
+      yt-dlp poppler)
 
 do_deps() {
     say "Installing dependencies"
@@ -134,11 +137,11 @@ set_json() {   # set_json <file> <key> <true|false>
     [ -s "$f" ] || printf '{}\n' > "$f"
     t=$(mktemp) && jq --arg k "$k" --argjson v "$v" '.[$k] = $v' "$f" > "$t" && mv "$t" "$f"
 }
-part_file() { case "$1" in dock) printf '%s' "$MACDOCK" ;; widgets) printf '%s' "$WIDGETS" ;; *) printf '%s' "$MACBAR" ;; esac; }
+part_file() { case "$1" in dock|desktop) printf '%s' "$MACDOCK" ;; widgets) printf '%s' "$WIDGETS" ;; *) printf '%s' "$MACBAR" ;; esac; }
 part_key()  {
     case "$1" in
         menubar) printf 'barEnabled' ;; spotlight) printf 'spotlightEnabled' ;; controlcenter) printf 'ccEnabled' ;;
-        notifications) printf 'notificationsEnabled' ;; clock) printf 'clockAppEnabled' ;;
+        notifications) printf 'notificationsEnabled' ;; clock) printf 'clockAppEnabled' ;; desktop) printf 'desktopIcons' ;;
         dock) printf 'dockEnabled' ;; widgets) printf 'enabled' ;;
     esac
 }

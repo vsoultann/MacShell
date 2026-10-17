@@ -40,6 +40,7 @@ ShellRoot {
         property var welcome: welcomeApp
         property var player: videoPlayer
         property var desktop: desktopIcons
+        property var airdrop: airDrop
         function openSettings(pane) { macDock.openPrefs(pane); }
 
         // set by MacBar / MacDock (Binding elements) when their glass needs live data
@@ -280,6 +281,7 @@ ShellRoot {
     Welcome { id: welcomeApp; hub: sharedHub }
     VideoPlayer { id: videoPlayer; hub: sharedHub }
     Desktop { id: desktopIcons; hub: sharedHub }
+    AirDrop { id: airDrop; hub: sharedHub }
 
     // reopen settings even when both the Dock and the Menu Bar are disabled:
     //   qs -c macbar ipc call settings open
@@ -303,9 +305,14 @@ ShellRoot {
     // qs -c MacShell ipc call welcome open
     // qs -c MacShell ipc call player play <path|url>
     // qs -c MacShell ipc call desktop toggle | refresh
+    // qs -c MacShell ipc call airdrop open
+    IpcHandler {
+        target: "airdrop"
+        function open(): void { airDrop.open(); }
+    }
     IpcHandler {
         target: "desktop"
-        function toggle(): void { desktopIcons.enabled = !desktopIcons.enabled; }
+        function toggle(): void { macDock.desktopIcons = !macDock.desktopIcons; }
         function refresh(): void { desktopIcons.scan(); }
     }
     IpcHandler {

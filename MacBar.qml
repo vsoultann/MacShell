@@ -175,13 +175,8 @@ Scope {
             : "nmcli -t -f NAME connection show --active | grep -i hotspot | while read -r n; do nmcli connection down \"$n\"; done"]);
     }
     function toggleAirDrop() {
-        // AirDrop rides on LocalSend: same idea, same protocol on every platform
-        Quickshell.execDetached(["sh", "-c",
-            "if pgrep -x localsend_app >/dev/null; then pkill -x localsend_app; "
-            + "elif command -v localsend_app >/dev/null; then setsid localsend_app >/dev/null 2>&1 & "
-            + "elif flatpak info org.localsend.localsend_app >/dev/null 2>&1; then setsid flatpak run org.localsend.localsend_app >/dev/null 2>&1 & "
-            + "else notify-send 'AirDrop' 'Install LocalSend to send and receive files.'; fi"]);
-        ccPoll.restart();
+        if (hub && hub.airdrop) { hub.airdrop.open(); return; }
+        Quickshell.execDetached(["sh", "-c", "notify-send 'AirDrop' 'AirDrop is unavailable.'"]);
     }
     function setKeyLight(v) {
         keyLight = Math.max(0, Math.min(keyLightMax, Math.round(v)));

@@ -180,6 +180,7 @@ Scope {
         "code", "discord", "macshell-applemusic", "spotify", "steam", "obsidian"
     ]   // used until you change pins from the dock; unknown ids are skipped
     property var pinned: defaultPinned
+    property bool desktopIcons: true    // files, folders and apps shown on the desktop
     property var pinnedFolders: []      // folder paths pinned next to the Trash
     function pinFolder(p) {
         if (pinnedFolders.indexOf(p) >= 0) return;
@@ -1243,7 +1244,7 @@ Scope {
                         t: pal
                         title: "Show items on the desktop"
                         subtitle: "Files, folders and apps in ~/Desktop. Drag to move, double-click to open, drop one onto another to make a folder."
-                        SSwitch { t: pal; checked: root.hub && root.hub.desktop ? root.hub.desktop.enabled : true; onToggled: v => { if (root.hub && root.hub.desktop) root.hub.desktop.enabled = v; } }
+                        SSwitch { t: pal; checked: root.desktopIcons; onToggled: v => root.desktopIcons = v }
                     }
                     SRow {
                         t: pal
@@ -3999,7 +4000,7 @@ Scope {
 
     function saveSettings() {
         var o = {
-            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, pinnedFolders: pinnedFolders, iconSize: iconSize, magnification: magnification, magnificationEnabled: magnificationEnabled,
+            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, iconSize: iconSize, magnification: magnification, magnificationEnabled: magnificationEnabled,
             spacing: spacing, margin: margin, cornerRadius: cornerRadius,
             darkMode: darkMode, glassOpacity: glassOpacity, dockStyle: dockStyle, wallpaperPath: wallpaperPath, glassDebug: glassDebug,
             glassRim: glassRim, glassGrain: glassGrain, glassLiquid: glassLiquid, glassBlur: glassBlur,
@@ -4013,7 +4014,7 @@ Scope {
 
     function applySettings(o) {
         if (!o || typeof o !== "object") return;
-        var keys = ["dockEnabled", "windowsFloat", "shortcuts", "pinnedFolders", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
+        var keys = ["dockEnabled", "windowsFloat", "shortcuts", "pinnedFolders", "desktopIcons", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
                     "darkMode", "glassOpacity", "dockStyle", "wallpaperPath", "glassDebug", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "accent", "fontFamily", "hideMode", "hideDelay", "monitor",
                     "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture"];
         for (var i = 0; i < keys.length; i++) {

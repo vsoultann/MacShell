@@ -17,7 +17,7 @@ Scope {
     readonly property string home: Quickshell.env("HOME")
     readonly property string dir: home + "/Desktop"
 
-    property bool enabled: true
+    readonly property bool enabled: dock ? dock.desktopIcons : true
     property var items: []                  // { name, path, isDir, isApp, exec, icon, kind }
     property var places: ({})               // name → { x, y }
     property string selected: ""
