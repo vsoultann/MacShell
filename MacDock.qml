@@ -3724,7 +3724,8 @@ Scope {
                             text: "Restart"
                             onClicked: {
                                 prefsWindow.visible = false;
-                                Quickshell.execDetached(["sh", "-c", "sleep 0.2; pkill -x -f 'qs -c MacShell'"]);
+                                // the autostart loop brings it straight back; -x -f never matched the real command line
+                                Quickshell.execDetached(["sh", "-c", "sleep 0.3; pkill -x qs || pkill -f 'qs -c MacShell'"]);
                             }
                         }
                     }
@@ -3954,9 +3955,13 @@ Scope {
         showTrash, showLabels, showIndicators, bounceOnLaunch, showThumbs, windowCapture].join("|")
     property bool settingsReady: false
     onSettingsSigChanged: if (settingsReady) saveTimer.restart()
-    onShowTrashChanged: { rebuild(); if (showTrash) trashCheck(); }
-    onShowThumbsChanged: rebuild()
-    onWindowCaptureChanged: rebuild()
+    // a setting changed, not an app closing: rebuild without playing the "closed" animation
+    property bool skipLeave: false
+    Timer { id: skipLeaveOff; interval: 400; onTriggered: root.skipLeave = false }
+    function rebuildNow() { skipLeave = true; leaving = ({}); rebuild(); skipLeaveOff.restart(); }
+    onShowTrashChanged: { rebuildNow(); if (showTrash) trashCheck(); }
+    onShowThumbsChanged: rebuildNow()
+    onWindowCaptureChanged: rebuildNow()
 
     function saveSettings() {
         var o = {
@@ -4316,6 +4321,7 @@ Scope {
             for (var pv = 0; pv < prev.length; pv++) {
                 var po = prev[pv];
                 if (!po.key || liveKeys[po.key]) continue;
+                if (skipLeave) continue;
                 if (LV[po.key] === undefined) { if (po.leaving) continue; LV[po.key] = now; }
                 // put it back after the item that preceded it last time
                 var at = 0;

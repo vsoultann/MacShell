@@ -6953,7 +6953,8 @@ Scope {
                                     Image {
                                         anchors.fill: parent
                                         source: root.fileUrl(wc.modelData.video ? wc.modelData.thumb : wc.modelData.path)
-                                        sourceSize.width: 420
+                                        // decode at the size the cell shows: decoding whole 4K files is what made the grid crawl
+                                        sourceSize.width: Math.max(160, Math.round(wpGrid.cellWidth))
                                         fillMode: Image.PreserveAspectCrop
                                         asynchronous: true
                                         cache: true
