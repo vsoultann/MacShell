@@ -154,6 +154,7 @@ Scope {
     property string barStyle: "liquid"        // "liquid" = Apple Liquid Glass popovers, "blur" = flat translucent
     property real glassRim: 0.45
     property real glassGrain: 0.015
+    property bool tintAccent: false        // glass picks up the accent colour instead of neutral grey
     property bool windowBar: false         // Apple-style window controls floating on every window (off: see WindowBar.qml)
     property bool windowBarTitle: true     // …with the app's icon and name beside them
     property string userDisplayName: ""    // what the welcome screen was told to call you
@@ -357,7 +358,7 @@ Scope {
     readonly property var settingKeys: ["barEnabled", "darkMode", "accent", "fontFamily", "barHeight", "glassOpacity",
         "barStyle", "barGlass", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "barBgOpacity", "glassRealtime", "glassDebug", "wallpaperPath", "use24h", "showDate",
         "showSeconds", "showBatteryPercent", "showTray", "showSearch",
-        "spotlightEnabled", "ccEnabled", "notificationsEnabled", "clockAppEnabled", "ccStyle", "userDisplayName", "ccAnimate", "material", "tlAlwaysSymbols", "tlColorOnHover", "windowBar", "windowBarTitle", "barLogoMode", "barCustomLogoPath", "barWidgets", "weekStartsMonday", "terminal", "launcher",
+        "spotlightEnabled", "ccEnabled", "notificationsEnabled", "clockAppEnabled", "ccStyle", "userDisplayName", "ccAnimate", "material", "tlAlwaysSymbols", "tlColorOnHover", "tintAccent", "windowBar", "windowBarTitle", "barLogoMode", "barCustomLogoPath", "barWidgets", "weekStartsMonday", "terminal", "launcher",
         "filesCmd", "clipboardCmd", "appUsage", "clipHistory", "clipAutoPaste", "emojiRecent", "screenshotDir", "screenshotSave", "screenshotClipboard", "screenshotNotify", "nightTemp", "ccControls", "ccMigRec", "wallpaperDir", "wallpaperFavs", "wallpaperCmd", "wallpaperVideo", "uiSounds", "gamingMode", "gamingAuto", "ccMigGame", "ccMigTahoe", "lockArtBackground",
         "lockClockStyle", "switcherStyle", "lockClockFont", "lockClockWeight", "lockClockMaterial", "lockClockIntensity", "lockClockTint", "lockClockTall", "lockClockDate", "autoContrast", "wallpaperAppearance", "wpPairLight", "wpPairDark",
         "notifDnd", "dnd", "nightOn", "keepAwake",
@@ -861,6 +862,7 @@ Scope {
         property real by: 0
         property real cornerR: 20
         property real tint: 0.4             // 0..1, from the translucency setting
+        property color tintHue: "transparent"   // Settings → Appearance → Tint colour (Accent)
         property real thickness: 30
         property real strength: 1.0         // liquid glass strength multiplier
         property real rim: 0.45
@@ -1011,6 +1013,15 @@ Scope {
                 }
             }
         }
+
+        // Settings → Appearance → Tint colour: an accent wash over the finished slab, so it reads on
+        // Liquid Glass and Frosted alike (under the glass it was simply painted over).
+        Rectangle {
+            anchors.fill: parent
+            radius: g.cornerR
+            visible: g.tintHue.a > 0
+            color: Qt.rgba(g.tintHue.r, g.tintHue.g, g.tintHue.b, 0.08 + g.tint * 0.18)
+        }
     }
 
     // Context for a group of glass slabs that all read ONE shared backdrop texture, so a whole panel full of
@@ -1020,6 +1031,9 @@ Scope {
         property rect srcRect: Qt.rect(0, 0, 1, 1)      // where that texture sits, in `frame` coordinates
         property Item frame: null                       // coordinate space of srcRect (the popover layer)
         property bool liquid: false
+        // Frosted / Blur: the same backdrop, no refraction. Without this the non-liquid materials fell back to a
+        // flat translucent rectangle that relied on a compositor blur rule the bar layer never had.
+        property bool blurred: false
         property url shaderUrl: ""
         property bool dark: true
         property real tint: 0.4
@@ -1053,11 +1067,12 @@ Scope {
         }
         readonly property point fp: framePos()
 
+        readonly property bool shaded: (gg.gx.liquid || gg.gx.blurred) && gg.gx.src !== null
         Rectangle {
-            visible: !gg.gx.liquid
+            visible: !gg.shaded
             anchors.fill: parent
             radius: gg.cornerR
-            // identical to the Dock's "Normal Blur" pane: a translucent tint over the compositor blur
+            // no backdrop to work with (Opaque, or the shader failed): a plain translucent card
             color: gg.gx.dark ? Qt.rgba(0.10, 0.10, 0.11, gg.gx.tint) : Qt.rgba(1, 1, 1, gg.gx.tint * 0.55)
             border.width: 1
             border.color: gg.gx.dark ? Qt.rgba(0, 0, 0, 0.45) : Qt.rgba(0, 0, 0, 0.12)
@@ -1072,7 +1087,7 @@ Scope {
         }
         Loader {
             anchors.fill: parent
-            active: gg.gx.liquid && gg.gx.src !== null && gg.visible
+            active: gg.shaded && gg.visible
             sourceComponent: Item {
                 ShaderEffect {
                     x: -gg.pad; y: -gg.pad
@@ -1090,10 +1105,11 @@ Scope {
                     property real pad: gg.pad
                     property real radius: gg.cornerR
                     property real bezel: Math.min(gg.height * 0.36, 26)
-                    property real thickness: gg.thickness * gg.gx.strength * gg.strengthMul * gg.gx.liquidMul * 1.6
-                    property real dispersion: 0.06 * gg.gx.strength * gg.strengthMul * gg.gx.liquidMul * 1.3
-                    property real magnify: 0.05 * gg.gx.strength * gg.strengthMul * gg.gx.liquidMul * 1.6
-                    property real rim: gg.gx.rim
+                    readonly property real liq: gg.gx.liquid ? 1 : 0
+                    property real thickness: liq * gg.thickness * gg.gx.strength * gg.strengthMul * gg.gx.liquidMul * 1.6
+                    property real dispersion: liq * 0.06 * gg.gx.strength * gg.strengthMul * gg.gx.liquidMul * 1.3
+                    property real magnify: liq * 0.05 * gg.gx.strength * gg.strengthMul * gg.gx.liquidMul * 1.6
+                    property real rim: gg.gx.liquid ? gg.gx.rim : gg.gx.rim * 0.35
                     property real grain: gg.gx.grain * 0.2
                     property real blurPx: 1.5
                     property real tintMix: gg.gx.tint * 0.55 * gg.tintMul
@@ -2224,6 +2240,8 @@ Scope {
         function material(m: string): void { root.applyMaterial(m); root.material = m; }
         function dark(on: bool): void { root.darkMode = on; }
         function accent(c: string): void { root.accent = c; }
+        function tint(v: real): void { root.glassOpacity = Math.max(0, Math.min(1, v)); root.materialTouched(); }
+        function tintcolor(k: string): void { root.tintAccent = (k === "accent"); root.materialTouched(); }
     }
     IpcHandler {
         target: "spotlight"
@@ -4374,6 +4392,7 @@ Scope {
                         bx: levelOsd.x; by: levelOsd.y
                         cornerR: height / 2
                         tint: root.glassOpacity
+                        tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 22
                         strength: 0.8 * root.glassLiquid
                         rim: root.glassRim
@@ -4836,6 +4855,7 @@ Scope {
                         bx: volPop.x; by: volPop.y
                         cornerR: 26
                         tint: root.glassOpacity
+                        tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 22
                         strength: 0.7 * root.glassLiquid
                         rim: root.glassRim
@@ -4980,6 +5000,7 @@ Scope {
                         bx: kbPop.x; by: kbPop.y
                         cornerR: 22
                         tint: root.glassOpacity
+                        tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 22
                         strength: 0.7 * root.glassLiquid
                         rim: root.glassRim
@@ -5130,6 +5151,7 @@ Scope {
                                     bx: toastArea.x + toast.x + tslab.x; by: toastArea.y + toast.y
                                     cornerR: Math.min(24 + (1 - toast.tc) * 40, height / 2)
                                     tint: root.glassOpacity
+                                    tintHue: root.tintAccent ? root.accent : "transparent"
                                     thickness: 22
                                     strength: 0.7 * root.glassLiquid
                                     rim: root.glassRim
@@ -5205,6 +5227,7 @@ Scope {
                         bx: notifPop.x; by: notifPop.y
                         cornerR: 26
                         tint: root.glassOpacity
+                        tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 26
                         strength: 0.8 * root.glassLiquid
                         rim: root.glassRim
@@ -5433,6 +5456,7 @@ Scope {
                         bx: menuPop.x; by: menuPop.y
                         cornerR: 14
                         tint: root.glassOpacity
+                        tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 22
                         strength: 0.55 * root.glassLiquid
                         rim: root.glassRim
@@ -5562,6 +5586,7 @@ Scope {
                         bx: trayPop.x; by: trayPop.y
                         cornerR: 14
                         tint: root.glassOpacity
+                        tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 22
                         strength: 0.55 * root.glassLiquid
                         rim: root.glassRim
@@ -5727,6 +5752,7 @@ Scope {
                         bx: wifiPop.x; by: wifiPop.y
                         cornerR: 22
                         tint: root.glassOpacity
+                        tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 24
                         strength: 0.7 * root.glassLiquid
                         rim: root.glassRim
@@ -6005,6 +6031,7 @@ Scope {
                         bx: cal.x; by: cal.y
                         cornerR: 24
                         tint: root.glassOpacity
+                        tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 26
                         strength: 0.8 * root.glassLiquid
                         rim: root.glassRim
@@ -6174,6 +6201,7 @@ Scope {
                         srcRect: ccSrc.sourceRect
                         frame: ui
                         liquid: root.liquidActive
+                        blurred: !root.liquidActive && root.wantBackdrop
                         shaderUrl: root.glassShaderUrl
                         dark: root.effDark
                         // macOS style: the panel is the glass, so each control only keeps a faint shape on top of it
@@ -7109,6 +7137,7 @@ Scope {
                         bx: wpPanel.x; by: wpPanel.y
                         cornerR: 28
                         tint: root.glassOpacity
+                        tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 22
                         strength: 0.75 * root.glassLiquid
                         rim: root.glassRim
@@ -7588,6 +7617,7 @@ Scope {
                     srcRect: spSrc.sourceRect
                     frame: spotRoot
                     liquid: root.liquidActive
+                    blurred: !root.liquidActive && root.wantBackdrop
                     shaderUrl: root.glassShaderUrl
                     dark: root.effDark
                     tint: root.glassOpacity

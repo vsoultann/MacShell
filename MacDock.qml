@@ -195,6 +195,32 @@ Scope {
     ]   // used until you change pins from the dock; unknown ids are skipped
     property var pinned: defaultPinned
     property bool pinMigTahoe: false   // one-time: Finder and Apple Music join an existing Dock
+    // App icons: follow the appearance, or stay on the light / dark set. Writes the GTK and Qt icon theme.
+    property string iconMode: "auto"
+    function iconThemeName(mode) {
+        var base = "MacTahoe";
+        var m = mode === "auto" ? (darkMode ? "dark" : "light") : mode;
+        return base + "-" + m;
+    }
+    function setIconMode(mode) {
+        iconMode = mode;
+        applyIconTheme();
+        saveSettings();
+    }
+    function applyIconTheme() {
+        var name = iconThemeName(iconMode);
+        Quickshell.execDetached(["sh", "-c",
+            "t=\"$1\"; "
+            // only switch to a theme that is actually installed
+            + "[ -d \"$HOME/.local/share/icons/$t\" ] || [ -d \"/usr/share/icons/$t\" ] || exit 0; "
+            + "gsettings set org.gnome.desktop.interface icon-theme \"$t\" 2>/dev/null; "
+            + "mkdir -p \"$HOME/.config/qt6ct\"; f=\"$HOME/.config/qt6ct/qt6ct.conf\"; "
+            + "if [ -f \"$f\" ] && grep -q '^icon_theme=' \"$f\"; then sed -i \"s|^icon_theme=.*|icon_theme=$t|\" \"$f\"; "
+            + "elif [ -f \"$f\" ]; then printf 'icon_theme=%s\\n' \"$t\" >> \"$f\"; else printf '[Appearance]\\nicon_theme=%s\\n' \"$t\" > \"$f\"; fi; "
+            + "k=\"$HOME/.config/kdeglobals\"; [ -f \"$k\" ] && grep -q '^Theme=' \"$k\" && sed -i \"s|^Theme=.*|Theme=$t|\" \"$k\"; "
+            + "exit 0", "sh", name]);
+    }
+    onDarkModeChanged: if (settingsReady && iconMode === "auto") applyIconTheme()
     property bool desktopIcons: true    // files, folders and apps shown on the desktop
     property var pinnedFolders: []      // folder paths pinned next to the Trash
     function pinFolder(p) {
@@ -1946,6 +1972,46 @@ Scope {
                             onPicked: i => { if (root.bar) root.bar.applyMaterial(["liquid", "frosted", "blur", "opaque"][i]); }
                         }
                     }
+                    // Tint belongs to the two materials that have glass to tint
+                    SRow {
+                        t: pal
+                        visible: root.bar && (root.bar.material === "liquid" || root.bar.material === "frosted" || root.bar.material === "custom")
+                        title: "Tint"
+                        subtitle: "How much colour the glass carries. Frosted and Liquid Glass only."
+                        SSlider {
+                            t: pal
+                            width: 220
+                            from: 0; to: 1; stepSize: 0.01
+                            value: root.bar ? root.bar.glassOpacity : 0.42
+                            leftLabel: "Clear"; rightLabel: "Tinted"
+                            onMoved: v => { if (root.bar) { root.bar.glassOpacity = v; root.bar.materialTouched(); } }
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        visible: root.bar && (root.bar.material === "liquid" || root.bar.material === "frosted" || root.bar.material === "custom")
+                        title: "Tint colour"
+                        subtitle: "Neutral glass, or glass that picks up the accent colour"
+                        SSegmented {
+                            t: pal
+                            model: ["Neutral", "Accent"]
+                            segWidth: 86
+                            current: (root.bar && root.bar.tintAccent) ? 1 : 0
+                            onPicked: i => { if (root.bar) { root.bar.tintAccent = (i === 1); root.bar.materialTouched(); } }
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        title: "Icons"
+                        subtitle: "App icons everywhere: follow the appearance, or pin them to the light or dark set"
+                        SSegmented {
+                            t: pal
+                            model: ["Auto", "Light", "Dark"]
+                            segWidth: 72
+                            current: ["auto", "light", "dark"].indexOf(root.iconMode)
+                            onPicked: i => root.setIconMode(["auto", "light", "dark"][i])
+                        }
+                    }
                     SRow {
                         t: pal
                         visible: root.bar && root.bar.material === "custom"
@@ -2991,13 +3057,18 @@ Scope {
                                 out.push({
                                     combo: combo,
                                     desc: (b.description && b.description !== "") ? b.description
-                                          : (lua ? combo : (b.dispatcher + (b.arg ? " " + b.arg : ""))),
+                                          : (lua ? "Hyprland shortcut" : (b.dispatcher + (b.arg ? " " + b.arg : ""))),
+                                    named: !!(b.description && b.description !== ""),
                                     dispatcher: b.dispatcher, arg: b.arg || "", lua: lua,
                                     // what we would re-bind it to on another key (Lua actions cannot be rebuilt from here)
                                     action: lua ? "" : ("hl.dsp." + b.dispatcher + "(" + (b.arg ? '"' + String(b.arg).replace(/"/g, '\\"') + '"' : "") + ")")
                                 });
                             }
-                            out.sort(function (x, y) { return x.desc.localeCompare(y.desc); });
+                            // the ones that say what they do come first
+                            out.sort(function (x, y) {
+                                if (x.named !== y.named) return x.named ? -1 : 1;
+                                return x.desc.localeCompare(y.desc) || x.combo.localeCompare(y.combo);
+                            });
                             scPane.hyprAll = out;
                         }
                     }
@@ -4202,7 +4273,7 @@ Scope {
 
     function saveSettings() {
         var o = {
-            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, hyprBinds: hyprBinds, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, pinMigTahoe: pinMigTahoe, iconSize: iconSize, magnification: magnification, magnificationEnabled: magnificationEnabled,
+            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, hyprBinds: hyprBinds, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, iconMode: iconMode, pinMigTahoe: pinMigTahoe, iconSize: iconSize, magnification: magnification, magnificationEnabled: magnificationEnabled,
             spacing: spacing, margin: margin, cornerRadius: cornerRadius,
             darkMode: darkMode, glassOpacity: glassOpacity, dockStyle: dockStyle, wallpaperPath: wallpaperPath, glassDebug: glassDebug,
             glassRim: glassRim, glassGrain: glassGrain, glassLiquid: glassLiquid, glassBlur: glassBlur,
@@ -4216,7 +4287,7 @@ Scope {
 
     function applySettings(o) {
         if (!o || typeof o !== "object") return;
-        var keys = ["dockEnabled", "windowsFloat", "shortcuts", "hyprBinds", "pinnedFolders", "desktopIcons", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
+        var keys = ["dockEnabled", "windowsFloat", "shortcuts", "hyprBinds", "pinnedFolders", "desktopIcons", "iconMode", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
                     "darkMode", "glassOpacity", "dockStyle", "wallpaperPath", "glassDebug", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "accent", "fontFamily", "hideMode", "hideDelay", "monitor",
                     "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture", "pinMigTahoe"];
         for (var i = 0; i < keys.length; i++) {
