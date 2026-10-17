@@ -2942,6 +2942,66 @@ Scope {
                 id: scPane
                 spacing: 10
                 property string capturing: ""          // the id of the shortcut listening for a key
+                property var pending: null             // the Hyprland bind being moved
+                property string filter: ""
+                property var hyprAll: []
+                readonly property var hyprShown: {
+                    var f = scPane.filter, out = [];
+                    for (var i = 0; i < hyprAll.length; i++) {
+                        var b = hyprAll[i];
+                        if (f === "" || b.desc.toLowerCase().indexOf(f) >= 0 || b.combo.toLowerCase().indexOf(f) >= 0
+                            || (b.dispatcher || "").toLowerCase().indexOf(f) >= 0) out.push(b);
+                        if (out.length >= 300) break;
+                    }
+                    return out;
+                }
+                function isOff(combo) { var m = root.hyprBinds || ({}); return m[combo] !== undefined && !m[combo].combo; }
+                function comboNow(combo) { var m = root.hyprBinds || ({}); return (m[combo] && m[combo].combo) ? m[combo].combo : combo; }
+                function setEnabled(b, on) {
+                    var m = {}; for (var k in (root.hyprBinds || ({}))) m[k] = root.hyprBinds[k];
+                    if (on) delete m[b.combo];
+                    else m[b.combo] = { combo: "", action: "", desc: b.desc };
+                    root.hyprBinds = m; root.saveSettings(); scPane.write();
+                }
+                function moveBind(b, combo) {
+                    var m = {}; for (var k in (root.hyprBinds || ({}))) m[k] = root.hyprBinds[k];
+                    m[b.combo] = { combo: combo, action: b.action, desc: b.desc };
+                    root.hyprBinds = m; root.saveSettings(); scPane.write();
+                }
+                // what Hyprland currently has bound
+                Process {
+                    id: bindsProc
+                    running: true
+                    command: ["sh", "-c", "hyprctl binds -j 2>/dev/null || echo '[]'"]
+                    stdout: StdioCollector {
+                        onStreamFinished: {
+                            var list = [];
+                            try { list = JSON.parse(text); } catch (e) { list = []; }
+                            var mods = [[1, "SHIFT"], [4, "CTRL"], [8, "ALT"], [64, "SUPER"]], out = [], seen = {};
+                            for (var i = 0; i < list.length; i++) {
+                                var b = list[i];
+                                if (!b.key && !b.keycode) continue;
+                                var parts = [];
+                                for (var m = 0; m < mods.length; m++) if ((b.modmask & mods[m][0]) !== 0) parts.push(mods[m][1]);
+                                parts.push(b.key || ("code:" + b.keycode));
+                                var combo = parts.join(" + ");
+                                if (seen[combo]) continue;
+                                seen[combo] = true;
+                                var lua = b.dispatcher === "__lua";
+                                out.push({
+                                    combo: combo,
+                                    desc: (b.description && b.description !== "") ? b.description
+                                          : (lua ? combo : (b.dispatcher + (b.arg ? " " + b.arg : ""))),
+                                    dispatcher: b.dispatcher, arg: b.arg || "", lua: lua,
+                                    // what we would re-bind it to on another key (Lua actions cannot be rebuilt from here)
+                                    action: lua ? "" : ("hl.dsp." + b.dispatcher + "(" + (b.arg ? '"' + String(b.arg).replace(/"/g, '\\"') + '"' : "") + ")")
+                                });
+                            }
+                            out.sort(function (x, y) { return x.desc.localeCompare(y.desc); });
+                            scPane.hyprAll = out;
+                        }
+                    }
+                }
                 readonly property var defs: [
                     { id: "spotlight",  name: "Spotlight",            def: "SUPER + Space",     cmd: "spotlight toggle" },
                     { id: "clipboard",  name: "Clipboard history",    def: "SUPER + V",         cmd: "spotlight clipboard" },
@@ -2954,7 +3014,13 @@ Scope {
                     { id: "settings",   name: "System Settings",      def: "SUPER + Comma",     cmd: "settings open" },
                     { id: "shot",       name: "Screenshot a region",  def: "SUPER + SHIFT + S", cmd: "screenshot region" },
                     { id: "wallpapers", name: "Wallpapers",           def: "CTRL + ALT + W",    cmd: "wallpapers toggle" },
-                    { id: "gaming",     name: "Game Mode",            def: "SUPER + G",         cmd: "gaming toggle" }
+                    { id: "gaming",     name: "Game Mode",            def: "SUPER + G",         cmd: "gaming toggle" },
+                    { id: "airdrop",    name: "AirDrop",              def: "SUPER + SHIFT + D", cmd: "airdrop open" },
+                    { id: "finder",     name: "Finder",               def: "SUPER + E",         cmd: "finder open" },
+                    { id: "minimize",   name: "Minimize window",      def: "SUPER + M",         dsp: 'hl.dsp.window.move({ workspace = "special:minimized", follow = false })' },
+                    { id: "unminimize", name: "Show minimized windows", def: "SUPER + SHIFT + M", dsp: 'hl.dsp.workspace.toggle_special("minimized")' },
+                    { id: "closewin",   name: "Close window",         def: "SUPER + W",         dsp: "hl.dsp.window.close()" },
+                    { id: "zoomwin",    name: "Zoom (fullscreen)",    def: "SUPER + F",         dsp: "hl.dsp.window.fullscreen_state({ internal = 2, client = 0 })" }
                 ]
                 function keyOf(id) { var m = root.shortcuts || ({}); var d = scPane.defs; for (var i = 0; i < d.length; i++) if (d[i].id === id) return m[id] !== undefined ? m[id] : d[i].def; return ""; }
                 function setKey(id, combo) {
@@ -2970,7 +3036,15 @@ Scope {
                     for (var i = 0; i < scPane.defs.length; i++) {
                         var d = scPane.defs[i], k = scPane.keyOf(d.id);
                         if (k === "") continue;
-                        lines.push('hl.bind("' + k + '", hl.dsp.exec_cmd("' + mac + d.cmd + '"), { description = "MacShell: ' + d.name + '" })');
+                        var action = d.dsp ? d.dsp : 'hl.dsp.exec_cmd("' + mac + d.cmd + '")';
+                        lines.push('hl.bind("' + k + '", ' + action + ', { description = "MacShell: ' + d.name + '" })');
+                    }
+                    // shortcuts you moved or switched off in the Hyprland list
+                    var hm = root.hyprBinds || ({});
+                    for (var h in hm) {
+                        lines.push('hl.unbind("' + h + '")');
+                        var v = hm[h];
+                        if (v && v.combo && v.action) lines.push('hl.bind("' + v.combo + '", ' + v.action + ', { description = "' + (v.desc || "Hyprland") + '" })');
                     }
                     Quickshell.execDetached(["sh", "-c",
                         "mkdir -p \"$HOME/.config/macshell\"; printf '%s\\n' \"$1\" > \"$HOME/.config/macshell/keybinds.lua\"; hyprctl reload >/dev/null 2>&1",
@@ -3009,6 +3083,72 @@ Scope {
                     spacing: 8
                     SButton { t: pal; text: "Restore Defaults"; onClicked: { root.shortcuts = ({}); root.saveSettings(); scPane.write(); } }
                 }
+
+                SLabel { t: pal; header: true; text: "Hyprland" }
+                SLabel { t: pal; text: "Every shortcut your compositor has. Click one to move it, or switch it off. Ones written in Lua keep their action, so they can only be switched off here \u2014 move those in your Hyprland config." }
+                Rectangle {
+                    width: parent.width; height: 30; radius: 8
+                    color: pal.ctrl
+                    border.width: 1; border.color: pal.cardBorder
+                    Text { x: 10; anchors.verticalCenter: parent.verticalCenter; visible: hyprSearch.text === ""; text: "Search shortcuts"; color: pal.text3; font.family: pal.fam; font.pixelSize: 12 }
+                    TextInput {
+                        id: hyprSearch
+                        x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
+                        color: pal.text; font.family: pal.fam; font.pixelSize: 12
+                        selectByMouse: true
+                        onTextChanged: scPane.filter = text.toLowerCase()
+                    }
+                }
+                SCard {
+                    t: pal
+                    Repeater {
+                        model: scPane.hyprShown
+                        delegate: SRow {
+                            id: hyprRow
+                            required property var modelData
+                            t: pal
+                            title: modelData.desc
+                            subtitle: modelData.lua ? "Defined in your Hyprland config" : (modelData.dispatcher + (modelData.arg ? " " + modelData.arg : ""))
+                            Row {
+                                spacing: 8
+                                Rectangle {
+                                    width: 170; height: 26; radius: 7
+                                    color: scPane.capturing === "hypr:" + hyprRow.modelData.combo ? root.accent : pal.ctrl
+                                    border.width: 1; border.color: scPane.capturing === "hypr:" + hyprRow.modelData.combo ? root.accent : pal.cardBorder
+                                    opacity: scPane.isOff(hyprRow.modelData.combo) ? 0.45 : 1
+                                    Behavior on color { ColorAnimation { duration: 140 } }
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: scPane.capturing === "hypr:" + hyprRow.modelData.combo ? "Press keys\u2026"
+                                              : scPane.comboNow(hyprRow.modelData.combo).replace(/ \+ /g, "  ")
+                                        color: scPane.capturing === "hypr:" + hyprRow.modelData.combo ? "white" : pal.text
+                                        font.family: pal.fam; font.pixelSize: 12
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        enabled: !hyprRow.modelData.lua
+                                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                        onClicked: {
+                                            scPane.capturing = scPane.capturing === "hypr:" + hyprRow.modelData.combo ? "" : "hypr:" + hyprRow.modelData.combo;
+                                            scPane.pending = hyprRow.modelData;
+                                            if (scPane.capturing !== "") keyCatcher.forceActiveFocus();
+                                        }
+                                    }
+                                }
+                                SSwitch {
+                                    t: pal
+                                    checked: !scPane.isOff(hyprRow.modelData.combo)
+                                    onToggled: v => scPane.setEnabled(hyprRow.modelData, v)
+                                }
+                            }
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        visible: scPane.hyprShown.length === 0
+                        title: scPane.hyprAll.length === 0 ? "Reading shortcuts\u2026" : "Nothing matches that search"
+                    }
+                }
                 // catches the key you press while a shortcut is listening
                 Item {
                     id: keyCatcher
@@ -3017,7 +3157,11 @@ Scope {
                     Keys.onPressed: event => {
                         if (scPane.capturing === "") return;
                         event.accepted = true;
-                        if (event.key === Qt.Key_Escape) { scPane.setKey(scPane.capturing, ""); scPane.capturing = ""; return; }
+                        if (event.key === Qt.Key_Escape) {
+                            if (scPane.capturing.indexOf("hypr:") !== 0) scPane.setKey(scPane.capturing, "");
+                            scPane.capturing = "";
+                            return;
+                        }
                         if (event.key === Qt.Key_Control || event.key === Qt.Key_Shift || event.key === Qt.Key_Alt || event.key === Qt.Key_Meta) return;
                         var parts = [];
                         if (event.modifiers & Qt.MetaModifier) parts.push("SUPER");
@@ -3027,7 +3171,9 @@ Scope {
                         var name = root.keyName(event.key, event.text);
                         if (name === "") return;
                         parts.push(name);
-                        scPane.setKey(scPane.capturing, parts.join(" + "));
+                        if (scPane.capturing.indexOf("hypr:") === 0) {
+                            if (scPane.pending) scPane.moveBind(scPane.pending, parts.join(" + "));
+                        } else scPane.setKey(scPane.capturing, parts.join(" + "));
                         scPane.capturing = "";
                     }
                 }
@@ -3967,7 +4113,8 @@ Scope {
     readonly property real totalW0: Math.max(0, appCount * (iconSize + spacing) + sepCount * (sepWidth + spacing) - spacing)
     property var launching: ({})
     Timer { id: floatOnce; interval: 1200; onTriggered: root.applyWindowsFloat() }
-    property var shortcuts: ({})            // shortcut id → key combo, empty = the default
+    property var shortcuts: ({})
+    property var hyprBinds: ({})       // Hyprland shortcuts moved or switched off from Settings            // shortcut id → key combo, empty = the default
     // Qt key code → the name Hyprland uses
     function keyName(k, text) {
         if (k >= Qt.Key_A && k <= Qt.Key_Z) return String.fromCharCode(65 + (k - Qt.Key_A));
@@ -4055,7 +4202,7 @@ Scope {
 
     function saveSettings() {
         var o = {
-            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, pinMigTahoe: pinMigTahoe, iconSize: iconSize, magnification: magnification, magnificationEnabled: magnificationEnabled,
+            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, hyprBinds: hyprBinds, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, pinMigTahoe: pinMigTahoe, iconSize: iconSize, magnification: magnification, magnificationEnabled: magnificationEnabled,
             spacing: spacing, margin: margin, cornerRadius: cornerRadius,
             darkMode: darkMode, glassOpacity: glassOpacity, dockStyle: dockStyle, wallpaperPath: wallpaperPath, glassDebug: glassDebug,
             glassRim: glassRim, glassGrain: glassGrain, glassLiquid: glassLiquid, glassBlur: glassBlur,
@@ -4069,7 +4216,7 @@ Scope {
 
     function applySettings(o) {
         if (!o || typeof o !== "object") return;
-        var keys = ["dockEnabled", "windowsFloat", "shortcuts", "pinnedFolders", "desktopIcons", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
+        var keys = ["dockEnabled", "windowsFloat", "shortcuts", "hyprBinds", "pinnedFolders", "desktopIcons", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
                     "darkMode", "glassOpacity", "dockStyle", "wallpaperPath", "glassDebug", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "accent", "fontFamily", "hideMode", "hideDelay", "monitor",
                     "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture", "pinMigTahoe"];
         for (var i = 0; i < keys.length; i++) {

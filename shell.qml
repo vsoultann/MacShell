@@ -284,6 +284,7 @@ ShellRoot {
     Desktop { id: desktopIcons; hub: sharedHub }
     AirDrop { id: airDrop; hub: sharedHub }
     Preview { id: previewApp; hub: sharedHub }
+    WindowBar { id: windowBar; hub: sharedHub }
 
     // reopen settings even when both the Dock and the Menu Bar are disabled:
     //   qs -c macbar ipc call settings open
