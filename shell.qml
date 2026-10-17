@@ -327,6 +327,7 @@ ShellRoot {
         target: "player"
         function play(src: string): void { videoPlayer.play(src, src.split("/").pop()); }
         function youtube(url: string): void { videoPlayer.playYoutube(url, "Video"); }
+        function toggle(): void { videoPlayer.toggle(); }
     }
     IpcHandler {
         target: "welcome"

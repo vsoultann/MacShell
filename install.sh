@@ -38,7 +38,7 @@ QS="$HOME/.config/quickshell"
 SESS="$HOME/.config/hypr-macshell"
 SHARE="$HOME/.local/share/macshell"
 YES=0
-ORDER=(deps shell applemusic menubar spotlight controlcenter notifications dock widgets clock lock config session existing icons fonts apply wallpapers sounds)
+ORDER=(deps shell applemusic menubar spotlight controlcenter notifications dock widgets clock lock config session existing icons fonts apply defaults emoji wallpapers sounds)
 # the parts of the shell you can pick individually (one set of files, each part switched on or off)
 PARTS=(menubar spotlight controlcenter notifications dock widgets clock desktop)
 declare -A DESC=(
@@ -61,6 +61,8 @@ declare -A DESC=(
     [icons]="MacTahoe icon theme"
     [fonts]="Fonts (Inter, Roboto Flex, Nunito, Noto Serif Display)"
     [apply]="Apply the icons + font to GTK / Qt / KDE apps"
+    [defaults]="Open pictures in Preview, folders in Finder, video in our player"
+    [emoji]="Apple emoji font (fontconfig prefers it everywhere)"
     [wallpapers]="macOS 27 Golden Gate wallpapers"
     [sounds]="UI sounds + Clock alarm tones"
 )
@@ -102,6 +104,33 @@ do_deps() {
     fi
     # a Quickshell built against an older Qt crashes; the repo package is rebuilt with Qt
     if have qs && qs --version 2>&1 | grep -q 'built against'; then warn "Quickshell was built against an older Qt — reinstall it (sudo pacman -S quickshell)"; fi
+}
+
+do_defaults() {
+    say "Making MacShell's apps the defaults"
+    have xdg-mime || { warn "xdg-mime missing: skipping"; return 0; }
+    local m
+    for m in image/png image/jpeg image/webp image/gif image/bmp image/tiff image/avif; do xdg-mime default macshell-preview.desktop "$m"; done
+    xdg-mime default macshell-finder.desktop inode/directory
+    for m in video/mp4 video/x-matroska video/webm video/quicktime; do xdg-mime default macshell-player.desktop "$m"; done
+    note "Pictures → Preview, folders → Finder, video → Player"
+}
+
+do_emoji() {
+    say "Apple emoji"
+    local dir="$HOME/.local/share/fonts/apple-emoji" f="$dir/AppleColorEmoji.ttf"
+    if [ -s "$f" ]; then note "already installed"; else
+        mkdir -p "$dir"
+        local url
+        url=$(curl -sL --max-time 20 https://api.github.com/repos/samuelngs/apple-emoji-linux/releases/latest \
+              | grep -o 'https://[^"]*AppleColorEmoji-Linux.ttf' | head -1)
+        [ -n "$url" ] || { warn "could not find the font release; skipping"; return 0; }
+        curl -L --max-time 600 -o "$f" "$url" || { warn "download failed"; return 0; }
+    fi
+    mkdir -p "$HOME/.config/fontconfig/conf.d"
+    cp "$REPO/session/75-apple-emoji.conf" "$HOME/.config/fontconfig/conf.d/" 2>/dev/null
+    fc-cache -f "$dir" >/dev/null 2>&1
+    note "Apple Color Emoji installed for this user"
 }
 
 compile_shaders() {

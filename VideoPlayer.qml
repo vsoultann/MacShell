@@ -55,6 +55,7 @@ Scope {
         onErrorOccurred: (err, str) => { if (root.ytFallback !== "") { win.visible = false; Quickshell.execDetached(["xdg-open", root.ytFallback]); } }
     }
 
+    function toggle() { player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play(); }
     function fmt(ms) {
         if (!(ms > 0)) return "0:00";
         var s = Math.floor(ms / 1000), m = Math.floor(s / 60);
@@ -69,11 +70,19 @@ Scope {
         visible: false
         color: "transparent"
         flags: Qt.Window | Qt.FramelessWindowHint
-        onVisibleChanged: if (!visible) player.stop()
+        // arriving: the way Quick Look hands a video over — scale up, fade in, settle
+        property real arrive: 0
+        onVisibleChanged: {
+            if (visible) { arrive = 0; arriveAnim.restart(); }
+            else player.stop();
+        }
+        NumberAnimation { id: arriveAnim; target: win; property: "arrive"; from: 0; to: 1; duration: 420; easing.type: Easing.OutQuint }
 
         Rectangle {
             anchors.fill: parent
             radius: 12
+            opacity: Math.min(1, win.arrive * 1.6)
+            scale: 0.94 + 0.06 * win.arrive
             color: "#0B0B0C"
             border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.14)
             clip: true
@@ -150,7 +159,7 @@ Scope {
                 readonly property bool shownUi: surface.containsMouse || player.playbackState !== MediaPlayer.PlayingState || hoverBar.containsMouse
                 anchors.bottom: parent.bottom; anchors.bottomMargin: 18
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: Math.min(parent.width - 40, 560); height: 54
+                width: Math.min(parent.width - 40, 720); height: 54
                 opacity: shownUi ? 1 : 0
                 visible: opacity > 0.01
                 Behavior on opacity { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
@@ -179,7 +188,7 @@ Scope {
                 }
                 // scrubber
                 Item {
-                    x: 92; width: parent.width - 92 - 92
+                    x: 92; width: parent.width - 92 - 250
                     height: 20; anchors.verticalCenter: parent.verticalCenter
                     Rectangle { y: 8; width: parent.width; height: 4; radius: 2; color: Qt.rgba(1, 1, 1, 0.22) }
                     Rectangle {
@@ -201,17 +210,69 @@ Scope {
                     }
                 }
                 Text {
-                    anchors.right: parent.right; anchors.rightMargin: 52
+                    anchors.right: parent.right; anchors.rightMargin: 212
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.fmt(player.duration)
                     color: Qt.rgba(1, 1, 1, 0.75); font.family: root.fam; font.pixelSize: 11
                 }
-                PGlyph {
-                    anchors.right: parent.right; anchors.rightMargin: 16
+                Row {
+                    anchors.right: parent.right; anchors.rightMargin: 14
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 17; height: 17
-                    kind: aout.muted ? "mute" : "volume"
-                    MouseArea { anchors.fill: parent; anchors.margins: -8; cursorShape: Qt.PointingHandCursor; onClicked: aout.muted = !aout.muted }
+                    spacing: 12
+                    // subtitles, when the file carries any
+                    PGlyph {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 16; height: 16
+                        kind: "cc"
+                        opacity: player.subtitleTracks.length > 0 ? (player.activeSubtitleTrack >= 0 ? 1 : 0.45) : 0.2
+                        MouseArea {
+                            anchors.fill: parent; anchors.margins: -8
+                            enabled: player.subtitleTracks.length > 0
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: player.activeSubtitleTrack = player.activeSubtitleTrack >= 0 ? -1 : 0
+                        }
+                    }
+                    // playback speed
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: (player.playbackRate === 1 ? "1\u00D7" : player.playbackRate.toFixed(player.playbackRate < 1 ? 2 : 1).replace(/\.0$/, "") + "\u00D7")
+                        color: Qt.rgba(1, 1, 1, 0.8); font.family: root.fam; font.pixelSize: 11
+                        MouseArea {
+                            anchors.fill: parent; anchors.margins: -8; cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                var steps = [0.5, 0.75, 1, 1.25, 1.5, 2];
+                                var i = steps.indexOf(player.playbackRate);
+                                player.playbackRate = steps[(i + 1) % steps.length];
+                            }
+                        }
+                    }
+                    PGlyph {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 17; height: 17
+                        kind: aout.muted ? "mute" : "volume"
+                        MouseArea { anchors.fill: parent; anchors.margins: -8; cursorShape: Qt.PointingHandCursor; onClicked: aout.muted = !aout.muted }
+                    }
+                    // volume
+                    Item {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 56; height: 16
+                        Rectangle { y: 6; width: parent.width; height: 4; radius: 2; color: Qt.rgba(1, 1, 1, 0.22) }
+                        Rectangle { y: 6; width: parent.width * aout.volume; height: 4; radius: 2; color: "white" }
+                        MouseArea {
+                            anchors.fill: parent; anchors.margins: -6
+                            onPressed: mouse => { aout.muted = false; aout.volume = Math.max(0, Math.min(1, (mouse.x - 6) / parent.width)); }
+                            onPositionChanged: mouse => { if (pressed) aout.volume = Math.max(0, Math.min(1, (mouse.x - 6) / parent.width)); }
+                        }
+                    }
+                    PGlyph {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 16; height: 16
+                        kind: "expand"
+                        MouseArea {
+                            anchors.fill: parent; anchors.margins: -8; cursorShape: Qt.PointingHandCursor
+                            onClicked: win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen()
+                        }
+                    }
                 }
             }
 
@@ -241,6 +302,18 @@ Scope {
             c.fillStyle = "white"; c.strokeStyle = "white"; c.lineWidth = 1.5; c.lineCap = "round"; c.lineJoin = "round";
             if (kind === "play") { c.beginPath(); c.moveTo(4.5, 3); c.lineTo(13, 8); c.lineTo(4.5, 13); c.closePath(); c.fill(); }
             else if (kind === "pause") { c.beginPath(); c.roundedRect(4.2, 3, 2.8, 10, 0.9, 0.9); c.fill(); c.beginPath(); c.roundedRect(9, 3, 2.8, 10, 0.9, 0.9); c.fill(); }
+            else if (kind === "cc") {
+                c.lineWidth = 1.4;
+                c.beginPath(); c.roundedRect(1.6, 3.4, 12.8, 9.2, 2, 2); c.stroke();
+                c.beginPath(); c.moveTo(6.4, 6.6); c.lineTo(4.6, 6.6); c.lineTo(4.6, 9.4); c.lineTo(6.4, 9.4); c.stroke();
+                c.beginPath(); c.moveTo(11.6, 6.6); c.lineTo(9.8, 6.6); c.lineTo(9.8, 9.4); c.lineTo(11.6, 9.4); c.stroke();
+            }
+            else if (kind === "expand") {
+                c.lineWidth = 1.6;
+                c.beginPath(); c.moveTo(2.4, 6.2); c.lineTo(2.4, 2.4); c.lineTo(6.2, 2.4); c.stroke();
+                c.beginPath(); c.moveTo(13.6, 9.8); c.lineTo(13.6, 13.6); c.lineTo(9.8, 13.6); c.stroke();
+                c.beginPath(); c.moveTo(2.4, 2.4); c.lineTo(6.6, 6.6); c.moveTo(13.6, 13.6); c.lineTo(9.4, 9.4); c.stroke();
+            }
             else if (kind === "volume" || kind === "mute") {
                 c.beginPath(); c.moveTo(2, 6.2); c.lineTo(4.6, 6.2); c.lineTo(7.8, 3.4); c.lineTo(7.8, 12.6); c.lineTo(4.6, 9.8); c.lineTo(2, 9.8); c.closePath(); c.fill();
                 if (kind === "mute") { c.beginPath(); c.moveTo(10.2, 6); c.lineTo(14, 10); c.moveTo(14, 6); c.lineTo(10.2, 10); c.stroke(); }
