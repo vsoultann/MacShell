@@ -231,6 +231,8 @@ Scope {
         visible: false
         color: "transparent"
         flags: Qt.Window | Qt.FramelessWindowHint
+        // the listings and their icons are fetched again next time it opens, so let the cached ones go
+        onVisibleChanged: if (!visible) { root.coll = ({}); root.details = ({}); root.appId = ""; root.query = ""; root.page = "discover"; Qt.callLater(gc); }
 
         QtObject {
             id: pal

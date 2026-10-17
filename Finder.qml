@@ -224,6 +224,7 @@ Scope {
         visible: false
         color: "transparent"
         flags: Qt.Window | Qt.FramelessWindowHint
+        onVisibleChanged: if (!visible) { root.entries = []; root.selection = []; root.qlText = ""; Qt.callLater(gc); }
 
         QtObject {
             id: pal

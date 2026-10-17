@@ -26,7 +26,8 @@ Measured on an Intel laptop (Hyprland 0.56, Quickshell 0.3, two monitors, 60 Hz 
 
 | | RAM (resident) | CPU at idle |
 |---|---|---|
-| MacShell (menu bar, Dock, widgets, everything) | ~550–680 MB after start (was ~1.1 GB) | ~3–5 % of one core (was ~7.6 %) |
+| MacShell (menu bar, Dock, widgets, everything) | ~670 MB after start (was ~1.1 GB) | ~3–5 % of one core (was ~7.6 %) |
+| …with Photos open on a 300-picture library | ~800 MB, and back to ~670 MB when the window closes | |
 | Lock screen while locked | ~360 MB | ~0 % |
 
 What made the difference: one variable Inter font file instead of a 13 MB collection mapped once per weight, `MALLOC_ARENA_MAX=2`,

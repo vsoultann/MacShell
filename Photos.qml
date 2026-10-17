@@ -106,6 +106,9 @@ Scope {
         visible: false
         color: "transparent"
         flags: Qt.Window | Qt.FramelessWindowHint
+        // closing the window drops the thumbnails: a library of a few hundred pictures is tens of megabytes
+        // of decoded image that would otherwise sit in the cache until the shell restarts
+        onVisibleChanged: if (!visible) { root.viewing = -1; root.photos = []; root.albums = []; Qt.callLater(gc); }
 
         QtObject {
             id: pal
@@ -296,7 +299,8 @@ Scope {
                                                 id: thumb
                                                 anchors.fill: parent
                                                 source: "file://" + cellItem.modelData.path
-                                                sourceSize.width: 420
+                                                // the grid cell is at most ~260 px wide: decoding bigger than that is memory for nothing
+                                sourceSize.width: 260
                                                 fillMode: Image.PreserveAspectCrop
                                                 asynchronous: true; cache: true; smooth: true; mipmap: true
                                                 opacity: status === Image.Ready ? 1 : 0
