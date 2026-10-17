@@ -272,7 +272,11 @@ Scope {
         remFile.setText(l.join("\n"));
         if (bar) bar.playSound("tink", 0.6);
     }
-    function openFile(p) { Quickshell.execDetached(["xdg-open", p]); }
+    function openFile(p) {
+        // pictures go to Preview, folders to Finder, anything else to whatever handles it
+        if (hub && hub.preview && /\.(png|jpe?g|webp|gif|bmp|avif|tiff?)$/i.test(p)) { hub.preview.open(p); return; }
+        Quickshell.execDetached(["xdg-open", p]);
+    }
     // the Reminders editor writes the same markdown you would type by hand
     function addReminder(text) {
         var t = String(text || "").trim();
@@ -1804,8 +1808,11 @@ Scope {
                     }
                 }
             }
-            Timer { id: snapGo; interval: 50; onTriggered: { if (typeof screenShot.captureFrame === "function") screenShot.captureFrame(); snapLift.restart(); } }
-            Timer { id: snapLift; interval: 90; onTriggered: { win.snapOk = screenShot.hasContent !== false; win.snapping = false; wallTex.scheduleUpdate(); } }
+            // The widgets have to be off the screen *before* the frame is grabbed, or each one ends up refracting a
+            // copy of itself. 180 ms is a dozen frames at any refresh rate — the compositor has long since drawn the
+            // frame without them by then.
+            Timer { id: snapGo; interval: 180; onTriggered: { if (typeof screenShot.captureFrame === "function") screenShot.captureFrame(); snapLift.restart(); } }
+            Timer { id: snapLift; interval: 140; onTriggered: { win.snapOk = screenShot.hasContent !== false; win.snapping = false; wallTex.scheduleUpdate(); } }
             WlrLayershell.layer: root.editing ? WlrLayer.Top : WlrLayer.Bottom
             WlrLayershell.namespace: "macwidgets"
             WlrLayershell.keyboardFocus: root.editing ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None

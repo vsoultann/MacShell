@@ -2701,7 +2701,7 @@ Scope {
             if (name === "app") {
                 if (!has) {
                     m.push(mi("New Terminal", "", function () { sh(terminal); }));
-                    m.push(mi("Open Home Folder", "", function () { sh(filesCmd); }));
+                    m.push(mi("Open Home Folder", "", function () { if (hub && hub.openFolder) hub.openFolder(Quickshell.env("HOME")); else sh(filesCmd); }));
                     m.push(msep());
                     m.push(mi("Search\u2026", "", function () { root.search(); }));
                 } else {
@@ -2720,7 +2720,7 @@ Scope {
             } else if (name === "file") {
                 if (!has) {
                     m.push(mi("New Terminal", "", function () { sh(terminal); }));
-                    m.push(mi("New Files Window", "", function () { sh(filesCmd); }));
+                    m.push(mi("New Finder Window", "", function () { if (hub && hub.openFolder) hub.openFolder(Quickshell.env("HOME")); else sh(filesCmd); }));
                 } else {
                     m.push(mi("New Window", "", function () { root.launchActive(); }));
                     if (browser) {
@@ -4166,8 +4166,11 @@ Scope {
                 // Is any glass actually on screen right now? Only then is the live backdrop worth rendering — keeping it
                 // alive while nothing is open cost a fifth of a core for pixels nobody saw.
                 readonly property bool glassOnScreen: anyVisible || toastsShown || levelOsd.visible || spotWin.openish || swWin.visible || wpWin.visible
-                readonly property Item glassSrc: (root.glassRealtime && glassOnScreen) ? glassBackdrop.item
-                                               : ((snapFresh && screenSnap.hasContent) ? screenSnap : glassBackdrop.item)
+                // The composed backdrop (wallpaper + the windows behind us) is the one that never contains the shell
+                // itself. The whole-screen snapshot does — refracting it is what drew a ghost of the menu bar inside
+                // its own glass — so it is only the fallback while the backdrop is still coming up.
+                readonly property Item glassSrc: glassBackdrop.item ? glassBackdrop.item
+                                               : ((snapFresh && screenSnap.hasContent) ? screenSnap : null)
                 HoverHandler {
                     id: barHover
                     onHoveredChanged: if (hovered && ui.pop === "") screenSnap.grab()
@@ -4178,13 +4181,20 @@ Scope {
 
                 // keeps the (otherwise unseen) backdrop rendering so its window captures stay valid; draws one 1%-opaque pixel
                 ShaderEffectSource {
+                    id: backdropAlive
                     sourceItem: glassBackdrop.item
                     hideSource: true
-                    // only while glass is on screen: this one pixel is what keeps the whole backdrop rendering
+                    // this one pixel is what keeps the whole backdrop rendering: every frame while a panel is open,
+                    // and a gentle 10 fps when only the menu bar strip is made of glass
                     live: ui.glassOnScreen
                     width: 1; height: 1
                     opacity: 0.01
                     sourceRect: Qt.rect(0, 0, 1, 1)
+                    Timer {
+                        interval: 100; repeat: true
+                        running: !ui.glassOnScreen && root.barGlass && root.liquidActive && glassBackdrop.item !== null
+                        onTriggered: backdropAlive.scheduleUpdate()
+                    }
                 }
                 Component {
                     id: backdropComp

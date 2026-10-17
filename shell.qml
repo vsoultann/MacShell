@@ -37,6 +37,11 @@ ShellRoot {
         property var appstore: appStore
         property var photos: photosApp
         property var finder: finderApp
+        // one way to open a folder, and one way to put a window away — every part of the shell uses these
+        function openFolder(path) { if (finderApp) finderApp.open(path); else Quickshell.execDetached(["xdg-open", path]); }
+        function minimizeWindow(title) {
+            Hyprland.dispatch('hl.dsp.window.move({ workspace = "special:minimized", follow = false, window = "title:^' + title + '$" })');
+        }
         property var welcome: welcomeApp
         property var player: videoPlayer
         property var desktop: desktopIcons
@@ -313,6 +318,8 @@ ShellRoot {
     IpcHandler {
         target: "preview"
         function open(p: string): void { previewApp.open(p); }
+        function next(): void { previewApp.show(previewApp.index + 1); }
+        function prev(): void { previewApp.show(previewApp.index - 1); }
     }
     IpcHandler {
         target: "airdrop"

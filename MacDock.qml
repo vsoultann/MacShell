@@ -966,7 +966,7 @@ Scope {
                         hoverEnabled: true
                         onClicked: mouse => {
                             if (mouse.x < 22) prefsWindow.visible = false;
-                            else if (mouse.x < 44) prefsWindow.showMinimized();
+                            else if (mouse.x < 44) { if (root.hub && root.hub.minimizeWindow) root.hub.minimizeWindow(prefsWindow.title); else prefsWindow.showMinimized(); }
                             else if (mouse.x < 58) {
                                 if (prefsWindow.visibility === Window.FullScreen) prefsWindow.showNormal();
                                 else prefsWindow.showFullScreen();
@@ -3767,7 +3767,7 @@ Scope {
                             Row {
                                 spacing: 8
                                 topPadding: 4
-                                SButton { t: pal; text: "Open Folder"; onClicked: Quickshell.execDetached(["xdg-open", root.bar ? root.bar.wpDirEff : ""]) }
+                                SButton { t: pal; text: "Open Folder"; onClicked: { if (root.hub && root.hub.openFolder) root.hub.openFolder(root.bar ? root.bar.wpDirEff : ""); } }
                                 SButton { t: pal; text: "Refresh"; onClicked: if (root.bar) root.bar.wpRefresh() }
                             }
                         }
@@ -3967,7 +3967,7 @@ Scope {
                         SButton {
                             t: pal
                             text: "Open"
-                            onClicked: Quickshell.execDetached(["xdg-open", root.configDir])
+                            onClicked: { if (root.hub && root.hub.openFolder) root.hub.openFolder(root.configDir); else Quickshell.execDetached(["xdg-open", root.configDir]); }
                         }
                     }
                 }
@@ -4522,7 +4522,7 @@ Scope {
         var m = [];
         if (item.kind === "folder") {
             m.push({ kind: "item", label: "Open in Finder", run: function () { root.activate(item, false); } });
-            m.push({ kind: "item", label: "Open in File Manager", run: function () { Quickshell.execDetached(["xdg-open", item.path]); } });
+            m.push({ kind: "item", label: "Open in File Manager", run: function () { Quickshell.execDetached(["sh", "-c", "xdg-open \"$1\"", "sh", item.path]); } });
             m.push({ kind: "sep" });
             m.push({ kind: "item", label: "Remove from Dock", run: function () { root.unpinFolder(item.path); } });
             return m;
@@ -5766,7 +5766,8 @@ Scope {
                 }
 
                 // A folder pinned to the Dock fans its contents up into an arc, the way a macOS stack does: every item
-                // flies out of the icon along the curve, one after the other, and its name fades in once it lands.
+                // flies out of the icon along the curve, tilting as it goes, and its name fades in underneath it.
+                // Move the pointer away and the fan folds back into the icon by itself.
                 Item {
                     id: stack
                     z: 55
@@ -5775,14 +5776,31 @@ Scope {
                     readonly property bool shown: ui.stackItem !== null
                     readonly property real baseY: ui.height - root.margin - root.bgHeight - root.iconSize * (root.effMag - 1) - 16
                     readonly property int n: Math.max(1, root.stackFiles.length)
-                    // the fan leans towards the middle of the screen, like macOS leaning away from the edge
+                    // leans away from the nearer screen edge, and leans hard — this is a fan, not a ladder
                     readonly property real lean: (ui.stackCx > ui.width / 2 ? -1 : 1)
-                    // the whole fan (every item plus the title above it) always fits between the Dock and the top of this surface
-                    readonly property real step: Math.max(34, Math.min(54, (baseY - 44) / (n + 1.6)))
-                    // 0 → everything inside the icon, 1 → fully fanned out
+                    readonly property real step: Math.max(40, Math.min(62, (baseY - 40) / (n + 0.6)))
                     property real t: 0
                     Behavior on t { NumberAnimation { id: stackT; duration: 460; easing.type: Easing.OutQuint } }
-                    onShownChanged: t = shown ? 1 : 0
+
+
+                    // Folds itself away when you stop looking at it — but not before you have had a chance to reach it:
+                    // it stays put until the pointer has been over it once, or a couple of seconds have passed.
+                    HoverHandler { id: stackHover }
+                    property bool everHovered: false
+                    property bool settled: false
+                    onShownChanged: {
+                        t = shown ? 1 : 0;
+                        everHovered = false; settled = false;
+                        if (shown) stackGrace.restart();
+                    }
+                    Connections { target: stackHover; function onHoveredChanged() { if (stackHover.hovered) stack.everHovered = true; } }
+                    Timer { id: stackGrace; interval: 2500; onTriggered: stack.settled = true }
+                    Timer {
+                        id: stackLeave
+                        interval: 600
+                        running: stack.shown && !stackHover.hovered && !hh.hovered && (stack.everHovered || stack.settled)
+                        onTriggered: ui.stackItem = null
+                    }
 
                     MouseArea {
                         anchors.fill: parent
@@ -5795,98 +5813,72 @@ Scope {
                             id: fanItem
                             required property var modelData
                             required property int index
-                            // each item starts a little after the one below it, and settles with a soft overshoot
                             readonly property real delay: index * 0.1
                             readonly property real p: Math.max(0, Math.min(1, (stack.t - delay) / Math.max(0.0001, 1 - delay)))
                             readonly property real ease: 1 - Math.pow(1 - p, 3)
-                            readonly property real angle: (index / Math.max(1, stack.n - 1)) * 0.22 * stack.lean
+                            // the sway: each step out leans further from the icon, and tilts with it
+                            readonly property real angle: (index / Math.max(1, stack.n - 1)) * 0.62 * stack.lean
                             readonly property real rr: stack.step * (index + 1) * ease
-                            width: Math.min(44, stack.step - 8); height: width
-                            x: ui.stackCx - width / 2 + Math.sin(angle) * rr * 0.28
-                            y: stack.baseY - height - Math.cos(angle) * rr
+                            width: 52; height: 72
+                            x: ui.stackCx - width / 2 + Math.sin(angle) * rr * 0.72
+                            y: stack.baseY - height - Math.cos(angle) * rr + 18
                             opacity: Math.min(1, ease * 1.6)
                             scale: 0.4 + 0.6 * ease
+                            rotation: angle * 26 * ease
                             z: stack.n - index
 
                             Rectangle {
                                 anchors.fill: parent
-                                anchors.margins: -5
+                                anchors.margins: -4
                                 radius: 11
                                 color: fanMa.containsMouse ? Qt.rgba(1, 1, 1, 0.18) : "transparent"
                                 Behavior on color { ColorAnimation { duration: 140 } }
                             }
                             Image {
                                 id: fanIcon
-                                anchors.fill: parent
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                y: 0
+                                width: 44; height: 44
                                 asynchronous: true; cache: true; smooth: true; mipmap: true
                                 sourceSize: Qt.size(80, 80)
                                 fillMode: fanItem.modelData.isImage ? Image.PreserveAspectCrop : Image.PreserveAspectFit
                                 source: fanItem.modelData.isImage ? "file://" + fanItem.modelData.path
                                       : (fanItem.modelData.isDir ? root.folderIcon : root.iconSrc("text-x-generic"))
                             }
-                            // the name rides in beside the icon and fades in once the icon has arrived, blur and all
+                            // the name sits under the icon and fades in once it has arrived
                             Item {
                                 id: labelWrap
-                                anchors.verticalCenter: parent.verticalCenter
-                                x: stack.lean > 0 ? parent.width + 10 : -lbl.implicitWidth - 10
-                                width: lbl.implicitWidth; height: lbl.implicitHeight
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                y: 47
+                                width: parent.width + 26; height: lbl.implicitHeight
                                 readonly property real lp: Math.max(0, Math.min(1, (fanItem.ease - 0.55) / 0.45))
                                 opacity: lp
-                                transform: Translate { x: (1 - labelWrap.lp) * 10 * stack.lean }
+                                transform: Translate { y: (1 - labelWrap.lp) * 6 }
                                 Text {
                                     id: lbl
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: parent.width
+                                    horizontalAlignment: Text.AlignHCenter
+                                    elide: Text.ElideMiddle
                                     text: fanItem.modelData.name
                                     color: "white"
-                                    font.family: root.fontFamily; font.pixelSize: 11
-                                    style: Text.Outline; styleColor: Qt.rgba(0, 0, 0, 0.55)
+                                    font.family: root.fontFamily; font.pixelSize: 10
+                                    style: Text.Outline; styleColor: Qt.rgba(0, 0, 0, 0.6)
                                 }
                                 layer.enabled: labelWrap.lp < 0.98
                                 layer.effect: MultiEffect { blurEnabled: true; blurMax: 16; blur: 1 - labelWrap.lp; autoPaddingEnabled: true }
                             }
                             MouseArea {
                                 id: fanMa
-                                anchors.fill: parent; anchors.margins: -5
+                                anchors.fill: parent; anchors.margins: -4
                                 hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     var it = fanItem.modelData;
                                     ui.stackItem = null;
                                     if (it.isDir) { if (root.hub && root.hub.finder) root.hub.finder.open(it.path); }
+                                    else if (root.hub && root.hub.preview && it.isImage) root.hub.preview.open(it.path);
                                     else Quickshell.execDetached(["xdg-open", it.path]);
                                 }
-                            }
-                        }
-                    }
-                    // the lid of the fan rides the same curve, one step further out
-                    Item {
-                        id: fanTop
-                        readonly property real p: Math.max(0, Math.min(1, (stack.t - stack.n * 0.1) / Math.max(0.0001, 1 - stack.n * 0.1)))
-                        readonly property real ease: 1 - Math.pow(1 - p, 3)
-                        readonly property real angle: 0.22 * stack.lean
-                        readonly property real rr: stack.step * (stack.n + 1) * ease
-                        width: 126; height: 24
-                        x: ui.stackCx - width / 2 + Math.sin(angle) * rr * 0.28
-                        y: Math.max(4, stack.baseY - height - Math.cos(angle) * rr)
-                        opacity: Math.min(1, ease * 1.6)
-                        scale: 0.5 + 0.5 * ease
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: 12
-                            color: topMa.containsMouse ? Qt.rgba(0.22, 0.22, 0.24, 0.9) : Qt.rgba(0.14, 0.14, 0.15, 0.78)
-                            border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.16)
-                            Behavior on color { ColorAnimation { duration: 140 } }
-                            Text {
-                                anchors.centerIn: parent
-                                text: ui.stackItem ? ui.stackItem.name : ""
-                                color: "white"; font.family: root.fontFamily; font.pixelSize: 11; font.weight: Font.DemiBold
-                            }
-                        }
-                        MouseArea {
-                            id: topMa
-                            anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                var pth = ui.stackItem ? ui.stackItem.path : root.stackPath;
-                                ui.stackItem = null;
-                                if (root.hub && root.hub.finder) root.hub.finder.open(pth);
                             }
                         }
                     }

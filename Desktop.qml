@@ -3,6 +3,7 @@
 // Everything in ~/Desktop appears here. Drag an icon to move it (positions live in ~/.config/macshell/desktop.json),
 // double-click to open, drop one icon onto another to make a folder, right-click for the menu.
 import QtQuick
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -220,53 +221,100 @@ Scope {
                     }
                 }
 
-                // right-click menu
-                Rectangle {
+                // right-click menu — the macOS one: a soft card, inset highlight, separators, and it springs open
+                Item {
                     id: dctx
                     property var item: undefined
-                    visible: item !== undefined
+                    readonly property bool open: item !== undefined
+                    visible: opacity > 0.01
+                    opacity: open ? 1 : 0
                     z: 50
-                    width: 190; height: col.height + 10
-                    radius: 10
-                    color: Qt.rgba(0.17, 0.17, 0.18, 0.97)
-                    border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
+                    width: 212; height: col.height + 12
+                    scale: open ? 1 : 0.94
+                    transformOrigin: Item.TopLeft
+                    Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                    Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
                     function show(it, mx, my) {
                         item = it;
                         x = Math.min(mx, iconLayer.width - width - 8);
                         y = Math.min(my, iconLayer.height - height - 8);
                     }
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 12
+                        color: root.darkMode ? Qt.rgba(0.16, 0.16, 0.17, 0.97) : Qt.rgba(0.99, 0.99, 1.0, 0.98)
+                        border.width: 1
+                        border.color: root.darkMode ? Qt.rgba(1, 1, 1, 0.1) : Qt.rgba(0, 0, 0, 0.09)
+                        layer.enabled: true
+                        layer.effect: MultiEffect { shadowEnabled: true; shadowBlur: 0.9; shadowOpacity: 0.35; shadowVerticalOffset: 8 }
+                    }
                     Column {
                         id: col
-                        y: 5; width: parent.width
+                        y: 6; width: parent.width
                         Repeater {
-                            model: dctx.item ? ["Open", "Rename\u2026", "Move to Trash", "sep", "New Folder"] : ["New Folder", "Change Wallpaper\u2026"]
+                            model: dctx.item
+                                   ? [{ t: "Open", k: "open" }, { t: "Quick Look", k: "ql" }, { t: "Rename\u2026", k: "rename" },
+                                      { t: "sep" }, { t: "Copy Path", k: "copy" }, { t: "Move to Trash", k: "trash", danger: true },
+                                      { t: "sep" }, { t: "New Folder", k: "newfolder" }]
+                                   : [{ t: "New Folder", k: "newfolder" }, { t: "Clean Up", k: "cleanup" },
+                                      { t: "sep" }, { t: "Change Wallpaper\u2026", k: "wallpaper" }]
                             delegate: Item {
-                                required property string modelData
-                                width: parent.width; height: modelData === "sep" ? 7 : 26
-                                Rectangle { visible: parent.modelData === "sep"; x: 10; y: 3; width: parent.width - 20; height: 1; color: Qt.rgba(1, 1, 1, 0.12) }
-                                Rectangle { visible: parent.modelData !== "sep" && mMa.containsMouse; x: 5; width: parent.width - 10; height: 24; radius: 5; color: root.accent }
+                                id: mrow
+                                required property var modelData
+                                readonly property bool sep: modelData.t === "sep"
+                                width: parent.width
+                                height: sep ? 9 : 25
+                                Rectangle {
+                                    visible: mrow.sep
+                                    x: 12; y: 4; width: parent.width - 24; height: 1
+                                    color: root.darkMode ? Qt.rgba(1, 1, 1, 0.1) : Qt.rgba(0, 0, 0, 0.08)
+                                }
+                                Rectangle {
+                                    visible: !mrow.sep && mMa.containsMouse
+                                    x: 6; width: parent.width - 12; height: parent.height - 2; y: 1
+                                    radius: 6
+                                    color: root.accent
+                                }
                                 Text {
-                                    visible: parent.modelData !== "sep"
-                                    x: 14; anchors.verticalCenter: parent.verticalCenter
-                                    text: parent.modelData; color: "white"; font.family: root.fam; font.pixelSize: 12
+                                    visible: !mrow.sep
+                                    x: 16; anchors.verticalCenter: parent.verticalCenter
+                                    text: mrow.modelData.t
+                                    color: mMa.containsMouse ? "white"
+                                           : (mrow.modelData.danger ? "#FF453A" : (root.darkMode ? "#F5F5F7" : "#1D1D1F"))
+                                    font.family: root.fam; font.pixelSize: 13
                                 }
                                 MouseArea {
                                     id: mMa
-                                    anchors.fill: parent; hoverEnabled: true
-                                    enabled: parent.modelData !== "sep"
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    enabled: !mrow.sep
                                     onClicked: {
-                                        var m = parent.modelData, it = dctx.item;
+                                        var k = mrow.modelData.k, it = dctx.item;
                                         dctx.item = undefined;
-                                        if (m === "Open" && it) root.openItem(it);
-                                        else if (m === "Rename\u2026" && it) renamer.begin(it);
-                                        else if (m === "Move to Trash" && it) root.trash(it.path);
-                                        else if (m === "New Folder") root.newFolder();
-                                        else if (m.indexOf("Wallpaper") >= 0 && root.dock) root.dock.openSettings("wallpaper");
+                                        if (k === "open" && it) root.openItem(it);
+                                        else if (k === "ql" && it) {
+                                            if (it.kind === "Image" && root.hub && root.hub.preview) root.hub.preview.open(it.path);
+                                            else root.openItem(it);
+                                        }
+                                        else if (k === "rename" && it) renamer.begin(it);
+                                        else if (k === "copy" && it) Quickshell.execDetached(["sh", "-c", "printf '%s' \"$1\" | wl-copy", "sh", it.path]);
+                                        else if (k === "trash" && it) root.trash(it.path);
+                                        else if (k === "newfolder") root.newFolder();
+                                        else if (k === "cleanup") { root.places = ({}); root.savePlaces(); }
+                                        else if (k === "wallpaper" && root.dock) root.dock.openSettings("wallpaper");
                                     }
                                 }
                             }
                         }
                     }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    z: 40
+                    visible: dctx.open
+                    enabled: dctx.open
+                    acceptedButtons: Qt.AllButtons
+                    onPressed: dctx.item = undefined
                 }
 
                 // rename sheet

@@ -206,7 +206,7 @@ Scope {
                 }
                 MouseArea {
                     id: tlMa; anchors.fill: parent; hoverEnabled: true
-                    onClicked: mouse => { if (mouse.x < 22) win.visible = false; else if (mouse.x < 44) win.showMinimized(); else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen(); }
+                    onClicked: mouse => { if (mouse.x < 22) win.visible = false; else if (mouse.x < 44) root.hub && root.hub.minimizeWindow ? root.hub.minimizeWindow(win.title) : win.showMinimized(); else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen(); }
                 }
             }
             Text {

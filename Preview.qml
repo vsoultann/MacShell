@@ -58,12 +58,19 @@ Scope {
             }
         }
     }
+    property string prevPath: ""
+    property int dir: 1                      // which way the next picture comes from
     function show(i) {
-        if (i < 0 || i >= siblings.length) return;
+        if (i < 0 || i >= siblings.length || i === index) return;
+        dir = i > index ? 1 : -1;
+        prevPath = path;
         index = i;
         path = siblings[i].path;
         zoom = 1; fit = true; rotation = 0;
+        swap.restart();
     }
+    property real swapT: 1
+    NumberAnimation { id: swap; target: root; property: "swapT"; from: 0; to: 1; duration: 420; easing.type: Easing.OutQuint }
     function trash() {
         Quickshell.execDetached(["sh", "-c", "gio trash \"$1\" 2>/dev/null || { mkdir -p \"$HOME/.local/share/Trash/files\" && mv \"$1\" \"$HOME/.local/share/Trash/files/\"; }", "sh", path]);
         var next = Math.min(index, siblings.length - 2);
@@ -133,7 +140,7 @@ Scope {
                     }
                     MouseArea {
                         id: tlMa; anchors.fill: parent; hoverEnabled: true
-                        onClicked: mouse => { if (mouse.x < 22) win.visible = false; else if (mouse.x < 44) win.showMinimized(); else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen(); }
+                        onClicked: mouse => { if (mouse.x < 22) win.visible = false; else if (mouse.x < 44) root.hub && root.hub.minimizeWindow ? root.hub.minimizeWindow(win.title) : win.showMinimized(); else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen(); }
                     }
                 }
                 MorphText {
@@ -231,6 +238,20 @@ Scope {
                 Item {
                     id: pan
                     anchors.fill: parent
+                    // the one you are leaving: slides out the other way and fades
+                    Image {
+                        id: outgoing
+                        anchors.centerIn: parent
+                        visible: root.swapT < 1 && root.prevPath !== ""
+                        source: root.prevPath === "" ? "" : "file://" + root.prevPath
+                        asynchronous: true; cache: true; smooth: true; mipmap: true
+                        fillMode: Image.PreserveAspectFit
+                        width: Math.min(parent.width - 48, implicitWidth)
+                        height: Math.min(parent.height - 48, implicitHeight)
+                        opacity: 1 - Math.min(1, root.swapT * 1.8)
+                        transform: Translate { x: -root.dir * 40 * root.swapT }
+                        scale: 1 - 0.04 * root.swapT
+                    }
                     Image {
                         id: pic
                         anchors.centerIn: parent
@@ -243,11 +264,11 @@ Scope {
                         Behavior on width { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                         Behavior on height { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                         Behavior on rotation { NumberAnimation { duration: 320; easing.type: Easing.OutQuint } }
-                        // a new picture fades and scales in, the way Preview hands one over
-                        opacity: status === Image.Ready ? 1 : 0
-                        scale: status === Image.Ready ? 1 : 0.97
-                        Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
-                        Behavior on scale { NumberAnimation { duration: 320; easing.type: Easing.OutQuint } }
+                        // arriving: in from the side you came from, fading up as it lands
+                        opacity: status === Image.Ready ? Math.min(1, root.swapT * 1.4) : 0
+                        scale: (status === Image.Ready ? 1 : 0.97) * (0.985 + 0.015 * root.swapT)
+                        transform: Translate { x: root.dir * 44 * (1 - root.swapT) }
+                        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                     }
                     MouseArea {
                         anchors.fill: parent
@@ -264,26 +285,44 @@ Scope {
                     }
                 }
 
-                // page arrows, like Preview's
+                // page arrows: a soft glass disc with a thin chevron, the way Preview does it
                 Repeater {
                     model: ["prev", "next"]
-                    delegate: Rectangle {
+                    delegate: Item {
+                        id: arrow
                         required property string modelData
                         readonly property bool can: modelData === "prev" ? root.index > 0 : root.index < root.siblings.length - 1
                         anchors.verticalCenter: parent.verticalCenter
                         anchors.left: modelData === "prev" ? parent.left : undefined
                         anchors.right: modelData === "next" ? parent.right : undefined
-                        anchors.margins: 12
-                        width: 34; height: 34; radius: 17
+                        anchors.margins: 16
+                        width: 40; height: 40
                         opacity: can && (arrMa.containsMouse || canvasHover.hovered) ? 1 : 0
                         visible: opacity > 0.01
-                        Behavior on opacity { NumberAnimation { duration: 200 } }
-                        color: arrMa.containsMouse ? Qt.rgba(0, 0, 0, 0.5) : Qt.rgba(0, 0, 0, 0.3)
-                        PvGlyph { anchors.centerIn: parent; width: 15; height: 15; kind: parent.modelData; color: "white" }
+                        Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: width / 2
+                            color: pal.dark ? Qt.rgba(0.18, 0.18, 0.2, arrMa.containsMouse ? 0.92 : 0.68)
+                                            : Qt.rgba(1, 1, 1, arrMa.containsMouse ? 0.96 : 0.78)
+                            border.width: 1
+                            border.color: pal.dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.08)
+                            Behavior on color { ColorAnimation { duration: 160 } }
+                            scale: arrMa.pressed ? 0.9 : (arrMa.containsMouse ? 1.06 : 1)
+                            Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutQuint } }
+                            layer.enabled: true
+                            layer.effect: MultiEffect { shadowEnabled: true; shadowBlur: 0.6; shadowOpacity: 0.25; shadowVerticalOffset: 2 }
+                        }
+                        PvGlyph {
+                            anchors.centerIn: parent
+                            anchors.horizontalCenterOffset: arrow.modelData === "prev" ? -1 : 1
+                            width: 14; height: 14
+                            kind: arrow.modelData; color: pal.text
+                        }
                         MouseArea {
                             id: arrMa
                             anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                            onClicked: root.show(parent.modelData === "prev" ? root.index - 1 : root.index + 1)
+                            onClicked: root.show(arrow.modelData === "prev" ? root.index - 1 : root.index + 1)
                         }
                     }
                 }
@@ -352,8 +391,8 @@ Scope {
                 c.beginPath(); c.moveTo(6.4, 4.4); c.lineTo(6.8, 2.6); c.lineTo(9.2, 2.6); c.lineTo(9.6, 4.4); c.stroke();
             } else if (k === "prev" || k === "next") {
                 var d = k === "prev" ? 1 : -1;
-                c.lineWidth = 1.9;
-                c.beginPath(); c.moveTo(8 + d * 2, 3.6); c.lineTo(8 - d * 2.4, 8); c.lineTo(8 + d * 2, 12.4); c.stroke();
+                c.lineWidth = 1.6;
+                c.beginPath(); c.moveTo(8 + d * 2.2, 2.8); c.lineTo(8 - d * 2.6, 8); c.lineTo(8 + d * 2.2, 13.2); c.stroke();
             }
         }
     }

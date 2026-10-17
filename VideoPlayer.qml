@@ -139,7 +139,7 @@ Scope {
                                 anchors.fill: parent; anchors.margins: -3; cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     if (parent.index === 0) win.visible = false;
-                                    else if (parent.index === 1) win.showMinimized();
+                                    else if (parent.index === 1) root.hub && root.hub.minimizeWindow ? root.hub.minimizeWindow(win.title) : win.showMinimized();
                                     else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen();
                                 }
                             }
