@@ -1241,6 +1241,12 @@ Scope {
                     t: pal
                     SRow {
                         t: pal
+                        title: "Show items on the desktop"
+                        subtitle: "Files, folders and apps in ~/Desktop. Drag to move, double-click to open, drop one onto another to make a folder."
+                        SSwitch { t: pal; checked: root.hub && root.hub.desktop ? root.hub.desktop.enabled : true; onToggled: v => { if (root.hub && root.hub.desktop) root.hub.desktop.enabled = v; } }
+                    }
+                    SRow {
+                        t: pal
                         title: "Show widgets on the desktop"
                         subtitle: "Clock, Calendar, Weather, Batteries, Music, Notes, Photos, Reminders and Stocks. Right-click a widget to change its size or style."
                         SSwitch { t: pal; checked: root.hub && root.hub.widgets ? root.hub.widgets.enabled : true; onToggled: v => { if (root.hub && root.hub.widgets) root.hub.widgets.enabled = v; } }
