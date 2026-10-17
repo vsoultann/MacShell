@@ -188,6 +188,25 @@ Scope {
         saveSettings(); rebuild();
         if (bar) bar.playSound("pop", 0.6);
     }
+    // qs -c MacShell ipc call dock pinfolder <path> | stack <path>
+    signal stackRequest(string path)
+    IpcHandler {
+        target: "dock"
+        function pinfolder(p: string): void { root.pinFolder(p); }
+        function unpinfolder(p: string): void { root.unpinFolder(p); }
+        function stack(p: string): void { root.stackRequest(p); }
+    }
+    property string stackPath: ""
+    property var stackFiles: []
+    function loadStack(path) {
+        stackPath = path;
+        stackFiles = [];
+        stackProc.running = false;
+        stackProc.command = ["sh", "-c",
+            "cd \"$1\" 2>/dev/null || exit 0; find . -mindepth 1 -maxdepth 1 ! -name '.*' -printf '%y\\t%f\\n' 2>/dev/null "
+            + "| LC_ALL=C sort -t\"$(printf '\\t')\" -k1,1 -k2,2f | head -6", "sh", path];
+        stackProc.running = true;
+    }
     function unpinFolder(p) { pinnedFolders = pinnedFolders.filter(function (x) { return x !== p; }); saveSettings(); rebuild(); }
     // ──────────────────────────────────
 
@@ -4154,7 +4173,7 @@ Scope {
 
     function activate(item, forceNew) {
         if (item.kind === "win") { if (item.tl) item.tl.activate(); return; }
-        if (item.kind === "folder") { if (hub && hub.finder) hub.finder.open(item.path); return; }
+        if (item.kind === "folder") { root.loadStack(item.path); return; }
         if (item.special === "trash") {
             // the file manager first (Dolphin understands trash:/ natively); xdg-open only as the last resort
             Quickshell.execDetached(["sh", "-c",
@@ -4227,6 +4246,22 @@ Scope {
         rebuild();
     }
 
+    Process {
+        id: stackProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var out = [], ls = text.split("\n");
+                for (var i = 0; i < ls.length; i++) {
+                    var c = ls[i].split("\t");
+                    if (c.length < 2) continue;
+                    var e = c[1].toLowerCase().split(".").pop();
+                    out.push({ name: c[1], path: root.stackPath + "/" + c[1], isDir: c[0] === "d",
+                               isImage: ["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"].indexOf(e) >= 0 });
+                }
+                root.stackFiles = out;
+            }
+        }
+    }
     function menuFor(item) {
         var m = [];
         if (item.kind === "folder") {
@@ -4692,6 +4727,22 @@ Scope {
                 property string armed: ""            // label of a confirm-type entry that was clicked once (e.g. Empty Trash)
                 onMenuItemChanged: armed = ""
                 property real menuCx: 0
+                Connections {
+                    target: root
+                    function onStackRequest(path) {
+                        if (!path || path === "") { ui.stackItem = null; return; }
+                        for (var i = 0; i < root.items.length; i++) {
+                            if (root.items[i].kind === "folder" && root.items[i].path === path) {
+                                ui.stackCx = ui.width / 2;
+                                ui.stackItem = root.items[i];
+                                root.loadStack(path);
+                                return;
+                            }
+                        }
+                    }
+                }
+                property var stackItem: null      // the pinned folder whose fan is open
+                property real stackCx: 0
                 readonly property bool menuOpen: menuItem !== null
                 readonly property bool wantsHide: root.hideMode === "always"
                     || (root.hideMode === "smart" && root.busyMonitors[win.modelData.name] === true)
@@ -5419,11 +5470,107 @@ Scope {
                                             ui.menuCx = cell.mapToItem(ui, cell.width / 2, 0).x;
                                             ui.menuModel = root.menuFor(cell.modelData);
                                             ui.menuItem = cell.modelData;
+                                        } else if (cell.modelData.kind === "folder") {
+                                            if (ui.stackItem && ui.stackItem.key === cell.modelData.key) { ui.stackItem = null; return; }
+                                            ui.stackCx = cell.mapToItem(ui, cell.width / 2, 0).x;
+                                            ui.stackItem = cell.modelData;
+                                            root.loadStack(cell.modelData.path);
+                                            if (root.bar) root.bar.playSound("pop", 0.5);
                                         } else {
                                             root.activate(cell.modelData, mouse.button === Qt.MiddleButton);
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+
+                // a folder pinned to the Dock fans its contents up into an arc, the way a macOS stack does
+                Item {
+                    id: stack
+                    z: 55
+                    anchors.fill: parent
+                    visible: ui.stackItem !== null || closing.running
+                    readonly property bool shown: ui.stackItem !== null
+                    readonly property real baseY: ui.height - root.margin - root.bgHeight - root.iconSize * (root.effMag - 1) - 20
+                    ParallelAnimation { id: closing }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.AllButtons
+                        onPressed: ui.stackItem = null
+                    }
+                    Repeater {
+                        model: root.stackFiles
+                        delegate: Item {
+                            id: fanItem
+                            required property var modelData
+                            required property int index
+                            readonly property int n: Math.max(1, root.stackFiles.length)
+                            // the arc: the first item sits just above the Dock, the rest lean outwards as they climb
+                            readonly property real lean: (index / Math.max(1, n - 1) - 0.5) * Math.min(230, n * 26)
+                            width: 58; height: 72
+                            x: ui.stackCx - width / 2 + (stack.shown ? lean : 0)
+                            y: stack.baseY - height - (stack.shown ? (index + 1) * 44 : 0)
+                            opacity: stack.shown ? 1 : 0
+                            scale: stack.shown ? 1 : 0.6
+                            Behavior on x { NumberAnimation { duration: 420 + fanItem.index * 35; easing.type: Easing.OutBack; easing.overshoot: 1.1 } }
+                            Behavior on y { NumberAnimation { duration: 420 + fanItem.index * 35; easing.type: Easing.OutBack; easing.overshoot: 1.1 } }
+                            Behavior on opacity { NumberAnimation { duration: 220 } }
+                            Behavior on scale { NumberAnimation { duration: 380; easing.type: Easing.OutBack; easing.overshoot: 1.4 } }
+
+                            Rectangle {
+                                anchors.fill: parent; radius: 10
+                                color: fanMa.containsMouse ? Qt.rgba(1, 1, 1, 0.16) : "transparent"
+                                Behavior on color { ColorAnimation { duration: 140 } }
+                            }
+                            Image {
+                                anchors.horizontalCenter: parent.horizontalCenter; y: 6
+                                width: 40; height: 40
+                                asynchronous: true; cache: true; smooth: true; mipmap: true
+                                sourceSize: Qt.size(80, 80)
+                                fillMode: fanItem.modelData.isImage ? Image.PreserveAspectCrop : Image.PreserveAspectFit
+                                source: fanItem.modelData.isImage ? "file://" + fanItem.modelData.path
+                                      : root.iconSrc(fanItem.modelData.isDir ? "folder" : "text-x-generic")
+                            }
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter; y: 48
+                                width: parent.width - 4; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideMiddle
+                                text: fanItem.modelData.name
+                                color: "white"; font.family: root.fontFamily; font.pixelSize: 10
+                                style: Text.Outline; styleColor: Qt.rgba(0, 0, 0, 0.5)
+                            }
+                            MouseArea {
+                                id: fanMa
+                                anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    var it = fanItem.modelData;
+                                    ui.stackItem = null;
+                                    if (it.isDir) { if (root.hub && root.hub.finder) root.hub.finder.open(it.path); }
+                                    else Quickshell.execDetached(["xdg-open", it.path]);
+                                }
+                            }
+                        }
+                    }
+                    // the lid of the fan: open the folder itself
+                    Rectangle {
+                        readonly property int n: Math.max(1, root.stackFiles.length)
+                        width: 132; height: 26; radius: 13
+                        x: ui.stackCx - width / 2
+                        y: Math.max(6, stack.baseY - 72 - (stack.shown ? (n + 1) * 44 : 0) - 6)
+                        opacity: stack.shown ? 1 : 0
+                        color: Qt.rgba(0.14, 0.14, 0.15, 0.72)
+                        border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.16)
+                        Behavior on y { NumberAnimation { duration: 520; easing.type: Easing.OutBack; easing.overshoot: 1.1 } }
+                        Behavior on opacity { NumberAnimation { duration: 220 } }
+                        Text { anchors.centerIn: parent; text: "Open in Finder"; color: "white"; font.family: root.fontFamily; font.pixelSize: 11 }
+                        MouseArea {
+                            anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                var p = ui.stackItem ? ui.stackItem.path : root.stackPath;
+                                ui.stackItem = null;
+                                if (root.hub && root.hub.finder) root.hub.finder.open(p);
                             }
                         }
                     }

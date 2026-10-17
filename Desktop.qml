@@ -158,10 +158,10 @@ Scope {
                             width: 48; height: 48
                             asynchronous: true; cache: true; smooth: true; mipmap: true
                             fillMode: icon.modelData.kind === "Image" ? Image.PreserveAspectCrop : Image.PreserveAspectFit
-                            sourceSize.width: 128
+                            sourceSize: Qt.size(96, 96)
                             source: icon.modelData.kind === "Image" ? "file://" + icon.modelData.path
-                                  : (icon.modelData.isDir ? Quickshell.iconPath("folder", true)
-                                  : (icon.modelData.isApp ? root.appIcon(icon.modelData.path) : Quickshell.iconPath("text-x-generic", true)))
+                                  : (icon.modelData.isDir ? Quickshell.iconPath("folder", "inode-directory")
+                                  : (icon.modelData.isApp ? root.appIcon(icon.modelData.path) : Quickshell.iconPath("text-x-generic", "application-x-executable")))
                             onStatusChanged: if (status === Image.Error) source = Quickshell.iconPath("application-x-executable", true)
                         }
                         Text {
