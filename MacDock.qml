@@ -4117,6 +4117,7 @@ Scope {
         if (tl.appId !== "org.quickshell") return tl.appId;
         if (tl.title === "Clock") return "macshell-clock";
         if (tl.title === "App Store") return "macshell-appstore";
+        if (tl.title === "Photos") return "macshell-photos";
         return tl.appId;
     }
     function windowsFor(key) {

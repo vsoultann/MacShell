@@ -1388,7 +1388,7 @@ Scope {
     readonly property string appName: {
         if (activeAppId === "") return "Desktop";
         // MacShell's own windows (all "org.quickshell")
-        if (activeAppId === "org.quickshell") return (activeTl.title === "Clock" || activeTl.title === "App Store") ? activeTl.title
+        if (activeAppId === "org.quickshell") return (activeTl.title === "Clock" || activeTl.title === "App Store" || activeTl.title === "Photos") ? activeTl.title
                                                      : (activeTl.title === "macshell Settings" ? "System Settings" : "MacShell");
         var e = lookup(activeAppId);
         return e ? e.name : activeAppId;
@@ -3556,7 +3556,8 @@ Scope {
             var t = order[k], id = t.appId || "";
             if (id === "") continue;
             // MacShell's own windows (all "org.quickshell") are separate apps: Clock, System Settings
-            if (id === "org.quickshell") id = t.title === "Clock" ? "macshell-clock"
+            if (id === "org.quickshell") id = t.title === "Photos" ? "macshell-photos"
+                                             : t.title === "Clock" ? "macshell-clock"
                                              : (t.title === "App Store" ? "macshell-appstore"
                                              : (t.title === "macshell Settings" ? "systemsettings" : id));
             if (seen[id] !== undefined) { apps[seen[id]].count++; continue; }
