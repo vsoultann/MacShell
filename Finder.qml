@@ -29,7 +29,58 @@ Scope {
     property string tagFilter: ""           // a tag colour to filter by
     property string query: ""
     property var entries: []                // { name, path, isDir, size, mtime, kind }
-    property string selected: ""
+    property string selected: ""            // the last one clicked
+    property var selection: []              // everything selected right now
+    function isSelected(p) { return selection.indexOf(p) >= 0; }
+    function selectOne(p) { selected = p; selection = [p]; }
+    function selectToggle(p) {
+        var sel = selection.slice(), i = sel.indexOf(p);
+        if (i >= 0) sel.splice(i, 1); else sel.push(p);
+        selection = sel; selected = p;
+    }
+    function selectRange(p) {
+        var a = -1, b = -1;
+        for (var i = 0; i < shown.length; i++) {
+            if (shown[i].path === selected) a = i;
+            if (shown[i].path === p) b = i;
+        }
+        if (a < 0 || b < 0) { selectOne(p); return; }
+        var lo = Math.min(a, b), hi = Math.max(a, b), sel = [];
+        for (var j = lo; j <= hi; j++) sel.push(shown[j].path);
+        selection = sel;
+    }
+    function click(p, mods) {
+        if (mods & Qt.ControlModifier) selectToggle(p);
+        else if (mods & Qt.ShiftModifier) selectRange(p);
+        else selectOne(p);
+    }
+    readonly property var selectedImages: {
+        var out = [];
+        for (var i = 0; i < shown.length; i++)
+            if (selection.indexOf(shown[i].path) >= 0 && shown[i].kind === "Image") out.push(shown[i].path);
+        return out;
+    }
+
+    // ── Merge Photos: several pictures become one, side by side, stacked or in a grid ──
+    property bool mergeSheet: false
+    property string mergeMode: "grid"
+    property bool merging: false
+    function mergePhotos() {
+        if (selectedImages.length < 2) return;
+        merging = true;
+        var args = ["sh", "-c",
+            "mode=\"$1\"; shift; dir=$(dirname \"$1\"); out=\"$dir/Merged Photos.jpg\"; i=2; "
+            + "while [ -e \"$out\" ]; do out=\"$dir/Merged Photos $i.jpg\"; i=$((i+1)); done; "
+            + "case \"$mode\" in "
+            + "  horizontal) magick \"$@\" -resize x1200 +append -quality 92 \"$out\" ;; "
+            + "  vertical)   magick \"$@\" -resize 1200x -append -quality 92 \"$out\" ;; "
+            + "  *)          magick montage -background none -geometry +8+8 -tile x0 \"$@\" \"$out\" 2>/dev/null "
+            + "              || montage -background none -geometry +8+8 -tile x0 \"$@\" \"$out\" ;; "
+            + "esac; printf '%s' \"$out\"", "sh", mergeMode].concat(selectedImages);
+        mergeProc.running = false;
+        mergeProc.command = args;
+        mergeProc.running = true;
+    }
     property bool loading: false
 
     readonly property var tagColours: [
@@ -72,7 +123,7 @@ Scope {
     function go(path, remember) {
         if (path === dir) return;
         if (remember !== false) { back.push(dir); fwd = []; }
-        dir = path; selected = ""; tagFilter = ""; read();
+        dir = path; selected = ""; selection = []; tagFilter = ""; read();
     }
     function goBack() { if (back.length === 0) return; fwd.push(dir); dir = back.pop(); selected = ""; read(); }
     function goFwd() { if (fwd.length === 0) return; back.push(dir); dir = fwd.pop(); selected = ""; read(); }
@@ -143,6 +194,21 @@ Scope {
         reloadLater.restart();
     }
     Timer { id: reloadLater; interval: 350; onTriggered: root.read() }
+    Process {
+        id: mergeProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.merging = false;
+                root.mergeSheet = false;
+                root.read();
+                var out = text.trim();
+                if (out !== "") {
+                    Quickshell.execDetached(["sh", "-c", "notify-send -a MacShell 'Merged Photos' \"$(basename \"$1\")\"", "sh", out]);
+                    root.selectOne(out);
+                }
+            }
+        }
+    }
 
     function open(where) {
         if (where !== undefined && where !== "") { back.push(dir); dir = where; }
@@ -371,8 +437,8 @@ Scope {
                                 required property var modelData
                                 required property int index
                                 width: listCol.width; height: 26
-                                color: root.selected === modelData.path ? root.accent : (index % 2 === 1 ? Qt.rgba(1, 1, 1, pal.dark ? 0.025 : 0.02) : "transparent")
-                                readonly property color ink: root.selected === modelData.path ? "white" : pal.text
+                                color: root.isSelected(modelData.path) ? root.accent : (index % 2 === 1 ? Qt.rgba(1, 1, 1, pal.dark ? 0.025 : 0.02) : "transparent")
+                                readonly property color ink: root.isSelected(modelData.path) ? "white" : pal.text
                                 FnGlyph {
                                     x: 16; anchors.verticalCenter: parent.verticalCenter; width: 16; height: 16
                                     kind: rowItem.modelData.isDir ? "folder" : root.iconFor(rowItem.modelData.kind)
@@ -389,15 +455,17 @@ Scope {
                                     x: 36; y: 4; width: 7; height: 7; radius: 3.5
                                     color: root.tagColour(root.tags[rowItem.modelData.path] || "grey")
                                 }
-                                Text { x: parent.width - 300; anchors.verticalCenter: parent.verticalCenter; text: Qt.formatDateTime(new Date(rowItem.modelData.mtime * 1000), "d MMM yyyy HH:mm"); color: root.selected === rowItem.modelData.path ? "white" : pal.text2; font.family: root.fam; font.pixelSize: 11 }
-                                Text { x: parent.width - 150; anchors.verticalCenter: parent.verticalCenter; text: root.fmtSize(rowItem.modelData.size, rowItem.modelData.isDir); color: root.selected === rowItem.modelData.path ? "white" : pal.text2; font.family: root.fam; font.pixelSize: 11 }
-                                Text { x: parent.width - 90; anchors.verticalCenter: parent.verticalCenter; width: 80; elide: Text.ElideRight; text: rowItem.modelData.kind; color: root.selected === rowItem.modelData.path ? "white" : pal.text2; font.family: root.fam; font.pixelSize: 11 }
+                                Text { x: parent.width - 300; anchors.verticalCenter: parent.verticalCenter; text: Qt.formatDateTime(new Date(rowItem.modelData.mtime * 1000), "d MMM yyyy HH:mm"); color: root.isSelected(rowItem.modelData.path) ? "white" : pal.text2; font.family: root.fam; font.pixelSize: 11 }
+                                Text { x: parent.width - 150; anchors.verticalCenter: parent.verticalCenter; text: root.fmtSize(rowItem.modelData.size, rowItem.modelData.isDir); color: root.isSelected(rowItem.modelData.path) ? "white" : pal.text2; font.family: root.fam; font.pixelSize: 11 }
+                                Text { x: parent.width - 90; anchors.verticalCenter: parent.verticalCenter; width: 80; elide: Text.ElideRight; text: rowItem.modelData.kind; color: root.isSelected(rowItem.modelData.path) ? "white" : pal.text2; font.family: root.fam; font.pixelSize: 11 }
                                 MouseArea {
                                     anchors.fill: parent
                                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                                     onClicked: mouse => {
-                                        root.selected = rowItem.modelData.path;
-                                        if (mouse.button === Qt.RightButton) ctx.show(rowItem.modelData, mapToItem(content, mouse.x, mouse.y));
+                                        if (mouse.button === Qt.RightButton) {
+                                            if (!root.isSelected(rowItem.modelData.path)) root.selectOne(rowItem.modelData.path);
+                                            ctx.show(rowItem.modelData, mapToItem(content, mouse.x, mouse.y));
+                                        } else root.click(rowItem.modelData.path, mouse.modifiers);
                                     }
                                     onDoubleClicked: root.openEntry(rowItem.modelData)
                                 }
@@ -426,14 +494,14 @@ Scope {
                                 width: 108; height: 104
                                 Rectangle {
                                     anchors.fill: parent; radius: 8
-                                    color: root.selected === cellI.modelData.path ? root.accent : (iMa.containsMouse ? pal.pill : "transparent")
+                                    color: root.isSelected(cellI.modelData.path) ? root.accent : (iMa.containsMouse ? pal.pill : "transparent")
                                 }
                                 FnGlyph {
                                     anchors.horizontalCenter: parent.horizontalCenter; y: 12
                                     width: 46; height: 46
                                     visible: cellI.modelData.kind !== "Image"
                                     kind: cellI.modelData.isDir ? "folder" : root.iconFor(cellI.modelData.kind)
-                                    color: cellI.modelData.isDir ? root.tagColour(root.folderColours[cellI.modelData.path] || "blue") : (root.selected === cellI.modelData.path ? "white" : pal.text2)
+                                    color: cellI.modelData.isDir ? root.tagColour(root.folderColours[cellI.modelData.path] || "blue") : (root.isSelected(cellI.modelData.path) ? "white" : pal.text2)
                                     filled: cellI.modelData.isDir
                                 }
                                 Image {
@@ -449,7 +517,7 @@ Scope {
                                     anchors.horizontalCenter: parent.horizontalCenter; y: 66
                                     width: parent.width - 10; horizontalAlignment: Text.AlignHCenter
                                     text: cellI.modelData.name; elide: Text.ElideMiddle; maximumLineCount: 2; wrapMode: Text.Wrap
-                                    color: root.selected === cellI.modelData.path ? "white" : pal.text; font.family: root.fam; font.pixelSize: 11
+                                    color: root.isSelected(cellI.modelData.path) ? "white" : pal.text; font.family: root.fam; font.pixelSize: 11
                                 }
                                 Rectangle {
                                     visible: root.tags[cellI.modelData.path] !== undefined
@@ -461,8 +529,10 @@ Scope {
                                     anchors.fill: parent; hoverEnabled: true
                                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                                     onClicked: mouse => {
-                                        root.selected = cellI.modelData.path;
-                                        if (mouse.button === Qt.RightButton) ctx.show(cellI.modelData, mapToItem(content, mouse.x, mouse.y));
+                                        if (mouse.button === Qt.RightButton) {
+                                            if (!root.isSelected(cellI.modelData.path)) root.selectOne(cellI.modelData.path);
+                                            ctx.show(cellI.modelData, mapToItem(content, mouse.x, mouse.y));
+                                        } else root.click(cellI.modelData.path, mouse.modifiers);
                                     }
                                     onDoubleClicked: root.openEntry(cellI.modelData)
                                 }
@@ -480,7 +550,7 @@ Scope {
                     Rectangle { width: parent.width; height: 1; color: pal.sep }
                     Text {
                         anchors.centerIn: parent
-                        text: root.loading ? "Loading…" : (root.shown.length + (root.shown.length === 1 ? " item" : " items") + (root.selected !== "" ? ", 1 selected" : ""))
+                        text: root.loading ? "Loading…" : (root.shown.length + (root.shown.length === 1 ? " item" : " items") + (root.selection.length > 0 ? ", " + root.selection.length + " selected" : ""))
                         color: pal.text3; font.family: root.fam; font.pixelSize: 11
                     }
                 }
@@ -506,11 +576,12 @@ Scope {
                         id: ctxCol
                         y: 5; width: parent.width
                         Repeater {
-                            model: ["Open", "Quick Look", "Pin to Dock", "sep", "Copy Path", "Move to Trash"]
+                            model: ["Open", "Quick Look", "Merge Photos…", "Pin to Dock", "sep", "Copy Path", "Move to Trash"]
                             delegate: Item {
                                 required property string modelData
                                 width: parent.width; height: modelData === "sep" ? 7 : 26
-                                visible: modelData !== "Pin to Dock" || (ctx.item && ctx.item.isDir)
+                                visible: (modelData !== "Pin to Dock" || (ctx.item && ctx.item.isDir))
+                                       && (modelData !== "Merge Photos…" || root.selectedImages.length >= 2)
                                 Rectangle { visible: parent.modelData === "sep"; x: 10; width: parent.width - 20; height: 1; y: 3; color: pal.sep }
                                 Rectangle { visible: parent.modelData !== "sep" && cxMa.containsMouse; x: 5; width: parent.width - 10; height: 24; radius: 5; color: root.accent }
                                 Text {
@@ -530,6 +601,7 @@ Scope {
                                         if (!it) return;
                                         if (m === "Open") root.openEntry(it);
                                         else if (m === "Quick Look") ql.showFor(it);
+                                        else if (m === "Merge Photos…") root.mergeSheet = true;
                                         else if (m === "Pin to Dock") root.pinFolder(it.path);
                                         else if (m === "Copy Path") Quickshell.execDetached(["sh", "-c", "printf '%s' \"$1\" | wl-copy", "sh", it.path]);
                                         else if (m === "Move to Trash") root.trash(it.path);
@@ -572,6 +644,86 @@ Scope {
                     z: 40
                     visible: ctx.item !== null
                     onClicked: ctx.item = null
+                }
+
+                // ── Merge Photos sheet ──
+                Item {
+                    id: mergeUi
+                    anchors.fill: parent
+                    z: 70
+                    visible: opacity > 0.01
+                    opacity: root.mergeSheet ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                    Rectangle { anchors.fill: parent; color: Qt.rgba(0, 0, 0, 0.45); MouseArea { anchors.fill: parent; onClicked: root.mergeSheet = false } }
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 400; height: 212; radius: 14
+                        color: pal.dark ? "#232325" : "#FFFFFF"
+                        border.width: 1; border.color: pal.sep
+                        scale: root.mergeSheet ? 1 : 0.95
+                        Behavior on scale { NumberAnimation { duration: 320; easing.type: Easing.OutQuint } }
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter; y: 20
+                            text: "Merge " + root.selectedImages.length + " Photos"
+                            color: pal.text; font.family: root.fam; font.pixelSize: 15; font.weight: Font.DemiBold
+                        }
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter; y: 42
+                            text: "They are combined into one picture in this folder."
+                            color: pal.text3; font.family: root.fam; font.pixelSize: 12
+                        }
+                        Row {
+                            id: modeRow
+                            anchors.horizontalCenter: parent.horizontalCenter; y: 74
+                            spacing: 10
+                            Repeater {
+                                model: [{ id: "grid", n: "Grid" }, { id: "horizontal", n: "Side by Side" }, { id: "vertical", n: "Stacked" }]
+                                delegate: Rectangle {
+                                    id: modeCard
+                                    required property var modelData
+                                    readonly property bool sel: root.mergeMode === modelData.id
+                                    width: 118; height: 56; radius: 10
+                                    color: sel ? root.accent : pal.pill
+                                    Behavior on color { ColorAnimation { duration: 180 } }
+                                    Column {
+                                        anchors.centerIn: parent
+                                        spacing: 6
+                                        Row {
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            spacing: 2
+                                            Repeater {
+                                                model: modeCard.modelData.id === "vertical" ? 3 : 4
+                                                delegate: Rectangle {
+                                                    width: modeCard.modelData.id === "vertical" ? 22 : (modeCard.modelData.id === "grid" ? 9 : 5)
+                                                    height: modeCard.modelData.id === "vertical" ? 3 : (modeCard.modelData.id === "grid" ? 9 : 16)
+                                                    radius: 1.5
+                                                    color: Qt.rgba(1, 1, 1, 0.8)
+                                                }
+                                            }
+                                        }
+                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: modeCard.modelData.n; color: "white"; font.family: root.fam; font.pixelSize: 11 }
+                                    }
+                                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.mergeMode = modeCard.modelData.id }
+                                }
+                            }
+                        }
+                        Row {
+                            anchors.right: parent.right; anchors.rightMargin: 18
+                            anchors.bottom: parent.bottom; anchors.bottomMargin: 16
+                            spacing: 10
+                            Rectangle {
+                                width: 88; height: 30; radius: 8; color: pal.pill
+                                Text { anchors.centerIn: parent; text: "Cancel"; color: pal.text; font.family: root.fam; font.pixelSize: 12 }
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.mergeSheet = false }
+                            }
+                            Rectangle {
+                                width: 100; height: 30; radius: 8; color: root.accent
+                                opacity: root.merging ? 0.6 : 1
+                                Text { anchors.centerIn: parent; text: root.merging ? "Merging…" : "Merge"; color: "white"; font.family: root.fam; font.pixelSize: 12; font.weight: Font.DemiBold }
+                                MouseArea { anchors.fill: parent; enabled: !root.merging; cursorShape: Qt.PointingHandCursor; onClicked: root.mergePhotos() }
+                            }
+                        }
+                    }
                 }
 
                 // ── Quick Look ──

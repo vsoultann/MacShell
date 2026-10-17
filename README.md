@@ -14,6 +14,10 @@ Spotlight, desktop widgets, notifications and a full lock screen. This is a fork
 |---|---|
 | ![Lock screen](docs/lock-screen.gif) | ![Clock](docs/clock.png) |
 
+| Control Center: tiles stagger in, every module animated | A folder pinned to the Dock fans out |
+|---|---|
+| ![Control Center](docs/control-center.gif) | ![Dock stack](docs/dock-stack.gif) |
+
 ![Lock screen clock settings](docs/settings-clock.png)
 
 ## Performance
@@ -63,6 +67,18 @@ Settings live in the shell itself: Apple menu → **System Settings…** (Instal
 The original MacShell is the menu bar, the Dock and the Liquid Glass shader. Everything below is new in this fork:
 
 **New apps & screens**
+- **Finder** — sidebar with favourites and colour tags, list and icon views, coloured folders, search, new folder, trash,
+  Quick Look (pictures, text, PDF and video in our own player), **Merge Photos** (grid, side by side or stacked),
+  and pinning a folder to the Dock, where it fans its contents out in an arc.
+- **Photos** — your library grouped by day, folders as albums, favourites, a zoom slider and a full-screen viewer.
+- **AirDrop** — the radar, the devices around you, drag-to-send. It speaks LocalSend's protocol, so phones, tablets and
+  other desktops running LocalSend appear here and can receive from here.
+- **App Store** — Flathub, laid out like the real App Store: Discover, categories, screenshots, search and updates.
+- **Welcome** — runs once after installing: hello in thirty-odd languages, your name and picture, then the material
+  (Liquid Glass, Frosted, Blur, Opaque) with a live preview and an amount slider.
+- **Desktop icons** — everything in ~/Desktop, drag and snap to the grid, double-click to open, drop one onto another
+  to make a folder, rename and trash from the menu.
+- **Video player** — a QuickTime-looking player with a glass control bar, used by Quick Look and previews.
 - **Lock screen (MacLock)** — its own process (a shell crash can't take the lock down), PAM unlock, glass clock that stretches
   like iOS 26's, Caps Lock indicator, animated wallpapers, per-character password dots, and:
   - **Now Playing** bubble tinted from the album art, shuffle / repeat, synced lyrics (in the bubble or side by side),
@@ -87,6 +103,9 @@ The original MacShell is the menu bar, the Dock and the Liquid Glass shader. Eve
 - Pull an app icon onto the desktop to open it.
 
 **Everywhere**
+- **One material for the whole system** — Liquid Glass, Frosted, Blur or Opaque applies to the menu bar, Dock, Control Center,
+  notifications, Spotlight, the paste menu and the widgets at once, and refraction is **real-time**: whatever moves under a
+  panel is refracted as it moves.
 - **Notifications** — Liquid Glass banners that morph into Notification Center and disintegrate on Clear All.
 - **Animated wallpapers** that stay cheap: an optimized copy decoded on the iGPU, paused while windows cover the desktop or the screen is locked.
 - Blur + morph text transitions, auto contrast (panels switch text color only when it would be unreadable), Spotlight glow,

@@ -304,7 +304,9 @@ Scope {
     property bool ccMigGame: false            // one-time: add the Game Mode tile to an existing Control Center layout
     property bool barGlass: true              // the bar strip itself is Liquid Glass (needs barStyle "liquid")
     property real barBgOpacity: 0.10          // fill of the separate "macbarbg" layer (0 = layer hidden). Must stay above the layerrule's ignore_alpha (0.05) for Hyprland to blur it
-    property bool glassRealtime: false        // live-capture every window all the time; off by default now that popovers refract a screen snapshot       // keep every window capture live all the time (no wallpaper-first delay when a popover opens)
+    // Live refraction: whatever moves under a liquid panel or the Control Center is refracted as it moves. On by default;
+    // only the windows actually behind glass that is on screen are kept live, so the cost stays where you can see it.
+    property bool glassRealtime: true
     property bool glassDebug: false
     property string wallpaperPath: ""
     property bool use24h: true
@@ -3073,7 +3075,7 @@ Scope {
     }
     function resetSettings() {
         barEnabled = true;
-        darkMode = true; accent = "#0a84ff"; fontFamily = "Inter Variable"; glassOpacity = 0.42; glassBlur = 5; barBgOpacity = 0.10; glassRealtime = false;
+        darkMode = true; accent = "#0a84ff"; fontFamily = "Inter Variable"; glassOpacity = 0.42; glassBlur = 5; barBgOpacity = 0.10; glassRealtime = true;
         barStyle = "liquid"; use24h = true; showDate = true; showSeconds = false; showBatteryPercent = true;
         showTray = true; showSearch = true;
         spotlightEnabled = true; ccEnabled = true; notificationsEnabled = true; clockAppEnabled = true; ccStyle = "tiles"; ccAnimate = true; material = "liquid"; tlAlwaysSymbols = false; tlColorOnHover = false;
@@ -4148,11 +4150,29 @@ Scope {
                                     // hidden right now (Spotlight, switcher, ...) are only kept warm with slow single captures.
                                     // While recording only the windows behind visible glass stay live (so the glass is real-time exactly where you see it,
                                     // e.g. a video behind the Control Center), every other window sits out.
-                                    live: !gw.gone && !root.captureHeld && bd.hostShown && (!sv.hush || gw.onGlass) && (root.glassRealtime || ui.anyVisible || levelOsd.visible || spotWin.openish || swWin.visible || wpWin.visible)
+                                    // Real-time only pays off for the windows actually behind glass that is on screen. Keeping every
+                                    // window live was what made the refraction lag and tear: the capture arrived a frame or two after
+                                    // the window had already moved, so the glass showed the old frame at the new position.
+                                    live: !gw.gone && !root.captureHeld && bd.hostShown && (!sv.hush || gw.onGlass)
+                                          && ((root.glassRealtime && gw.onGlass) || ui.anyVisible || levelOsd.visible || spotWin.openish || swWin.visible || wpWin.visible)
                                     onCaptureSourceChanged: {
                                         // a brand-new capture grabs its first frame immediately instead of waiting for the timer
                                         // (a short delay: asking before the capture context exists only logged "no recording context is ready")
                                         if (captureSource !== null && !live && !sv.hush && !root.captureHeld) firstShot.restart();
+                                    }
+                                    // a window that just moved or resized grabs a frame at its new size straight away,
+                                    // so the glass never refracts the previous frame stretched over the new geometry
+                                    Connections {
+                                        target: gw
+                                        function onWxChanged() { freshShot.restart(); }
+                                        function onWyChanged() { freshShot.restart(); }
+                                        function onWwChanged() { freshShot.restart(); }
+                                        function onWhChanged() { freshShot.restart(); }
+                                    }
+                                    Timer {
+                                        id: freshShot
+                                        interval: 30
+                                        onTriggered: { if (sv.captureSource !== null && !sv.live && !sv.hush && !root.captureHeld && typeof sv.captureFrame === "function") sv.captureFrame(); }
                                     }
                                     Timer {
                                         id: firstShot

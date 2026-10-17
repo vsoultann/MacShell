@@ -31,7 +31,9 @@ Scope {
 
     readonly property var hellos: [
         "hello", "مرحبا", "bonjour", "hola", "你好", "こんにちは", "안녕하세요", "olá", "привет",
-        "ciao", "hallo", "नमस्ते", "merhaba", "שלום", "cześć", "hej", "xin chào", "สวัสดี"
+        "ciao", "hallo", "नमस्ते", "merhaba", "שלום", "cześć", "hej", "xin chào", "สวัสดี",
+        "γεια", "ahoj", "salam", "কি খবর", "สบายดี", "سلام", "habari", "halo", "こんにちは",
+        "szia", "tere", "sveiki", "bună", "zdravo", "selam", "hei", "aloha"
     ]
     readonly property var avatars: [
         { c1: "#FF9F0A", c2: "#FF375F" }, { c1: "#0A84FF", c2: "#5E5CE6" }, { c1: "#30D158", c2: "#0A84FF" },
@@ -146,7 +148,8 @@ Scope {
                     anchors.centerIn: parent
                     text: root.hellos[Math.min(root.helloIdx, root.hellos.length - 1)]
                     color: "white"
-                    font.family: root.fam; font.pixelSize: Math.round(w.height * 0.11); font.weight: Font.Light
+                    font.family: root.fam + ", Noto Sans, Noto Sans Arabic, Noto Sans Hebrew, Noto Sans Devanagari, Noto Sans CJK SC, Noto Sans Thai, Noto Sans Bengali"
+                    font.pixelSize: Math.round(w.height * 0.11); font.weight: Font.Light
                     duration: 620
                     blurMax: 60
                 }
