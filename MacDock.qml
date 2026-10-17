@@ -177,7 +177,7 @@ Scope {
         "org.gnome.Nautilus", "org.kde.dolphin", "thunar",
         "firefox", "zen", "chromium", "google-chrome",
         "kitty", "com.mitchellh.ghostty", "Alacritty", "foot",
-        "code", "discord", "spotify", "steam", "obsidian"
+        "code", "discord", "macshell-applemusic", "spotify", "steam", "obsidian"
     ]   // used until you change pins from the dock; unknown ids are skipped
     property var pinned: defaultPinned
     // ──────────────────────────────────
@@ -876,13 +876,13 @@ Scope {
                             delegate: Rectangle {
                                 required property var modelData
                                 width: 14; height: 14; radius: 7
-                                color: (modelData.on && (prefsWindow.active || lightsMa.containsMouse))
+                                color: (modelData.on && ((root.bar && root.bar.tlColorOnHover) ? lightsMa.containsMouse : (prefsWindow.active || lightsMa.containsMouse)))
                                        ? modelData.c : pal.lightOff
                                 border.width: 1
                                 border.color: Qt.rgba(0, 0, 0, 0.14)
                                 Text {
                                     anchors.centerIn: parent
-                                    visible: lightsMa.containsMouse && parent.modelData.on
+                                    visible: parent.modelData.on && (lightsMa.containsMouse || (root.bar && root.bar.tlAlwaysSymbols))
                                     text: parent.modelData.g
                                     font.pixelSize: 12
                                     font.bold: true
@@ -2473,6 +2473,18 @@ Scope {
                 SLabel { t: pal; header: true; text: "Windows" }
                 SCard {
                     t: pal
+                    SRow {
+                        t: pal
+                        title: "Always show window button symbols"
+                        subtitle: "The × − ↗ marks stay visible instead of appearing when you point at them"
+                        SSwitch { t: pal; checked: root.bar ? root.bar.tlAlwaysSymbols : false; onToggled: v => { if (root.bar) root.bar.tlAlwaysSymbols = v; } }
+                    }
+                    SRow {
+                        t: pal
+                        title: "Colour the window buttons only on hover"
+                        subtitle: "They stay grey until you point at them, even in the active window"
+                        SSwitch { t: pal; checked: root.bar ? root.bar.tlColorOnHover : false; onToggled: v => { if (root.bar) root.bar.tlColorOnHover = v; } }
+                    }
                     SRow {
                         t: pal
                         title: "Open windows floating"

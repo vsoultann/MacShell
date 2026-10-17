@@ -279,9 +279,9 @@ Scope {
                             delegate: Rectangle {
                                 required property var modelData
                                 width: 14; height: 14; radius: 7
-                                color: (win.active || tlMa.containsMouse) ? modelData.c : pal.lightOff
+                                color: ((root.bar && root.bar.tlColorOnHover) ? tlMa.containsMouse : (win.active || tlMa.containsMouse)) ? modelData.c : pal.lightOff
                                 border.width: 1; border.color: Qt.rgba(0, 0, 0, 0.14)
-                                Text { anchors.centerIn: parent; visible: tlMa.containsMouse; text: parent.modelData.g; font.pixelSize: 11; font.bold: true; color: Qt.rgba(0, 0, 0, 0.55) }
+                                Text { anchors.centerIn: parent; visible: tlMa.containsMouse || (root.bar && root.bar.tlAlwaysSymbols); text: parent.modelData.g; font.pixelSize: 11; font.bold: true; color: Qt.rgba(0, 0, 0, 0.55) }
                             }
                         }
                     }

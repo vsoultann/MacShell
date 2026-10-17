@@ -11,6 +11,7 @@
 #   menubar     the menu bar          spotlight   Spotlight          controlcenter  Control Center
 #   notifications  banners + Notification Center                     dock           the Dock
 #   widgets     desktop widgets       clock       the Clock app
+#   applemusic  Apple Music (Cider, an Apple Music client by the Cider Collective)
 #   (parts you leave out are switched off, so only what you picked runs)
 #   lock        the lock screen (MacLock)
 #   config      the Hyprland session config + helper scripts (wallpapers, Game Mode, lock); your custom/ files are kept
@@ -37,11 +38,12 @@ QS="$HOME/.config/quickshell"
 SESS="$HOME/.config/hypr-macshell"
 SHARE="$HOME/.local/share/macshell"
 YES=0
-ORDER=(deps shell menubar spotlight controlcenter notifications dock widgets clock lock config session existing icons fonts apply wallpapers sounds)
+ORDER=(deps shell applemusic menubar spotlight controlcenter notifications dock widgets clock lock config session existing icons fonts apply wallpapers sounds)
 # the parts of the shell you can pick individually (one set of files, each part switched on or off)
 PARTS=(menubar spotlight controlcenter notifications dock widgets clock)
 declare -A DESC=(
     [shell]="Shell files + System Settings (needed by every part below)"
+    [applemusic]="Apple Music (Cider, by the Cider Collective)"
     [menubar]="Menu bar (Apple menu, app menus, workspaces, tray, clock)"
     [spotlight]="Spotlight (search, clipboard, emoji)"
     [controlcenter]="Control Center"
@@ -148,6 +150,15 @@ do_notifications() { say "Notifications: on";  set_part notifications true; }
 do_dock()          { say "Dock: on";           set_part dock true; }
 do_widgets()       { say "Desktop widgets: on"; set_part widgets true; }
 do_clock()         { say "Clock app: on";      set_part clock true; }
+
+# Apple Music: Cider, an Apple Music client for Linux by the Cider Collective (cider.sh).
+# MacShell only ships a launcher that renames it; all credit stays with its authors.
+do_applemusic() {
+    say "Installing Apple Music (Cider)"
+    have flatpak || { warn "flatpak is missing: ./install.sh --deps first"; return 0; }
+    flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo >/dev/null 2>&1
+    flatpak install --user -y --noninteractive flathub sh.cider.Cider || warn "couldn't install Cider"
+}
 
 do_lock() {
     say "Installing the lock screen"
