@@ -2242,6 +2242,7 @@ Scope {
         function accent(c: string): void { root.accent = c; }
         function tint(v: real): void { root.glassOpacity = Math.max(0, Math.min(1, v)); root.materialTouched(); }
         function tintcolor(k: string): void { root.tintAccent = (k === "accent"); root.materialTouched(); }
+        function realtime(on: bool): void { root.glassRealtime = on; }
     }
     IpcHandler {
         target: "spotlight"
@@ -4133,7 +4134,7 @@ Scope {
                     x: 0; y: 0
                     width: win.modelData.width; height: win.modelData.height
                     opacity: 0                      // only ever captured by the glass, never drawn itself
-                    captureSource: (root.wantBackdrop && !root.captureQuiet && !root.glassRealtime) ? win.modelData : null
+                    captureSource: (root.wantBackdrop && !root.captureQuiet) ? win.modelData : null
                     live: false
                     paintCursor: false
                     property real takenAt: 0
@@ -4162,20 +4163,25 @@ Scope {
                 // moving under a panel moves under the glass too. The still whole-screen snapshot is the cheap path: it also
                 // catches other layers, but it is frozen for as long as the panel is open — which is what "no real-time
                 // Liquid Glass" looked like. Screen capture can't be used live here: it would contain the glass itself.
-                readonly property Item glassSrc: (!root.glassRealtime && snapFresh && screenSnap.hasContent) ? screenSnap : glassBackdrop.item
+                // Is any glass actually on screen right now? Only then is the live backdrop worth rendering — keeping it
+                // alive while nothing is open cost a fifth of a core for pixels nobody saw.
+                readonly property bool glassOnScreen: anyVisible || toastsShown || levelOsd.visible || spotWin.openish || swWin.visible || wpWin.visible
+                readonly property Item glassSrc: (root.glassRealtime && glassOnScreen) ? glassBackdrop.item
+                                               : ((snapFresh && screenSnap.hasContent) ? screenSnap : glassBackdrop.item)
                 HoverHandler {
                     id: barHover
-                    onHoveredChanged: if (hovered && ui.pop === "" && !root.glassRealtime) screenSnap.grab()
+                    onHoveredChanged: if (hovered && ui.pop === "") screenSnap.grab()
                 }
                 // refresh while the pointer rests on the bar with nothing open; a snapshot is "fresh" for 3 s
-                Timer { interval: 600; repeat: true; running: barHover.hovered && ui.pop === "" && !root.glassRealtime; onTriggered: screenSnap.grab() }
+                Timer { interval: 600; repeat: true; running: barHover.hovered && ui.pop === ""; onTriggered: screenSnap.grab() }
                 Timer { interval: 250; repeat: true; running: true; onTriggered: ui.snapFresh = (Date.now() - screenSnap.takenAt) < 3000 || (ui.pop !== "" && ui.snapFresh) }
 
                 // keeps the (otherwise unseen) backdrop rendering so its window captures stay valid; draws one 1%-opaque pixel
                 ShaderEffectSource {
                     sourceItem: glassBackdrop.item
                     hideSource: true
-                    live: true
+                    // only while glass is on screen: this one pixel is what keeps the whole backdrop rendering
+                    live: ui.glassOnScreen
                     width: 1; height: 1
                     opacity: 0.01
                     sourceRect: Qt.rect(0, 0, 1, 1)

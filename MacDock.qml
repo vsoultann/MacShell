@@ -1615,7 +1615,7 @@ Scope {
                     SRow {
                         t: pal
                         title: "Real-time glass"
-                        subtitle: "Keep window captures live so popovers, Spotlight and the Dock open on current pixels. Turn off to save GPU."
+                        subtitle: "Whatever moves under a panel moves under the glass too \u2014 live, not a snapshot. Costs a few percent of a core while the Dock or a panel is on screen; turn it off for the cheaper snapshot."
                         SSwitch {
                             t: pal
                             checked: root.bar ? root.bar.glassRealtime : true
@@ -5270,13 +5270,14 @@ Scope {
                                 required property bool gone      // window closed: capture is released first, the item is swept shortly after
                                 x: wx; y: wy; width: ww; height: wh; z: wz
                                 readonly property var tl: { if (!root.hub || gone) return null; var t = root.hub.tlTick; return root.hub.tlFor(addr); }
-                                // only keep capturing windows that actually reach the Dock (+ refraction margin)
-                                // real-time: EVERY visible window stays captured (also while the Dock is tucked and for windows far from the Dock), so a window
-                                // dragged over the Dock or a revealed Dock never starts from the bare wallpaper
-                                readonly property bool nearNow: root.glassRT || (!ui.tucked
+                                // Only the windows that actually reach the Dock (+ refraction margin) are captured.
+                                // Real-time keeps them live even while the Dock is tucked away, so a revealed Dock never
+                                // starts from the bare wallpaper — but a window nowhere near the Dock is never copied:
+                                // capturing every window all the time cost about a fifth of a core.
+                                readonly property bool nearNow: (root.glassRT || !ui.tucked)
                                     && x < dock.x + dock.width + 48 && x + width > dock.x - 48
                                     && y < dock.y + bd.height - ui.height + dock.height + 48
-                                    && y + height > dock.y + bd.height - ui.height - 48)
+                                    && y + height > dock.y + bd.height - ui.height - 48
                                 // a capture is only torn down 2.5 s after the window left the dock area: creating / destroying
                                 // live window captures every time a window brushes past the dock is what the compositor can choke on
                                 property bool near: false
@@ -5293,8 +5294,16 @@ Scope {
                                         // copying every frame of a busy window (a terminal, a video) cost several % CPU
                                         live: false
                                         readonly property bool wantFrames: !root.glassHold && (root.glassRT || !ui.tucked)
+                                        // At the main display's refresh rate while the Dock is on screen — that is what makes the
+                                        // refraction move with the window. Tucked away there is nothing to refract, so it idles
+                                        // at 2 fps instead of burning a core on captures nobody sees.
+                                        readonly property bool onScreen: !ui.tucked || hh.hovered || ui.menuOpen || ui.stackItem !== null
                                         Timer {
-                                            interval: root.frameMs; repeat: true
+                                            // the main display's refresh rate while you are at the Dock, a calmer 15 fps when
+                                            // it is just sitting there, and 2 fps while it is tucked away
+                                            interval: !sc.onScreen ? 500
+                                                      : ((hh.hovered || ui.menuOpen || ui.stackItem !== null) ? root.frameMs : Math.max(root.frameMs, 66))
+                                            repeat: true
                                             running: sc.wantFrames && sc.captureSource !== null
                                             onTriggered: if (typeof sc.captureFrame === "function") sc.captureFrame()
                                         }
