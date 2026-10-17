@@ -155,6 +155,73 @@ Scope {
     property real glassRim: 0.45
     property real glassGrain: 0.015
     property string userDisplayName: ""    // what the welcome screen was told to call you
+    // Control Center: battery, Internet Sharing, screen mirroring and the keyboard backlight
+    property string powerProfile: "balanced"
+    property bool hotspotOn: false
+    property bool localsendRunning: false
+    property int keyLight: 0
+    property int keyLightMax: 0
+    property bool mirrorOn: false
+    function setPowerProfile(p) {
+        powerProfile = p;
+        Quickshell.execDetached(["sh", "-c", "powerprofilesctl set \"$1\" 2>/dev/null", "sh", p]);
+    }
+    function toggleLowPower() { setPowerProfile(powerProfile === "power-saver" ? "balanced" : "power-saver"); }
+    function toggleHotspot() {
+        hotspotOn = !hotspotOn;
+        Quickshell.execDetached(["sh", "-c", hotspotOn
+            ? "nmcli device wifi hotspot con-name MacShell-Hotspot ssid MacShell password macshell123 2>/dev/null"
+            // whatever the hotspot connection ended up being called, that is the one to bring down
+            : "nmcli -t -f NAME connection show --active | grep -i hotspot | while read -r n; do nmcli connection down \"$n\"; done"]);
+    }
+    function toggleAirDrop() {
+        // AirDrop rides on LocalSend: same idea, same protocol on every platform
+        Quickshell.execDetached(["sh", "-c",
+            "if pgrep -x localsend_app >/dev/null; then pkill -x localsend_app; "
+            + "elif command -v localsend_app >/dev/null; then setsid localsend_app >/dev/null 2>&1 & "
+            + "elif flatpak info org.localsend.localsend_app >/dev/null 2>&1; then setsid flatpak run org.localsend.localsend_app >/dev/null 2>&1 & "
+            + "else notify-send 'AirDrop' 'Install LocalSend to send and receive files.'; fi"]);
+        ccPoll.restart();
+    }
+    function setKeyLight(v) {
+        keyLight = Math.max(0, Math.min(keyLightMax, Math.round(v)));
+        Quickshell.execDetached(["sh", "-c", "brightnessctl -d \"$(ls /sys/class/leds | grep -i kbd_backlight | head -1)\" set \"$1\" >/dev/null 2>&1", "sh", String(keyLight)]);
+    }
+    function toggleMirror() {
+        // mirror every other monitor onto the focused one, or put them back side by side
+        mirrorOn = !mirrorOn;
+        Quickshell.execDetached(["sh", "-c", mirrorOn
+            ? "m=$(hyprctl activeworkspace -j | " + "jq -r .monitor); for o in $(hyprctl monitors -j | jq -r '.[].name'); do [ \"$o\" = \"$m\" ] || hyprctl keyword monitor \"$o,preferred,auto,1,mirror,$m\"; done"
+            : "hyprctl reload"]);
+    }
+    Process {
+        id: ccStateProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var l = text.split("\n");
+                root.powerProfile = (l[0] || "balanced").trim() || "balanced";
+                root.hotspotOn = (l[1] || "").trim() === "yes";
+                root.localsendRunning = (l[2] || "").trim() === "yes";
+                root.keyLight = parseInt((l[3] || "0").trim()) || 0;
+                root.keyLightMax = parseInt((l[4] || "0").trim()) || 0;
+            }
+        }
+    }
+    Timer {
+        id: ccPoll
+        interval: 5000; repeat: true; running: root.ccOpen !== undefined ? true : true
+        triggeredOnStart: true
+        onTriggered: {
+            if (ccStateProc.running) return;
+            ccStateProc.command = ["sh", "-c",
+                "powerprofilesctl get 2>/dev/null || echo balanced; "
+                + "nmcli -t -f NAME connection show --active 2>/dev/null | grep -qi hotspot && echo yes || echo no; "
+                + "pgrep -x localsend_app >/dev/null && echo yes || echo no; "
+                + "d=$(ls /sys/class/leds 2>/dev/null | grep -i kbd_backlight | head -1); "
+                + "if [ -n \"$d\" ]; then cat /sys/class/leds/$d/brightness; cat /sys/class/leds/$d/max_brightness; else echo 0; echo 0; fi"];
+            ccStateProc.running = true;
+        }
+    }
     property real glassLiquid: 1.0
     property real glassBlur: 5
     // ── Keyboard / Mouse / Trackpad (Settings): applied live to Hyprland with `hyprctl eval`, remembered here ──
@@ -269,6 +336,7 @@ Scope {
     property int nightTemp: 4000
     // Control Center: ids of the enabled controls, in order (edit with Control Center → Edit Controls)
     property var ccControls: ["wifi", "nowplaying", "bluetooth", "airplane", "focus", "record", "nightshift", "keepawake", "display", "sound"]
+    property bool ccMigTahoe: false            // one-time: add battery, Internet Sharing, AirDrop, mirroring, Lock Screen and Sleep
     property bool ccMigRec: false              // one-time: add the Screen Recording tile to an existing Control Center layout
     property bool recording: false
     property int recSecs: 0
@@ -287,7 +355,7 @@ Scope {
         "barStyle", "barGlass", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "barBgOpacity", "glassRealtime", "glassDebug", "wallpaperPath", "use24h", "showDate",
         "showSeconds", "showBatteryPercent", "showTray", "showSearch",
         "spotlightEnabled", "ccEnabled", "notificationsEnabled", "clockAppEnabled", "ccStyle", "userDisplayName", "ccAnimate", "material", "tlAlwaysSymbols", "tlColorOnHover", "barLogoMode", "barCustomLogoPath", "barWidgets", "weekStartsMonday", "terminal", "launcher",
-        "filesCmd", "clipboardCmd", "appUsage", "clipHistory", "clipAutoPaste", "emojiRecent", "screenshotDir", "screenshotSave", "screenshotClipboard", "screenshotNotify", "nightTemp", "ccControls", "ccMigRec", "wallpaperDir", "wallpaperFavs", "wallpaperCmd", "wallpaperVideo", "uiSounds", "gamingMode", "gamingAuto", "ccMigGame", "lockArtBackground",
+        "filesCmd", "clipboardCmd", "appUsage", "clipHistory", "clipAutoPaste", "emojiRecent", "screenshotDir", "screenshotSave", "screenshotClipboard", "screenshotNotify", "nightTemp", "ccControls", "ccMigRec", "wallpaperDir", "wallpaperFavs", "wallpaperCmd", "wallpaperVideo", "uiSounds", "gamingMode", "gamingAuto", "ccMigGame", "ccMigTahoe", "lockArtBackground",
         "lockClockStyle", "switcherStyle", "lockClockFont", "lockClockWeight", "lockClockMaterial", "lockClockIntensity", "lockClockTint", "lockClockTall", "lockClockDate", "autoContrast", "wallpaperAppearance", "wpPairLight", "wpPairDark",
         "notifDnd", "dnd", "nightOn", "keepAwake",
         "kbRepeatRate", "kbRepeatDelay", "mouseSens", "mouseNatural", "tpNatural", "tpTap", "tpDwt", "tpScroll"]
@@ -332,9 +400,17 @@ Scope {
         { id: "record",     label: "Screen Recording", glyph: "record",  w: 2, h: 1 },
         { id: "nowplaying", label: "Now Playing",   glyph: "note",       w: 2, h: 2 },
         { id: "display",    label: "Display",       glyph: "sun",        w: 4, h: 1 },
-        { id: "sound",      label: "Sound",         glyph: "speaker",    w: 4, h: 1 }
+        { id: "sound",      label: "Sound",         glyph: "speaker",    w: 4, h: 1 },
+        { id: "battery",    label: "Battery",       glyph: "battery",    w: 2, h: 1 },
+        { id: "hotspot",    label: "Internet Sharing", glyph: "hotspot", w: 2, h: 1 },
+        { id: "airdrop",    label: "AirDrop",       glyph: "airdrop",    w: 1, h: 1 },
+        { id: "lockscreen", label: "Lock Screen",   glyph: "lock",       w: 1, h: 1 },
+        { id: "sleep",      label: "Sleep",         glyph: "power",      w: 1, h: 1 },
+        { id: "mirror",     label: "Screen Mirroring", glyph: "mirror",  w: 2, h: 1 },
+        { id: "keylight",   label: "Keyboard Brightness", glyph: "keyboard", w: 4, h: 1 }
     ]
-    readonly property var ccDefault: ["wifi", "nowplaying", "bluetooth", "airplane", "focus", "record", "nightshift", "keepawake", "display", "sound"]
+    readonly property var ccDefault: ["wifi", "nowplaying", "bluetooth", "airplane", "focus", "record", "nightshift", "keepawake",
+                                      "battery", "hotspot", "airdrop", "mirror", "lockscreen", "sleep", "display", "sound"]
     function ccDef(id) {
         for (var i = 0; i < ccCatalog.length; i++) if (ccCatalog[i].id === id) return ccCatalog[i];
         return null;
@@ -649,6 +725,29 @@ Scope {
                 poly([2.2, 7, 5.4, 7, 9.2, 3.6, 9.2, 14.4, 5.4, 11, 2.2, 11], true);
                 ctx.beginPath(); ctx.arc(9.2, 9, 4.4, -0.62, 0.62); ctx.stroke();
                 ctx.beginPath(); ctx.arc(9.2, 9, 7.4, -0.62, 0.62); ctx.stroke();
+            } else if (k === "battery") {
+                rrect(1.6, 5.4, 12.4, 7.2, 2.2); ctx.stroke();
+                rrect(15.0, 7.6, 1.6, 2.8, 0.7); ctx.fill();
+                // the fill shows the charge, and goes yellow in Low Power Mode
+                var bw = Math.max(1.2, 10.4 * Math.max(0, Math.min(1, gl.level / 100)));
+                rrect(2.8, 6.6, bw, 4.8, 1.2); ctx.fill();
+            } else if (k === "hotspot") {
+                circ(9, 11.6, 1.9); ctx.fill();
+                ctx.beginPath(); ctx.arc(9, 11.6, 4.4, Math.PI * 1.25, Math.PI * 1.75); ctx.stroke();
+                ctx.beginPath(); ctx.arc(9, 11.6, 7.2, Math.PI * 1.25, Math.PI * 1.75); ctx.stroke();
+            } else if (k === "airdrop") {
+                // the AirDrop mark: an arc, a smaller arc, and the arrow in the middle
+                ctx.beginPath(); ctx.arc(9, 9.6, 6.6, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
+                ctx.beginPath(); ctx.arc(9, 9.6, 3.6, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
+                line(9, 15.2, 9, 8.6);
+                line(6.2, 11.2, 9, 8.3); line(9, 8.3, 11.8, 11.2);
+            } else if (k === "mirror") {
+                rrect(1.4, 3.6, 9.2, 7.4, 1.6); ctx.stroke();
+                rrect(7.4, 7.6, 9.2, 7.4, 1.6); ctx.stroke();
+            } else if (k === "keyboard") {
+                rrect(1.4, 4.4, 15.2, 9.6, 2); ctx.stroke();
+                for (var ky = 0; ky < 2; ky++) for (var kx = 0; kx < 4; kx++) { rrect(3.4 + kx * 2.9, 6.4 + ky * 2.6, 1.6, 1.6, 0.5); ctx.fill(); }
+                rrect(6.2, 11.6, 5.6, 1.4, 0.7); ctx.fill();
             } else if (k === "bolt") {
                 poly([10, 1.5, 4.5, 10, 8.4, 10, 7.6, 16.5, 13.5, 7.6, 9.6, 7.6], true);
             } else if (k === "appstore") {
@@ -3019,11 +3118,18 @@ Scope {
                 var cl = root.ccControls.slice();
                 if (cl.indexOf("record") < 0) { var fi = cl.indexOf("focus"); cl.splice(fi >= 0 ? fi + 1 : cl.length, 0, "record"); root.ccControls = cl; }
             }
+            if (!root.ccMigTahoe) {
+                root.ccMigTahoe = true;
+                var ct = root.ccControls.slice();
+                var add = ["battery", "hotspot", "airdrop", "mirror", "lockscreen", "sleep"];
+                for (var ai = 0; ai < add.length; ai++) if (ct.indexOf(add[ai]) < 0) ct.push(add[ai]);
+                root.ccControls = ct;
+            }
             root.settingsReady = true;
             inputApplyT.restart();
             if (root.barStyle === "liquid") root.startGlass();
         }
-        onLoadFailed: { root.ccMigRec = true; root.settingsReady = true; if (root.barStyle === "liquid") root.startGlass(); }
+        onLoadFailed: { root.ccMigRec = true; root.ccMigTahoe = true; root.settingsReady = true; if (root.barStyle === "liquid") root.startGlass(); }
     }
 
     // ═════════════ LIQUID GLASS BACKEND (same pipeline as macdock) ═════════════
@@ -6000,6 +6106,13 @@ Scope {
                         case "sound": return cSound;
                         case "record": return cRecord;
                         case "gaming": return cGaming;
+                        case "battery": return cBattery;
+                        case "hotspot": return cHotspot;
+                        case "airdrop": return cAirDrop;
+                        case "lockscreen": return cLockScreen;
+                        case "sleep": return cSleep;
+                        case "mirror": return cMirror;
+                        case "keylight": return cKeyLight;
                         }
                         return null;
                     }
@@ -6135,6 +6248,123 @@ Scope {
                                 t: pal; gx: ccg; anchors.centerIn: parent
                                 kind: "coffee"; on: root.keepAwake
                                 onClicked: root.keepAwake = !root.keepAwake
+                            }
+                        }
+                    }
+                    Component {
+                        id: cBattery
+                        CCTile {
+                            t: pal; gx: ccg
+                            CCBtn {
+                                t: pal; gx: ccg
+                                x: 12; anchors.verticalCenter: parent.verticalCenter
+                                kind: "battery"; on: root.powerProfile === "power-saver"; onTint: "#FFD60A"
+                                onClicked: root.toggleLowPower()
+                            }
+                            Column {
+                                x: 62; anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width - 72
+                                spacing: 1
+                                Text { width: parent.width; wrapMode: Text.WordWrap; maximumLineCount: 2; lineHeight: 0.92; text: "Battery"; color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                MorphText {
+                                    animateWidth: false; duration: 420; width: parent.width; elide: Text.ElideRight
+                                    text: root.powerProfile === "power-saver" ? "Low Power Mode" : (root.powerProfile === "performance" ? "High Power" : "Balanced")
+                                    color: root.powerProfile === "power-saver" ? "#FFD60A" : pal.fg2; font.family: pal.fam; font.pixelSize: 12
+                                }
+                            }
+                        }
+                    }
+                    Component {
+                        id: cHotspot
+                        CCTile {
+                            t: pal; gx: ccg
+                            CCBtn {
+                                t: pal; gx: ccg
+                                x: 12; anchors.verticalCenter: parent.verticalCenter
+                                kind: "hotspot"; on: root.hotspotOn
+                                onClicked: root.toggleHotspot()
+                            }
+                            Column {
+                                x: 62; anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width - 72
+                                spacing: 1
+                                Text { width: parent.width; wrapMode: Text.WordWrap; maximumLineCount: 2; lineHeight: 0.92; text: "Internet Sharing"; color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                MorphText { animateWidth: false; duration: 420; width: parent.width; elide: Text.ElideRight; text: root.hotspotOn ? "On" : "Off"
+                                       color: root.hotspotOn ? root.accent : pal.fg2; font.family: pal.fam; font.pixelSize: 12 }
+                            }
+                        }
+                    }
+                    Component {
+                        id: cAirDrop
+                        CCTile {
+                            t: pal; gx: ccg
+                            CCBtn {
+                                t: pal; gx: ccg; anchors.centerIn: parent
+                                kind: "airdrop"; on: root.localsendRunning
+                                onClicked: root.toggleAirDrop()
+                            }
+                        }
+                    }
+                    Component {
+                        id: cLockScreen
+                        CCTile {
+                            t: pal; gx: ccg
+                            CCBtn {
+                                t: pal; gx: ccg; anchors.centerIn: parent
+                                kind: "lock"; on: false
+                                onClicked: { root.closeCC(); Quickshell.execDetached(["sh", "-c", "loginctl lock-session 2>/dev/null || qs -c MacLock ipc call lock lock"]); }
+                            }
+                        }
+                    }
+                    Component {
+                        id: cSleep
+                        CCTile {
+                            t: pal; gx: ccg
+                            CCBtn {
+                                t: pal; gx: ccg; anchors.centerIn: parent
+                                kind: "power"; on: false
+                                onClicked: { root.closeCC(); Quickshell.execDetached(["systemctl", "suspend"]); }
+                            }
+                        }
+                    }
+                    Component {
+                        id: cMirror
+                        CCTile {
+                            t: pal; gx: ccg
+                            CCBtn {
+                                t: pal; gx: ccg
+                                x: 12; anchors.verticalCenter: parent.verticalCenter
+                                kind: "mirror"; on: root.mirrorOn
+                                onClicked: root.toggleMirror()
+                            }
+                            Column {
+                                x: 62; anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width - 72
+                                spacing: 1
+                                Text { width: parent.width; wrapMode: Text.WordWrap; maximumLineCount: 2; lineHeight: 0.92; text: "Screen Mirroring"; color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                MorphText { animateWidth: false; duration: 420; width: parent.width; elide: Text.ElideRight; text: root.mirrorOn ? "Mirroring" : "Off"
+                                       color: root.mirrorOn ? root.accent : pal.fg2; font.family: pal.fam; font.pixelSize: 12 }
+                            }
+                        }
+                    }
+                    Component {
+                        id: cKeyLight
+                        CCTile {
+                            t: pal; gx: ccg
+                            Column {
+                                anchors.fill: parent; anchors.margins: 12
+                                spacing: 6
+                                Text { text: "Keyboard Brightness"; color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                CCSlider {
+                                    t: pal
+                                    width: parent.width
+                                    enabled: root.keyLightMax > 0
+                                    opacity: root.keyLightMax > 0 ? 1 : 0.4
+                                    value: root.keyLightMax > 0 ? root.keyLight / root.keyLightMax : 0
+                                    leftKind: "keyboard"; leftLevel: 1
+                                    rightKind: "keyboard"; rightLevel: 3
+                                    onMoved: v => root.setKeyLight(v * root.keyLightMax)
+                                }
                             }
                         }
                     }
