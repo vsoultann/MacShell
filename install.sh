@@ -209,6 +209,11 @@ do_config() {
     # our own helpers inside custom/ are always refreshed (they are ours, not your overrides)
     mkdir -p "$SESS/custom/scripts"
     rsync -a "$REPO/session/custom/scripts"/ "$SESS/custom/scripts"/
+    # ii's shell binds fall back to a fuzzel menu when `qs -c $qsConfig ipc call TEST_ALIVE` fails, which fired a
+    # second menu on top of ours for SUPER + V and friends. Pointing qsConfig at MacShell makes that probe succeed.
+    if ! grep -q 'qsConfig' "$SESS/custom/variables.lua" 2>/dev/null; then
+        printf '%s\n' 'hl.env("qsConfig", "MacShell")' >> "$SESS/custom/variables.lua"
+    fi
     # SUPER + E opens MacShell's Finder unless you already pointed fileManager somewhere else
     if ! grep -q '^fileManager' "$SESS/custom/variables.lua" 2>/dev/null; then
         printf '%s\n' '-- MacShell: SUPER + E opens our Finder, not Dolphin.' \

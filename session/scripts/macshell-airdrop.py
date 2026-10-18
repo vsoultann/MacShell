@@ -135,10 +135,12 @@ def _post(url, obj, timeout=10):
 
 def send(ip, port, paths):
     files = {}
+    by_id = {}                      # the receiver answers with its own ids, so keep the mapping
     for i, p in enumerate(paths):
         if not os.path.isfile(p):
             continue
         fid = str(i)
+        by_id[fid] = p
         files[fid] = {
             "id": fid,
             "fileName": os.path.basename(p),
@@ -163,9 +165,14 @@ def send(ip, port, paths):
 
     session = res.get("sessionId", "")
     tokens = res.get("files", {})
+    if not tokens:
+        print(json.dumps({"event": "error", "message": "the other device accepted nothing"}), flush=True)
+        return 1
     sent = 0
     for fid, token in tokens.items():
-        path = paths[int(fid)]
+        path = by_id.get(str(fid))
+        if not path:
+            continue
         url = "%s/upload?sessionId=%s&fileId=%s&token=%s" % (base, session, fid, token)
         print(json.dumps({"event": "sending", "file": os.path.basename(path)}), flush=True)
         try:
@@ -195,6 +202,65 @@ class _Receiver(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _copy_body(self, fh):
+        """Write the request body out, however the sender chose to frame it.
+
+        LocalSend clients stream the file: some send a Content-Length, some use chunked transfer
+        encoding, and some just write until they close the connection. Reading Content-Length alone
+        meant a chunked upload saved a 0-byte file and still reported success.
+        """
+        got = 0
+        encoding = (self.headers.get("Transfer-Encoding") or "").lower()
+        if "chunked" in encoding:
+            while True:
+                line = self.rfile.readline(1 << 16).strip()
+                if not line:
+                    break
+                try:
+                    size = int(line.split(b";", 1)[0], 16)
+                except ValueError:
+                    break
+                if size == 0:
+                    # trailers, then the blank line that ends them
+                    while True:
+                        trailer = self.rfile.readline(1 << 16)
+                        if trailer in (b"\r\n", b"\n", b""):
+                            break
+                    break
+                left = size
+                while left > 0:
+                    chunk = self.rfile.read(min(1 << 16, left))
+                    if not chunk:
+                        return got
+                    fh.write(chunk)
+                    got += len(chunk)
+                    left -= len(chunk)
+                self.rfile.read(2)          # the CRLF after each chunk
+            return got
+
+        length = self.headers.get("Content-Length")
+        if length is not None:
+            try:
+                length = int(length)
+            except ValueError:
+                length = 0
+            while got < length:
+                chunk = self.rfile.read(min(1 << 16, length - got))
+                if not chunk:
+                    break
+                fh.write(chunk)
+                got += len(chunk)
+            return got
+
+        # no framing at all: the sender closes the connection when it is done
+        while True:
+            chunk = self.rfile.read(1 << 16)
+            if not chunk:
+                break
+            fh.write(chunk)
+            got += len(chunk)
+        return got
 
     def do_POST(self):
         path = self.path.split("?")[0]
@@ -235,16 +301,26 @@ class _Receiver(http.server.BaseHTTPRequestHandler):
                 self._json(403, {"message": "unknown token"})
                 return
             target = _free_path(os.path.join(DOWNLOADS, os.path.basename(name)))
-            length = int(self.headers.get("Content-Length") or 0)
-            got = 0
-            with open(target, "wb") as fh:
-                while got < length:
-                    chunk = self.rfile.read(min(1 << 16, length - got))
-                    if not chunk:
-                        break
-                    fh.write(chunk)
-                    got += len(chunk)
-            print(json.dumps({"event": "received", "file": os.path.basename(target), "path": target}), flush=True)
+            try:
+                with open(target, "wb") as fh:
+                    got = self._copy_body(fh)
+            except OSError as e:
+                self._json(500, {"message": str(e)})
+                print(json.dumps({"event": "error", "file": os.path.basename(target),
+                                  "message": str(e)}), flush=True)
+                return
+            if got <= 0:
+                # nothing arrived: don't leave an empty file sitting in Downloads pretending it worked
+                try:
+                    os.remove(target)
+                except OSError:
+                    pass
+                self._json(500, {"message": "empty body"})
+                print(json.dumps({"event": "error", "file": os.path.basename(target),
+                                  "message": "nothing was received"}), flush=True)
+                return
+            print(json.dumps({"event": "received", "file": os.path.basename(target),
+                              "path": target, "size": got}), flush=True)
             self._json(200, {})
             return
         self._json(404, {"message": "not found"})

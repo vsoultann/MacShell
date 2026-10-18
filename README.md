@@ -71,10 +71,13 @@ The original MacShell is the menu bar, the Dock and the Liquid Glass shader. Eve
 **New apps & screens**
 - **Finder** — sidebar with favourites and colour tags, list and icon views, coloured folders, search, new folder, trash,
   Quick Look (pictures, text, PDF and video in our own player), **Merge Photos** (grid, side by side or stacked),
-  and pinning a folder to the Dock, where it fans its contents out in an arc.
+  pinning a folder to the Dock, where it fans its contents out in an arc, and dragging files straight out into any
+  other app.
 - **Photos** — your library grouped by day, folders as albums, favourites, a zoom slider and a full-screen viewer.
-- **AirDrop** — the radar, the devices around you, drag-to-send. It speaks LocalSend's protocol, so phones, tablets and
-  other desktops running LocalSend appear here and can receive from here.
+- **AirDrop** — the radar, the devices around you, drag-to-send. Drag files onto someone to send straight away, or
+  drop them anywhere in the window and pick who gets them; Finder's menu has **Share with AirDrop** too. It speaks
+  LocalSend's protocol, so phones, tablets and other desktops running LocalSend appear here, send here and receive
+  from here.
 - **App Store** — Flathub, laid out like the real App Store: Discover, categories, screenshots, search and updates.
 - **Reminders** — the macOS window: smart lists in the sidebar, a big title, type to add, click a circle to tick it off,
   click the text to rename, × to delete. It edits the same `reminders.md` the desktop widget shows.

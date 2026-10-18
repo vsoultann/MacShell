@@ -33,6 +33,14 @@ Scope {
     property string selected: ""            // the last one clicked
     property var selection: []              // everything selected right now
     function isSelected(p) { return selection.indexOf(p) >= 0; }
+    // what a drag out of Finder carries: the whole selection when you drag part of it, else just that file
+    function uriOf(p) { return "file://" + encodeURI(p).replace(/#/g, "%23").replace(/\?/g, "%3F"); }
+    function dragUris(p) {
+        var list = (isSelected(p) && selection.length > 0) ? selection : [p];
+        var out = [];
+        for (var i = 0; i < list.length; i++) out.push(uriOf(list[i]));
+        return out.join("\r\n") + "\r\n";
+    }
     function selectOne(p) { selected = p; selection = [p]; }
     function selectToggle(p) {
         var sel = selection.slice(), i = sel.indexOf(p);
@@ -474,9 +482,27 @@ Scope {
                                 Text { x: parent.width - 300; anchors.verticalCenter: parent.verticalCenter; text: Qt.formatDateTime(new Date(rowItem.modelData.mtime * 1000), "d MMM yyyy HH:mm"); color: root.isSelected(rowItem.modelData.path) ? "white" : pal.text2; font.family: root.fam; font.pixelSize: 11 }
                                 Text { x: parent.width - 150; anchors.verticalCenter: parent.verticalCenter; text: root.fmtSize(rowItem.modelData.size, rowItem.modelData.isDir); color: root.isSelected(rowItem.modelData.path) ? "white" : pal.text2; font.family: root.fam; font.pixelSize: 11 }
                                 Text { x: parent.width - 90; anchors.verticalCenter: parent.verticalCenter; width: 80; elide: Text.ElideRight; text: rowItem.modelData.kind; color: root.isSelected(rowItem.modelData.path) ? "white" : pal.text2; font.family: root.fam; font.pixelSize: 11 }
+                                // drag a row out of Finder and other apps receive the file itself
+                                Item {
+                                    id: rowProxy
+                                    width: 1; height: 1
+                                    Drag.active: rowMa.drag.active
+                                    Drag.dragType: Drag.Automatic
+                                    Drag.supportedActions: Qt.CopyAction
+                                    Drag.proposedAction: Qt.CopyAction
+                                    Drag.mimeData: ({ "text/uri-list": root.dragUris(rowItem.modelData.path) })
+                                }
                                 MouseArea {
+                                    id: rowMa
                                     anchors.fill: parent
                                     acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                    drag.target: rowProxy
+                                    drag.threshold: 8
+                                    onPressed: mouse => {
+                                        if (mouse.button === Qt.LeftButton && !root.isSelected(rowItem.modelData.path))
+                                            root.selectOne(rowItem.modelData.path);
+                                    }
+                                    onReleased: { rowProxy.x = 0; rowProxy.y = 0; }
                                     onClicked: mouse => {
                                         if (mouse.button === Qt.RightButton) {
                                             if (!root.isSelected(rowItem.modelData.path)) root.selectOne(rowItem.modelData.path);
@@ -540,10 +566,27 @@ Scope {
                                     x: 30; y: 10; width: 9; height: 9; radius: 4.5
                                     color: root.tagColour(root.tags[cellI.modelData.path] || "grey")
                                 }
+                                Item {
+                                    id: cellProxy
+                                    width: 1; height: 1
+                                    Drag.active: iMa.drag.active
+                                    Drag.dragType: Drag.Automatic
+                                    Drag.supportedActions: Qt.CopyAction
+                                    Drag.proposedAction: Qt.CopyAction
+                                    Drag.imageSource: cellI.modelData.kind === "Image" ? "file://" + cellI.modelData.path : ""
+                                    Drag.mimeData: ({ "text/uri-list": root.dragUris(cellI.modelData.path) })
+                                }
                                 MouseArea {
                                     id: iMa
                                     anchors.fill: parent; hoverEnabled: true
                                     acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                    drag.target: cellProxy
+                                    drag.threshold: 8
+                                    onPressed: mouse => {
+                                        if (mouse.button === Qt.LeftButton && !root.isSelected(cellI.modelData.path))
+                                            root.selectOne(cellI.modelData.path);
+                                    }
+                                    onReleased: { cellProxy.x = 0; cellProxy.y = 0; }
                                     onClicked: mouse => {
                                         if (mouse.button === Qt.RightButton) {
                                             if (!root.isSelected(cellI.modelData.path)) root.selectOne(cellI.modelData.path);
@@ -592,12 +635,13 @@ Scope {
                         id: ctxCol
                         y: 5; width: parent.width
                         Repeater {
-                            model: ["Open", "Quick Look", "Merge Photos…", "Pin to Dock", "sep", "Copy Path", "Move to Trash"]
+                            model: ["Open", "Quick Look", "Merge Photos\u2026", "Pin to Dock", "sep", "Share with AirDrop\u2026", "Copy Path", "Move to Trash"]
                             delegate: Item {
                                 required property string modelData
                                 width: parent.width; height: modelData === "sep" ? 7 : 26
                                 visible: (modelData !== "Pin to Dock" || (ctx.item && ctx.item.isDir))
-                                       && (modelData !== "Merge Photos…" || root.selectedImages.length >= 2)
+                                       && (modelData !== "Merge Photos\u2026" || root.selectedImages.length >= 2)
+                                       && (modelData !== "Share with AirDrop\u2026" || (ctx.item && !ctx.item.isDir))
                                 Rectangle { visible: parent.modelData === "sep"; x: 10; width: parent.width - 20; height: 1; y: 3; color: pal.sep }
                                 Rectangle { visible: parent.modelData !== "sep" && cxMa.containsMouse; x: 5; width: parent.width - 10; height: 24; radius: 5; color: root.accent }
                                 Text {
@@ -617,7 +661,11 @@ Scope {
                                         if (!it) return;
                                         if (m === "Open") root.openEntry(it);
                                         else if (m === "Quick Look") ql.showFor(it);
-                                        else if (m === "Merge Photos…") root.mergeSheet = true;
+                                        else if (m === "Merge Photos\u2026") root.mergeSheet = true;
+                                        else if (m === "Share with AirDrop\u2026") {
+                                            var list = root.isSelected(it.path) && root.selection.length > 0 ? root.selection : [it.path];
+                                            if (root.hub && root.hub.airdrop) root.hub.airdrop.stagePaths(list);
+                                        }
                                         else if (m === "Pin to Dock") root.pinFolder(it.path);
                                         else if (m === "Copy Path") Quickshell.execDetached(["sh", "-c", "printf '%s' \"$1\" | wl-copy", "sh", it.path]);
                                         else if (m === "Move to Trash") root.trash(it.path);

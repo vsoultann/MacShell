@@ -326,6 +326,10 @@ ShellRoot {
     IpcHandler {
         target: "airdrop"
         function open(): void { airDrop.open(); }
+        // queue a file to send: it waits in the window until you pick who gets it
+        //   qs -c MacShell ipc call airdrop stage /path/to/file
+        function stage(path: string): void { airDrop.stagePaths(airDrop.pending.concat([path])); }
+        function clear(): void { airDrop.pending = []; }
     }
     IpcHandler {
         target: "desktop"

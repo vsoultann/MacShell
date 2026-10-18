@@ -13,7 +13,12 @@ for _, key in ipairs({
     "CTRL + SUPER + T", "CTRL + SUPER + ALT + T", "CTRL + SUPER + SHIFT + D",
     "CTRL + SUPER + R", "CTRL + SUPER + P", "SUPER + SHIFT + S", "SUPER + SHIFT + A",
 }) do
-    hl.unbind(key)
+    -- Hyprland keeps every binding made for a key and fires them all, and one hl.unbind drops only one of
+    -- them. ii binds some of these twice (a shell global plus a fuzzel fallback), so SUPER + V used to open
+    -- our Clipboard and a fuzzel menu at the same time, and whichever grabbed the keyboard last won.
+    for _ = 1, 4 do
+        hl.unbind(key)
+    end
 end
 
 -- MacShell

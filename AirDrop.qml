@@ -135,6 +135,39 @@ Scope {
     }
     Timer { id: doneT; interval: 2400; onTriggered: { root.setPeer(root.sendingTo, "idle", ""); root.sendingTo = ""; } }
 
+    // Files dropped on the window (rather than straight onto someone) wait here until you pick who gets them,
+    // the way macOS holds a drag over the AirDrop sheet.
+    property var pending: []
+    function dropUris(d) {
+        var files = [];
+        if (d.hasUrls) {
+            for (var i = 0; i < d.urls.length; i++) {
+                var u = String(d.urls[i]);
+                if (u.indexOf("file://") !== 0) continue;
+                try { files.push(decodeURIComponent(u.substring(7))); } catch (e) { files.push(u.substring(7)); }
+            }
+        } else if (d.hasText) {
+            var lines = String(d.text).split(/[\r\n]+/);
+            for (var j = 0; j < lines.length; j++) {
+                var t = lines[j].trim();
+                if (t === "") continue;
+                if (t.indexOf("file://") === 0) { try { t = decodeURIComponent(t.substring(7)); } catch (e2) { t = t.substring(7); } }
+                files.push(t);
+            }
+        }
+        return files;
+    }
+    // clicking someone sends whatever is waiting, or asks you for files when nothing is
+    function handOff(peer) {
+        if (pending.length > 0) {
+            var f = pending.slice();
+            pending = [];
+            sendTo(peer, f);
+            return;
+        }
+        pick(peer);
+    }
+
     // picking files: the portal's chooser if there is one, otherwise zenity
     property var pickFor: null
     function pick(peer) {
@@ -156,6 +189,11 @@ Scope {
     function open() {
         win.visible = true; win.raise(); win.requestActivate();
         scan();
+    }
+    // "Share with AirDrop" from Finder: the files wait here and the next person you click gets them
+    function stagePaths(list) {
+        pending = (list || []).slice();
+        open();
     }
 
     Window {
@@ -337,17 +375,16 @@ Scope {
                             DropArea {
                                 id: drop
                                 anchors.fill: parent
+                                onEntered: d => d.accept(Qt.CopyAction)
                                 onDropped: d => {
-                                    var files = [];
-                                    if (d.hasUrls) for (var i = 0; i < d.urls.length; i++) files.push(String(d.urls[i]).replace("file://", ""));
-                                    else if (d.hasText) files.push(d.text.replace("file://", "").trim());
-                                    if (files.length) root.sendTo(peerItem.modelData, files);
+                                    var files = root.dropUris(d);
+                                    if (files.length) { root.pending = []; root.sendTo(peerItem.modelData, files); }
                                 }
                             }
                             MouseArea {
                                 id: pMa
                                 anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                onClicked: root.pick(peerItem.modelData)
+                                onClicked: root.handOff(peerItem.modelData)
                             }
                         }
                         Text {
@@ -445,11 +482,36 @@ Scope {
                 }
             }
 
+            // Drop files anywhere on the window: they wait, and the next person you click gets them.
+            DropArea {
+                id: winDrop
+                anchors.fill: parent
+                z: -1                       // behind the peers, so dropping straight onto someone still wins
+                onEntered: d => d.accept(Qt.CopyAction)
+                onDropped: d => {
+                    var files = root.dropUris(d);
+                    if (files.length) root.pending = files;
+                }
+            }
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 6
+                z: 6
+                radius: 12
+                color: "transparent"
+                border.width: 2
+                border.color: root.accent
+                opacity: winDrop.containsDrag ? 1 : 0
+                visible: opacity > 0.01
+                Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+            }
+
             // ── the footer ──
             Rectangle {
                 anchors.bottom: parent.bottom
                 width: parent.width; height: 64
                 color: "transparent"
+                z: 7
                 Rectangle { width: parent.width; height: 1; color: pal.sep }
                 Text {
                     x: 20; y: 14
@@ -464,6 +526,37 @@ Scope {
                         anchors.fill: parent; anchors.margins: -6
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.receiving = !root.receiving
+                    }
+                }
+                // what is waiting to be sent, and a way to drop it again
+                Rectangle {
+                    anchors.right: parent.right; anchors.rightMargin: 136
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: 28; radius: 14
+                    width: pendText.implicitWidth + 44
+                    color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.16)
+                    border.width: 1; border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.5)
+                    opacity: root.pending.length > 0 ? 1 : 0
+                    visible: opacity > 0.01
+                    scale: root.pending.length > 0 ? 1 : 0.9
+                    Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                    Behavior on scale { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.6 } }
+                    Text {
+                        id: pendText
+                        x: 12; anchors.verticalCenter: parent.verticalCenter
+                        text: root.pending.length === 1 ? "1 file ready \u2014 pick someone"
+                                                        : root.pending.length + " files ready \u2014 pick someone"
+                        color: root.accent; font.family: root.fam; font.pixelSize: 11; font.weight: Font.DemiBold
+                    }
+                    Text {
+                        anchors.right: parent.right; anchors.rightMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "\u00D7"; color: root.accent; font.family: root.fam; font.pixelSize: 15
+                        MouseArea {
+                            anchors.fill: parent; anchors.margins: -6
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.pending = []
+                        }
                     }
                 }
                 Rectangle {
