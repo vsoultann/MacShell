@@ -486,6 +486,31 @@ Scope {
                         transform: Translate { y: (1 - pageLoader.opacity) * 10 }
                     }
                 }
+
+                // the page fades out under the toolbar and at the bottom edge instead of being cut
+                Rectangle {
+                    anchors.top: tbar.bottom; anchors.left: parent.left; anchors.right: parent.right
+                    height: 20; z: 4
+                    opacity: pageFlick.contentY > 2 ? 1 : 0
+                    visible: opacity > 0.01
+                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                    gradient: Gradient {
+                        GradientStop { position: 0; color: pal.bg }
+                        GradientStop { position: 1; color: Qt.rgba(pal.bg.r, pal.bg.g, pal.bg.b, 0) }
+                    }
+                }
+                Rectangle {
+                    anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right
+                    height: 20; z: 4
+                    opacity: (pageFlick.contentHeight - pageFlick.contentY - pageFlick.height > 2) ? 1 : 0
+                    visible: opacity > 0.01
+                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                    gradient: Gradient {
+                        GradientStop { position: 0; color: Qt.rgba(pal.bg.r, pal.bg.g, pal.bg.b, 0) }
+                        GradientStop { position: 1; color: pal.bg }
+                    }
+                }
+
             }
         }
 

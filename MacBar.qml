@@ -143,7 +143,10 @@ Scope {
     property color accent: "#0A84FF"
     // "Inter" renders with the single variable file: the static Inter.ttc got mapped once per face (~25×13 MB of RSS)
     property string fontFamily: "Inter Variable"
-    onFontFamilyChanged: if (fontFamily === "Inter" || fontFamily === "Inter Display") fontFamily = "Inter Variable"
+    onFontFamilyChanged: {
+        if (fontFamily === "Inter" || fontFamily === "Inter Display") fontFamily = "Inter Variable";
+        if (hub && hub.dock && hub.dock.fontFamily !== fontFamily) hub.dock.fontFamily = fontFamily;
+    }
     property int barHeight: 28
     property string barLogoMode: "arch"       // "arch", "apple", or "custom"
     property string barCustomLogoPath: ""     // absolute path, ~/path, or file URL for the custom menu-bar logo
@@ -3689,6 +3692,8 @@ Scope {
         }
     }
     onWallpaperAppearanceChanged: wpApplyAppearance()
+    // the accent is one system setting too: the Dock, Settings and the app windows read the Dock's copy
+    onAccentChanged: if (hub && hub.dock && String(hub.dock.accent) !== String(accent)) hub.dock.accent = accent
     onDarkModeChanged: {
         if (wallpaperAppearance === "auto") wpApplyAppearance();
         // Appearance is one system setting: the Dock, Settings and every app window read the Dock's copy, so whichever

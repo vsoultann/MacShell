@@ -171,7 +171,10 @@ Scope {
     property string hideMode: "smart"
     property bool showTrash: true
     property string fontFamily: "Inter Variable"  // "Inter" (one variable font file; falls back to the system font if missing)
-    onFontFamilyChanged: if (fontFamily === "Inter" || fontFamily === "Inter Display") fontFamily = "Inter Variable"
+    onFontFamilyChanged: {
+        if (fontFamily === "Inter" || fontFamily === "Inter Display") fontFamily = "Inter Variable";
+        if (bar && bar.fontFamily !== fontFamily) bar.fontFamily = fontFamily;
+    }
     property bool magnificationEnabled: true
     property bool showLabels: true       // hover tooltips
     property bool showIndicators: true   // dots under running apps
@@ -224,6 +227,7 @@ Scope {
         if (settingsReady && iconMode === "auto") applyIconTheme();
         if (bar && bar.darkMode !== darkMode) bar.darkMode = darkMode;
     }
+    onAccentChanged: if (bar && String(bar.accent) !== String(accent)) bar.accent = accent
     // Internet Sharing: kept here (and saved) so the name, password and band survive closing Settings
     property string hotspotSsid: ""
     property string hotspotPass: ""

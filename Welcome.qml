@@ -426,13 +426,113 @@ Scope {
                         color: Qt.rgba(1, 1, 1, 0.55); font.family: root.fam; font.pixelSize: 12
                     }
                 }
-                WButton { label: "Continue"; onPressed2: { root.step = 3; root.finish(); } }
+                WButton { label: "Continue"; onPressed2: root.step = 3 }
             }
 
-            // ── 3: Welcome ──
+            // ── 3: what you just installed, one card at a time ──
             Item {
                 anchors.fill: parent
                 opacity: root.step === 3 ? 1 : 0
+                visible: opacity > 0.01
+                Behavior on opacity { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
+
+                Column {
+                    id: tourCol
+                    anchors.centerIn: parent
+                    width: Math.min(820, parent.width - 80)
+                    readonly property real cardW: Math.max(220, (width - 16) / 2)
+                    spacing: 20
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "A quick tour"
+                        color: "white"; font.family: root.fam; font.pixelSize: 34; font.weight: Font.DemiBold
+                    }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
+                        text: "Everything here is yours to change later \u2014 the Apple menu opens System Settings."
+                        color: Qt.rgba(1, 1, 1, 0.6); font.family: root.fam; font.pixelSize: 13
+                    }
+                    Grid {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: tourCol.width
+                        columns: 2
+                        columnSpacing: 16; rowSpacing: 14
+                        Repeater {
+                            model: [
+                                { g: "search", t: "Spotlight", c: "#0A84FF",
+                                  d: "\u2318 Space. Apps, files, sums, unit conversions, emoji \u2014 and your clipboard history on \u2318 V." },
+                                { g: "sliders", t: "Control Center", c: "#5E5CE6",
+                                  d: "Wi\u2011Fi, Bluetooth, sound, brightness, Focus and AirDrop, all in the menu bar. Drag the tiles to rearrange them." },
+                                { g: "dock", t: "The Dock", c: "#30D158",
+                                  d: "Magnifies as you pass. Pin a folder from Finder and it fans its contents out in an arc." },
+                                { g: "widget", t: "Widgets", c: "#FF9F0A",
+                                  d: "Clock, weather, music, reminders and photos on the desktop. Right\u2011click one to resize or move it." },
+                                { g: "share", t: "AirDrop", c: "#FF375F",
+                                  d: "Send files to any phone or laptop running LocalSend \u2014 drop them on the window and pick who gets them." },
+                                { g: "folder", t: "Finder", c: "#64D2FF",
+                                  d: "Tags, coloured folders, Quick Look, USB sticks as you plug them in, and Preview for pictures." }
+                            ]
+                            delegate: Rectangle {
+                                id: tcard
+                                required property var modelData
+                                required property int index
+                                width: tourCol.cardW
+                                height: 112
+                                radius: 14
+                                color: Qt.rgba(1, 1, 1, 0.07)
+                                border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.1)
+                                // the cards arrive one after another, the way Apple's setup pages do
+                                property real inT: 0
+                                opacity: inT
+                                transform: Translate { y: (1 - tcard.inT) * 14 }
+                                SequentialAnimation {
+                                    running: root.step === 3
+                                    PauseAnimation { duration: 120 + tcard.index * 90 }
+                                    NumberAnimation { target: tcard; property: "inT"; from: 0; to: 1; duration: 520; easing.type: Easing.OutCubic }
+                                }
+                                Rectangle {
+                                    x: 16; y: 16; width: 36; height: 36; radius: 10
+                                    color: tcard.modelData.c
+                                    WIcon { anchors.centerIn: parent; width: 20; height: 20; kind: tcard.modelData.g }
+                                }
+                                Text {
+                                    x: 64; y: 18
+                                    text: tcard.modelData.t
+                                    color: "white"; font.family: root.fam; font.pixelSize: 15; font.weight: Font.DemiBold
+                                }
+                                Text {
+                                    x: 64; y: 40; width: tcard.width - 78
+                                    wrapMode: Text.WordWrap
+                                    text: tcard.modelData.d
+                                    color: Qt.rgba(1, 1, 1, 0.6); font.family: root.fam; font.pixelSize: 12
+                                }
+                            }
+                        }
+                    }
+                    // written out here rather than reusing WButton: an inline component instantiated this deep
+                    // cannot always resolve the file's ids, and the button came out grey instead of the accent
+                    Rectangle {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 200; height: 40; radius: 20
+                        color: tourMa.containsMouse ? Qt.lighter(root.accent, 1.1) : root.accent
+                        Behavior on color { ColorAnimation { duration: 160 } }
+                        scale: tourMa.pressed ? 0.96 : 1
+                        Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutQuint } }
+                        Text { anchors.centerIn: parent; text: "Continue"; color: "white"; font.family: root.fam; font.pixelSize: 14; font.weight: Font.DemiBold }
+                        MouseArea {
+                            id: tourMa
+                            anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                            onClicked: { root.step = 4; root.finish(); }
+                        }
+                    }
+                }
+            }
+
+            // ── 4: Welcome ──
+            Item {
+                anchors.fill: parent
+                opacity: root.step === 4 ? 1 : 0
                 visible: opacity > 0.01
                 Behavior on opacity { NumberAnimation { duration: 600; easing.type: Easing.OutCubic } }
                 Column {
@@ -442,8 +542,8 @@ Scope {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: "Welcome"
                         color: "white"; font.family: root.fam; font.pixelSize: Math.round(w.height * 0.09); font.weight: Font.Light
-                        opacity: root.step === 3 ? 1 : 0
-                        scale: root.step === 3 ? 1 : 0.96
+                        opacity: root.step === 4 ? 1 : 0
+                        scale: root.step === 4 ? 1 : 0.96
                         Behavior on scale { NumberAnimation { duration: 900; easing.type: Easing.OutQuint } }
                     }
                     Text {

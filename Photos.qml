@@ -360,6 +360,31 @@ Scope {
                         color: pal.text3; font.family: root.fam; font.pixelSize: 13
                     }
                 }
+
+                // the grid fades out under the toolbar and at the bottom edge
+                Rectangle {
+                    anchors.top: tbar.bottom; anchors.left: parent.left; anchors.right: parent.right
+                    height: 20; z: 4
+                    opacity: grid.contentY > 2 ? 1 : 0
+                    visible: opacity > 0.01
+                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                    gradient: Gradient {
+                        GradientStop { position: 0; color: pal.bg }
+                        GradientStop { position: 1; color: Qt.rgba(pal.bg.r, pal.bg.g, pal.bg.b, 0) }
+                    }
+                }
+                Rectangle {
+                    anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right
+                    height: 20; z: 4
+                    opacity: (grid.contentHeight - grid.contentY - grid.height > 2) ? 1 : 0
+                    visible: opacity > 0.01
+                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                    gradient: Gradient {
+                        GradientStop { position: 0; color: Qt.rgba(pal.bg.r, pal.bg.g, pal.bg.b, 0) }
+                        GradientStop { position: 1; color: pal.bg }
+                    }
+                }
+
             }
 
             // ── full-screen viewer ──

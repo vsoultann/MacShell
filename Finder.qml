@@ -849,6 +849,55 @@ Scope {
                     }
                 }
 
+
+                // feathered edges: rows fade out under the toolbar and above the status bar instead of being sliced
+                Rectangle {
+                    anchors.top: tbar.bottom; anchors.left: parent.left; anchors.right: parent.right
+                    height: 18; z: 4
+                    opacity: (listFlick.visible && listFlick.contentY > 2) ? 1 : 0
+                    visible: opacity > 0.01
+                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                    gradient: Gradient {
+                        GradientStop { position: 0; color: pal.bg }
+                        GradientStop { position: 1; color: Qt.rgba(pal.bg.r, pal.bg.g, pal.bg.b, 0) }
+                    }
+                }
+                Rectangle {
+                    anchors.bottom: statusBar.top; anchors.left: parent.left; anchors.right: parent.right
+                    height: 18; z: 4
+                    opacity: (listFlick.visible && listFlick.contentHeight - listFlick.contentY - listFlick.height > 2) ? 1 : 0
+                    visible: opacity > 0.01
+                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                    gradient: Gradient {
+                        GradientStop { position: 0; color: Qt.rgba(pal.bg.r, pal.bg.g, pal.bg.b, 0) }
+                        GradientStop { position: 1; color: pal.bg }
+                    }
+                }
+
+                // feathered edges: rows fade out under the toolbar and above the status bar instead of being sliced
+                Rectangle {
+                    anchors.top: tbar.bottom; anchors.left: parent.left; anchors.right: parent.right
+                    height: 18; z: 4
+                    opacity: (iconFlick.visible && iconFlick.contentY > 2) ? 1 : 0
+                    visible: opacity > 0.01
+                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                    gradient: Gradient {
+                        GradientStop { position: 0; color: pal.bg }
+                        GradientStop { position: 1; color: Qt.rgba(pal.bg.r, pal.bg.g, pal.bg.b, 0) }
+                    }
+                }
+                Rectangle {
+                    anchors.bottom: statusBar.top; anchors.left: parent.left; anchors.right: parent.right
+                    height: 18; z: 4
+                    opacity: (iconFlick.visible && iconFlick.contentHeight - iconFlick.contentY - iconFlick.height > 2) ? 1 : 0
+                    visible: opacity > 0.01
+                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                    gradient: Gradient {
+                        GradientStop { position: 0; color: Qt.rgba(pal.bg.r, pal.bg.g, pal.bg.b, 0) }
+                        GradientStop { position: 1; color: pal.bg }
+                    }
+                }
+
                 // ── status bar, and the Choose / Cancel bar when Finder is picking files for something ──
                 Rectangle {
                     id: statusBar
