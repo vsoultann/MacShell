@@ -138,7 +138,7 @@ Scope {
 
     // ───────────── CONFIG ───────────── Lachowski
     property string monitor: ""          // "" = every monitor, or e.g. "DP-1"
-    property int iconSize: 52
+    property int iconSizePref: 52        // the size you picked in Settings
     property real magnification: 1.7     // peak icon scale
     property int spacing: 6
     property int hPad: 10
@@ -220,7 +220,10 @@ Scope {
             + "k=\"$HOME/.config/kdeglobals\"; [ -f \"$k\" ] && grep -q '^Theme=' \"$k\" && sed -i \"s|^Theme=.*|Theme=$t|\" \"$k\"; "
             + "exit 0", "sh", name]);
     }
-    onDarkModeChanged: if (settingsReady && iconMode === "auto") applyIconTheme()
+    onDarkModeChanged: {
+        if (settingsReady && iconMode === "auto") applyIconTheme();
+        if (bar && bar.darkMode !== darkMode) bar.darkMode = darkMode;
+    }
     property bool desktopIcons: true    // files, folders and apps shown on the desktop
     property var pinnedFolders: []      // folder paths pinned next to the Trash
     function pinFolder(p) {
@@ -1915,9 +1918,9 @@ Scope {
                         SSlider {
                             t: pal
                             from: 32; to: 128; stepSize: 1
-                            value: root.iconSize
+                            value: root.iconSizePref
                             leftLabel: "Small"; rightLabel: "Large"
-                            onMoved: v => root.iconSize = Math.round(v)
+                            onMoved: v => root.iconSizePref = Math.round(v)
                         }
                     }
                     SRow {
@@ -2074,7 +2077,7 @@ Scope {
                                     id: sw
                                     required property var modelData
                                     readonly property bool sel: String(root.accent).toLowerCase() === modelData.c.toLowerCase()
-                                    width: 26; height: 26
+                                    width: 28; height: 28
                                     Rectangle {
                                         anchors.centerIn: parent
                                         width: 18; height: 18; radius: 9
@@ -2085,7 +2088,7 @@ Scope {
                                     Rectangle {
                                         anchors.centerIn: parent
                                         visible: sw.sel
-                                        width: 25; height: 25; radius: 12.5
+                                        width: 24; height: 24; radius: 12
                                         color: "transparent"
                                         border.width: 2
                                         border.color: pal.text3
@@ -4192,6 +4195,22 @@ Scope {
         }
     }
 
+    // With a lot of apps open the Dock would run off the screen, so the icons shrink to fit, the way macOS does.
+    // dockRoom is the narrowest screen the Dock shows on, less a margin at each end.
+    readonly property real dockRoom: {
+        var ss = Quickshell.screens, m = 0;
+        for (var i = 0; i < ss.length; i++) {
+            if (monitor !== "" && ss[i].name !== monitor) continue;
+            var w = ss[i].width - 2 * (hPad + 24);
+            if (m === 0 || w < m) m = w;
+        }
+        return m;
+    }
+    readonly property real rawW: Math.max(0, appCount * (iconSizePref + spacing) + sepCount * (sepWidth + spacing) - spacing)
+    property real fitScale: (dockRoom > 120 && rawW > dockRoom) ? Math.max(0.42, dockRoom / rawW) : 1
+    Behavior on fitScale { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+    readonly property int iconSize: Math.max(20, Math.round(iconSizePref * fitScale))
+
     readonly property real effMag: magnificationEnabled ? magnification : 1
     readonly property int bgHeight: iconSize + topPad + bottomPad
     readonly property int sepWidth: 9
@@ -4272,7 +4291,7 @@ Scope {
         }
         if (hub && hub.widgets) { hub.widgets.style = "glass"; hub.widgets.glassAmt = 0.5; hub.widgets.blurAmt = 0.5; hub.widgets.enabled = true; }
         Quickshell.execDetached(["sh", "-c", "rm -f \"$HOME/.config/maclock/settings.json\""]);
-        iconSize = 52; magnification = 1.7; magnificationEnabled = true;
+        iconSizePref = 52; magnification = 1.7; magnificationEnabled = true;
         spacing = 6; margin = 6; cornerRadius = 18;
         darkMode = true; glassOpacity = 0.42; glassBlur = 5; glassLiquid = 1.0; dockStyle = "liquid"; accent = "#0a84ff"; fontFamily = "Inter Variable";
         hideMode = "smart"; hideDelay = 450; monitor = "";
@@ -4280,7 +4299,7 @@ Scope {
     }
 
     // ── settings persistence (~/.config/macdock/settings.json) ──
-    readonly property string settingsSig: [dockEnabled, windowsFloat, iconSize, magnification, magnificationEnabled, spacing, margin,
+    readonly property string settingsSig: [dockEnabled, windowsFloat, iconSizePref, magnification, magnificationEnabled, spacing, margin,
         cornerRadius, darkMode, glassOpacity, glassBlur, glassLiquid, dockStyle, wallpaperPath, String(accent), fontFamily, hideMode, hideDelay, monitor,
         showTrash, showLabels, showIndicators, bounceOnLaunch, showThumbs, windowCapture].join("|")
     property bool settingsReady: false
@@ -4295,7 +4314,7 @@ Scope {
 
     function saveSettings() {
         var o = {
-            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, hyprBinds: hyprBinds, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, iconMode: iconMode, pinMigTahoe: pinMigTahoe, iconSize: iconSize, magnification: magnification, magnificationEnabled: magnificationEnabled,
+            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, hyprBinds: hyprBinds, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, iconMode: iconMode, pinMigTahoe: pinMigTahoe, iconSize: iconSizePref, magnification: magnification, magnificationEnabled: magnificationEnabled,
             spacing: spacing, margin: margin, cornerRadius: cornerRadius,
             darkMode: darkMode, glassOpacity: glassOpacity, dockStyle: dockStyle, wallpaperPath: wallpaperPath, glassDebug: glassDebug,
             glassRim: glassRim, glassGrain: glassGrain, glassLiquid: glassLiquid, glassBlur: glassBlur,
@@ -4309,13 +4328,14 @@ Scope {
 
     function applySettings(o) {
         if (!o || typeof o !== "object") return;
-        var keys = ["dockEnabled", "windowsFloat", "shortcuts", "hyprBinds", "pinnedFolders", "desktopIcons", "iconMode", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
+        var keys = ["dockEnabled", "windowsFloat", "shortcuts", "hyprBinds", "pinnedFolders", "desktopIcons", "iconMode", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
                     "darkMode", "glassOpacity", "dockStyle", "wallpaperPath", "glassDebug", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "accent", "fontFamily", "hideMode", "hideDelay", "monitor",
                     "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture", "pinMigTahoe"];
         for (var i = 0; i < keys.length; i++) {
             if (o[keys[i]] === undefined) continue;
             try { root[keys[i]] = o[keys[i]]; } catch (err) { }
         }
+        if (o.iconSize !== undefined) root.iconSizePref = o.iconSize;     // saved under its old name
     }
 
     FileView {

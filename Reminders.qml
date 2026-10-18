@@ -274,10 +274,13 @@ Scope {
                                     NumberAnimation { target: rrow; property: "inT"; from: 0; to: 1; duration: 380; easing.type: Easing.OutCubic }
                                 }
 
+                                // the whole row counts as hovered, the × included — otherwise reaching for the ×
+                                // took the pointer out of the text's hit area and the × disappeared under the cursor
+                                HoverHandler { id: rowHover }
                                 Rectangle {
                                     anchors.fill: parent; anchors.leftMargin: 4; anchors.rightMargin: 4
                                     radius: 7
-                                    color: rMa.containsMouse || rrow.mine ? pal.hover : "transparent"
+                                    color: rowHover.hovered || rrow.mine ? pal.hover : "transparent"
                                     Behavior on color { ColorAnimation { duration: 140 } }
                                 }
                                 Rectangle { x: 40; y: parent.height - 1; width: parent.width - 52; height: 1; color: pal.sep; visible: rrow.index < root.shown.length - 1 }
@@ -331,7 +334,7 @@ Scope {
 
                                 Text {
                                     id: rowTxt
-                                    x: 40; width: parent.width - 52 - (rMa.containsMouse ? 20 : 0)
+                                    x: 40; width: parent.width - 52 - (rowHover.hovered ? 22 : 0)
                                     anchors.verticalCenter: parent.verticalCenter
                                     visible: !rrow.mine
                                     elide: Text.ElideRight
@@ -358,13 +361,13 @@ Scope {
                                     text: "×"
                                     color: delMa.containsMouse ? "#FF453A" : pal.text2
                                     font.family: root.fam; font.pixelSize: 17
-                                    opacity: rMa.containsMouse && !rrow.mine ? 1 : 0
+                                    opacity: rowHover.hovered && !rrow.mine ? 1 : 0
                                     Behavior on opacity { NumberAnimation { duration: 140 } }
                                     MouseArea {
                                         id: delMa
-                                        anchors.fill: parent; anchors.margins: -6
+                                        anchors.fill: parent; anchors.margins: -7
                                         hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                        enabled: rMa.containsMouse
+                                        enabled: rowHover.hovered && !rrow.mine
                                         onClicked: if (root.wid) root.wid.deleteReminder(rrow.modelData.line)
                                     }
                                 }

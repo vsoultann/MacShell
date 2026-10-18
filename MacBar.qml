@@ -494,6 +494,11 @@ Scope {
     // macOS does with the desktop picture. Without this, Light mode over a dark wallpaper is near-black on black.
     property int barTone: 0                  // 1 bright behind the bar → dark text · -1 dark behind → white text
     readonly property bool barDark: (autoContrast && barTone !== 0) ? barTone < 0 : darkMode
+    // every control that switches appearance goes through here, so the Dock, Settings and the app windows follow
+    function setDark(on) {
+        if (hub && hub.dock && hub.dock.setLook) hub.dock.setLook("darkMode", on);
+        else darkMode = on;
+    }
     function measureBarTone(sx, sy, sw, sh) {
         if (!autoContrast || gaming || barToneProc.running) return;
         barToneProc.command = ["sh", "-c", "grim -s 0.06 -g \"$1,$2 $3x$4\" - 2>/dev/null | magick - -format '%[fx:0.299*mean.r+0.587*mean.g+0.114*mean.b]' info: 2>/dev/null",
@@ -2889,7 +2894,7 @@ Scope {
                     }
                     m.push(msep());
                 }
-                m.push(mchk("Dark Mode", "", root.darkMode, function () { root.darkMode = !root.darkMode; }));
+                m.push(mchk("Dark Mode", "", root.darkMode, function () { root.setDark(!root.darkMode); }));
             } else if (name === "window") {
                 if (has) {
                     m.push(mi("Minimize", "", disp('hl.dsp.window.move({ workspace = "special:minimized", follow = false })')));
@@ -3666,7 +3671,12 @@ Scope {
         }
     }
     onWallpaperAppearanceChanged: wpApplyAppearance()
-    onDarkModeChanged: if (wallpaperAppearance === "auto") wpApplyAppearance()
+    onDarkModeChanged: {
+        if (wallpaperAppearance === "auto") wpApplyAppearance();
+        // Appearance is one system setting: the Dock, Settings and every app window read the Dock's copy, so whichever
+        // control was used — Control Center, the Apple menu, Settings, the IPC — both halves stay in step.
+        if (hub && hub.dock && hub.dock.darkMode !== darkMode) hub.dock.darkMode = darkMode;
+    }
     Timer { interval: 60000; repeat: true; running: root.wpHasPair && root.wallpaperAppearance === "dynamic" && !root.gaming; onTriggered: root.wpApplyAppearance() }
     // at start: scan the folder, then pick up a pair for the wallpaper already in use
     Timer { interval: 1500; running: true; onTriggered: root.wpRefresh() }
@@ -6699,7 +6709,7 @@ Scope {
                             CCBtn {
                                 t: pal; gx: ccg; anchors.centerIn: parent
                                 kind: "contrast"; on: root.darkMode
-                                onClicked: root.darkMode = !root.darkMode
+                                onClicked: root.setDark(!root.darkMode)
                             }
                         }
                     }
