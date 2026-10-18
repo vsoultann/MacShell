@@ -499,10 +499,16 @@ Scope {
         if (hub && hub.dock && hub.dock.setLook) hub.dock.setLook("darkMode", on);
         else darkMode = on;
     }
+    // Measured from the wallpaper's top edge, not from the screen: macOS follows the desktop picture, and reading
+    // the picture costs one command per wallpaper change instead of a screen grab on a timer.
     function measureBarTone(sx, sy, sw, sh) {
         if (!autoContrast || gaming || barToneProc.running) return;
-        barToneProc.command = ["sh", "-c", "grim -s 0.06 -g \"$1,$2 $3x$4\" - 2>/dev/null | magick - -format '%[fx:0.299*mean.r+0.587*mean.g+0.114*mean.b]' info: 2>/dev/null",
-                               "sh", String(Math.round(sx)), String(Math.round(sy)), String(Math.max(8, Math.round(sw))), String(Math.max(8, Math.round(sh)))];
+        barToneProc.command = ["sh", "-c",
+            "if [ -n \"$5\" ] && [ -r \"$5\" ] && magick \"$5\" -resize 200x200^ -gravity north -crop 200x14+0+0 +repage "
+            + "-format '%[fx:0.299*mean.r+0.587*mean.g+0.114*mean.b]' info: 2>/dev/null; then exit 0; fi; "
+            + "grim -s 0.06 -g \"$1,$2 $3x$4\" - 2>/dev/null | magick - -format '%[fx:0.299*mean.r+0.587*mean.g+0.114*mean.b]' info: 2>/dev/null",
+            "sh", String(Math.round(sx)), String(Math.round(sy)), String(Math.max(8, Math.round(sw))), String(Math.max(8, Math.round(sh))),
+            root.wallpaperPath];
         barToneProc.running = true;
     }
     Process {
@@ -4020,11 +4026,10 @@ Scope {
                     if (!ui.toastScreen || !root.barEnabled) return;
                     root.measureBarTone(win.modelData.x, win.modelData.y, ui.width, Math.max(10, root.barHeight));
                 }
+                // once at startup, then only when something that changes the answer changes
                 Timer {
-                    interval: 6000
-                    repeat: true
+                    interval: 1200
                     running: root.autoContrast && !root.gaming && ui.toastScreen
-                    triggeredOnStart: true
                     onTriggered: ui.sampleBar()
                 }
                 Connections {
