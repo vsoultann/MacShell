@@ -291,7 +291,7 @@ Scope {
                                     visible: !mrow.sep && mMa.containsMouse
                                     x: 6; width: parent.width - 12; height: parent.height - 2; y: 1
                                     radius: 6
-                                    color: root.accent
+                                    color: dctx.app.accent
                                 }
                                 Text {
                                     visible: !mrow.sep
