@@ -18,6 +18,22 @@ Spotlight, desktop widgets, notifications and a full lock screen. This is a fork
 |---|---|
 | ![Control Center](docs/control-center.gif) | ![Dock stack](docs/dock-stack.gif) |
 
+| The Dock fan: leans out of the folder, names underneath, folds itself away | Brightness: the sun turns and its rays grow with the level |
+|---|---|
+| ![Dock fan](docs/dock-fan.gif) | ![Brightness HUD](docs/brightness-hud.gif) |
+
+| Light ⇄ dark moves the whole system at once, as a fade | AirDrop finds devices on Wi-Fi, Ethernet and your own hotspot |
+|---|---|
+| ![Appearance](docs/appearance.gif) | ![AirDrop](docs/airdrop.gif) |
+
+| Finder: Locations for USB sticks, tags, coloured folders | Reminders |
+|---|---|
+| ![Finder](docs/finder.png) | ![Reminders](docs/reminders.png) |
+
+| Mac Hello explains what you just installed | Internet Sharing remembers its name and password |
+|---|---|
+| ![Mac Hello](docs/machello-tour.png) | ![Internet Sharing](docs/internet-sharing.png) |
+
 ![Lock screen clock settings](docs/settings-clock.png)
 
 ## Performance

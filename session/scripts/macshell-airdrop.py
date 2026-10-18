@@ -484,6 +484,7 @@ def _wait_for_answer(session, timeout=60.0):
 
 
 PING = threading.Event()
+ANNOUNCED = {}          # fingerprint -> address, so a device is reported once (cleared on "search")
 
 
 def _read_answers():
@@ -493,6 +494,9 @@ def _read_answers():
             with ANSWER_LOCK:
                 ANSWERS[parts[1]] = parts[0] == "accept"
         elif parts and parts[0] == "search":
+            # Searching again means "tell me about everyone", not "tell me about anyone new": without this
+            # the radar stayed empty after the window was reopened, because every device was already known.
+            ANNOUNCED.clear()
             PING.set()
 
 
@@ -560,7 +564,7 @@ def serve():
         pass
     _announce(sock)
     sock.settimeout(1.0)
-    announced = {}
+    announced = ANNOUNCED
     threading.Thread(target=_announce_on_request, args=(sock,), daemon=True).start()
     # interfaces come and go (the hotspot, a cable, a VPN): rejoin and say hello again every now and then,
     # so a device that appears on a new network still finds us without anyone pressing Search

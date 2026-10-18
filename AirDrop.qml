@@ -80,13 +80,15 @@ Scope {
     function addPeer(d) {
         var f = root.peers.slice();
         for (var i = 0; i < f.length; i++)
-            if (f[i].fingerprint === d.fingerprint || (f[i].ip === d.ip && f[i].port === d.port)) return;
-        d.state = "idle"; d.detail = d.deviceModel || d.ip;
+            if (f[i].fingerprint === d.fingerprint || (f[i].ip === d.ip && f[i].port === d.port)) {
+                f[i].seen = Date.now();
+                return;
+            }
+        d.state = "idle"; d.detail = d.deviceModel || d.ip; d.seen = Date.now();
         f.push(d);
-        root.peers = f; root.found = f;
+        root.peers = f;
         if (root.bar) root.bar.playSound("pop", 0.3);
     }
-    property var found: []
     Process {
         id: discProc
         stdout: SplitParser {
@@ -96,7 +98,16 @@ Scope {
                 try { root.addPeer(JSON.parse(t)); } catch (e) { }
             }
         }
-        onExited: { root.scanning = false; root.peers = root.found; }
+        // A finished search used to replace the list with only what this one search found, which wiped the
+        // devices the receiver had already heard from. Searching only ever adds now; a device drops off when
+        // it has not been heard from for two minutes.
+        onExited: {
+            root.scanning = false;
+            var keep = [], now = Date.now();
+            for (var i = 0; i < root.peers.length; i++)
+                if (!root.peers[i].seen || now - root.peers[i].seen < 120000) keep.push(root.peers[i]);
+            if (keep.length !== root.peers.length) root.peers = keep;
+        }
     }
 
     function peerIndex(fp) { for (var i = 0; i < peers.length; i++) if (peers[i].fingerprint === fp) return i; return -1; }
