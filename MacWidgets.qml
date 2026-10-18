@@ -1356,12 +1356,21 @@ Scope {
             }
             property bool adding: false
             property int editingLine: -1
-            Column {
+            Flickable {
+                id: remFlick
                 y: rHead.height + 6
                 width: parent.width
-                spacing: 7
-                clip: true
                 height: parent.height - y
+                clip: true
+                contentHeight: remCol.height
+                boundsBehavior: Flickable.StopAtBounds
+                // only takes over the drag when there is actually something to scroll, so the widget itself
+                // stays draggable from its list whenever everything already fits
+                interactive: !root.editing && contentHeight > height + 2
+              Column {
+                id: remCol
+                width: parent.width
+                spacing: 7
                 // new reminder
                 Item {
                     width: parent.width
@@ -1380,7 +1389,7 @@ Scope {
                         x: 24; width: parent.width - 24
                         anchors.verticalCenter: parent.verticalCenter
                         color: ctx ? ctx.fg : "white"; font.family: root.fam; font.pixelSize: 13
-                        selectByMouse: true
+                        selectByMouse: false
                         onAccepted: { root.addReminder(text); text = ""; }
                         Keys.onEscapePressed: { text = ""; adding = false; }
                         Text { visible: parent.text === ""; text: "New Reminder"; color: ctx ? ctx.fg2 : "grey"; font: parent.font }
@@ -1458,46 +1467,43 @@ Scope {
                             width: parent.width - 24
                             height: Math.max(rowTxt.implicitHeight, 18)
                             anchors.verticalCenter: parent.verticalCenter
-                            readonly property bool mine: editingLine === modelData.line
+                            // Nothing here is a text field, so a click can never leave text selected on the desktop.
+                            // Renaming lives in the Reminders app, which this row opens.
+                            HoverHandler { id: rowHover; enabled: !root.editing }
                             Text {
                                 id: rowTxt
-                                width: parent.width - (rowMa.containsMouse && !root.editing ? 18 : 0); elide: Text.ElideRight
+                                width: parent.width - (rowHover.hovered ? 20 : 0); elide: Text.ElideRight
                                 anchors.verticalCenter: parent.verticalCenter
-                                visible: !parent.mine
                                 text: modelData.text; font.strikeout: modelData.done
                                 color: ctx ? (modelData.done ? ctx.fg2 : ctx.fg) : "white"
                                 font.family: root.fam; font.pixelSize: 13
                             }
-                            // tap the text to rename it, ⌫ or the × to remove it
-                            TextInput {
-                                id: rowEdit
-                                anchors.fill: parent
-                                visible: parent.mine
-                                verticalAlignment: TextInput.AlignVCenter
-                                color: ctx ? ctx.fg : "white"; font.family: root.fam; font.pixelSize: 13
-                                selectByMouse: true
-                                onVisibleChanged: if (visible) { text = modelData.text; forceActiveFocus(); selectAll(); }
-                                onAccepted: { root.setReminderText(modelData.line, text); editingLine = -1; }
-                                Keys.onEscapePressed: editingLine = -1
-                                onActiveFocusChanged: if (!activeFocus && visible) { root.setReminderText(modelData.line, text); editingLine = -1; }
+                            MouseArea {
+                                id: rowMa
+                                anchors.fill: parent; anchors.rightMargin: 22
+                                enabled: !root.editing
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (root.hub && root.hub.reminders) root.hub.reminders.open();
+                                    else root.openFile(root.cfgDir + "/reminders.md");
+                                }
                             }
                             Text {
                                 anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                                visible: rowMa.containsMouse && !root.editing && !parent.mine
                                 text: "\u00D7"; color: ctx ? ctx.fg2 : "grey"; font.family: root.fam; font.pixelSize: 15
-                                MouseArea { anchors.fill: parent; anchors.margins: -5; cursorShape: Qt.PointingHandCursor; onClicked: root.deleteReminder(modelData.line) }
-                            }
-                            MouseArea {
-                                id: rowMa
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                enabled: !root.editing && !parent.mine
-                                cursorShape: Qt.IBeamCursor
-                                onClicked: editingLine = modelData.line
+                                opacity: rowHover.hovered ? 1 : 0
+                                Behavior on opacity { NumberAnimation { duration: 140 } }
+                                MouseArea {
+                                    anchors.fill: parent; anchors.margins: -5
+                                    enabled: rowHover.hovered
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.deleteReminder(modelData.line)
+                                }
                             }
                         }
                     }
                 }
+              }
             }
             // the header opens the Reminders app, not a text editor
             MouseArea {
