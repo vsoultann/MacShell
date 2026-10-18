@@ -68,6 +68,10 @@ Settings live in the shell itself: Apple menu → **System Settings…** (Instal
 
 The original MacShell is the menu bar, the Dock and the Liquid Glass shader. Everything below is new in this fork:
 
+**Quiet under load** — while the machine is busy (a build, a system update, a big install) the Liquid Glass stops
+refracting live and the window captures pause, so the desktop stays responsive; everything comes back when the load
+drops. No setting to remember: it watches the load average and uses hysteresis so it never flaps.
+
 **New apps & screens**
 - **Finder** — sidebar with favourites and colour tags, list and icon views, coloured folders, search, new folder, trash,
   Quick Look (pictures, text, PDF and video in our own player), **Merge Photos** (grid, side by side or stacked),

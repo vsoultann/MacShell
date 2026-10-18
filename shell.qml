@@ -79,15 +79,18 @@ ShellRoot {
         // windowCapture = false (Dock Preferences, or  qs -c <config> ipc call glass captures false) switches the window previews off.
         readonly property bool windowCapture: macDock.windowCapture      // Dock Preferences -> "Live window capture" (saved in macdock/settings.json)
         property bool churn: false
-        readonly property bool captureHold: churn || !windowCapture || macBar.gaming
+        // A build or a big install saturates the machine; the window captures are the first thing to give way,
+        // both for smoothness and because a pile of in-flight screencopy frames is what used to kill the
+        // Wayland connection outright.
+        readonly property bool captureHold: churn || !windowCapture || macBar.gaming || macBar.underLoad
         // Liquid Glass: only stage 1, and only while windows open / close. Live capture pauses (the glass keeps its last frame, the capture
         // source stays attached, so nothing goes blank), then resumes. Not tied to the previews switch, never cut.
-        readonly property bool glassHold: churn || macBar.gaming
+        readonly property bool glassHold: churn || macBar.gaming || macBar.underLoad
         property bool captureCut: false
         // Dock previews no longer pause as a whole while windows open / close (that froze every preview for ~1.5 s):
         // only the CLOSING window's own preview stops its live capture, the moment Hyprland announces the close
         // (before the toplevel is destroyed, so no frame is ever aborted in flight). Everything else keeps running.
-        readonly property bool previewHold: !windowCapture || macBar.gaming
+        readonly property bool previewHold: !windowCapture || macBar.gaming || macBar.underLoad
         property var closingWins: ({})
         onCaptureHoldChanged: { if (captureHold) cutDelay.restart(); else { cutDelay.stop(); captureCut = false; } }
         Timer { id: cutDelay; interval: 500; onTriggered: sharedHub.captureCut = true }

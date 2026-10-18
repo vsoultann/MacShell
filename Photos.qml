@@ -54,9 +54,11 @@ Scope {
         scanning = true;
         scanProc.running = false;
         scanProc.command = ["sh", "-c",
-            "find \"$1\" -type f \\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' "
+            // hidden files and folders are pruned in find itself: the old grep tried to match a tab with \\t,
+            // which plain grep reads as the letter t, so AppleDouble stubs (._NAME.jpg) were still listed
+            "find \"$1\" -name '.*' -prune -o -type f \\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' "
             + "-o -iname '*.gif' -o -iname '*.bmp' -o -iname '*.tif' -o -iname '*.tiff' -o -iname '*.avif' -o -iname '*.heic' \\) "
-            + "-printf '%T@\\t%h\\t%f\\n' 2>/dev/null | grep -v '/__MACOSX/' | grep -v '\\t\\._' | grep -v '/\\.thumbnails/' | sort -rn | head -4000", "sh", root.libraryDir];
+            + "-printf '%T@\\t%h\\t%f\\n' 2>/dev/null | grep -v '/__MACOSX/' | sort -rn | head -4000", "sh", root.libraryDir];
         scanProc.running = true;
     }
     Process {

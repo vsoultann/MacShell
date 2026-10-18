@@ -317,6 +317,39 @@ Scope {
     // Live refraction: whatever moves under a liquid panel or the Control Center is refracted as it moves. On by default;
     // only the windows actually behind glass that is on screen are kept live, so the cost stays where you can see it.
     property bool glassRealtime: true
+    // ── Under load (a build, an update, a big install) the shell gets out of the way ──
+    // Live refraction and the window captures are the expensive part; while the machine is busy they
+    // stop being live and the glass keeps its last frame, so the desktop stays responsive.
+    property real sysLoad: 0
+    readonly property int sysCores: coreCount
+    // engages at 60 % of the machine and lets go at 40 %, so it doesn't flap around the threshold
+    property bool underLoad: false
+    onSysLoadChanged: {
+        if (sysCores <= 0) return;
+        var per = sysLoad / sysCores;
+        if (!underLoad && per > 0.6) underLoad = true;
+        else if (underLoad && per < 0.4) underLoad = false;
+    }
+    FileView {
+        id: loadFile
+        path: "/proc/loadavg"
+        printErrors: false
+        onLoaded: {
+            var v = parseFloat(String(text()).split(" ")[0]);
+            if (!isNaN(v)) root.sysLoad = v;
+        }
+    }
+    Timer {
+        interval: 4000; repeat: true; running: true; triggeredOnStart: true
+        onTriggered: loadFile.reload()
+    }
+    Process {
+        id: coreProc
+        running: true
+        command: ["sh", "-c", "nproc 2>/dev/null || echo 4"]
+        stdout: StdioCollector { onStreamFinished: { var n = parseInt(text.trim()); if (n > 0) root.coreCount = n; } }
+    }
+    property int coreCount: 4
     property bool glassDebug: false
     property string wallpaperPath: ""
     property bool use24h: true
@@ -4325,7 +4358,8 @@ Scope {
                 }
                 // refresh while the pointer rests on the bar with nothing open; a snapshot is "fresh" for 3 s
                 Timer { interval: 600; repeat: true; running: barHover.hovered && ui.pop === ""; onTriggered: screenSnap.grab() }
-                Timer { interval: 250; repeat: true; running: true; onTriggered: ui.snapFresh = (Date.now() - screenSnap.takenAt) < 3000 || (ui.pop !== "" && ui.snapFresh) }
+                // only while there is a snapshot whose freshness can still change, not for ever
+                Timer { interval: 250; repeat: true; running: ui.snapFresh || ui.pop !== ""; onTriggered: ui.snapFresh = (Date.now() - screenSnap.takenAt) < 3000 || (ui.pop !== "" && ui.snapFresh) }
 
                 // keeps the (otherwise unseen) backdrop rendering so its window captures stay valid; draws one 1%-opaque pixel
                 ShaderEffectSource {
@@ -4416,7 +4450,7 @@ Scope {
                                     // window live was what made the refraction lag and tear: the capture arrived a frame or two after
                                     // the window had already moved, so the glass showed the old frame at the new position.
                                     live: !gw.gone && !root.captureHeld && bd.hostShown && (!sv.hush || gw.onGlass)
-                                          && ((root.glassRealtime && gw.onGlass) || ui.anyVisible || levelOsd.visible || spotWin.openish || swWin.visible || wpWin.visible)
+                                          && ((root.glassRealtime && !root.underLoad && gw.onGlass) || ui.anyVisible || levelOsd.visible || spotWin.openish || swWin.visible || wpWin.visible)
                                     onCaptureSourceChanged: {
                                         // a brand-new capture grabs its first frame immediately instead of waiting for the timer
                                         // (a short delay: asking before the capture context exists only logged "no recording context is ready")

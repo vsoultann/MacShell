@@ -161,7 +161,8 @@ Scope {
     property real glassRim: 0.45
     property real glassGrain: 0.03
     property real glassLiquid: 1.0
-    readonly property bool glassRT: bar ? bar.glassRealtime : true     // real-time glass (Menu Bar settings)
+    readonly property bool glassRT: bar ? (bar.glassRealtime && !bar.underLoad) : true   // real-time glass (Menu Bar settings)
+    readonly property bool underLoad: bar ? bar.underLoad : false
     property real glassBlur: 5            // Liquid Glass backdrop blur radius, px (settings slider)
     property bool glassDebug: false       // settings.json only: draw the raw Liquid Glass backdrop texture
     property string wallpaperPath: ""    // optional override for the wallpaper the Liquid Glass refracts
@@ -5370,8 +5371,11 @@ Scope {
                                         Timer {
                                             // the main display's refresh rate while you are at the Dock, a calmer 15 fps when
                                             // it is just sitting there, and 2 fps while it is tucked away
+                                            // while the machine is busy building or installing something, the previews
+                                            // stop chasing the display's refresh rate and tick along instead
                                             interval: !sc.onScreen ? 500
-                                                      : ((hh.hovered || ui.menuOpen || ui.stackItem !== null) ? root.frameMs : Math.max(root.frameMs, 66))
+                                                      : (root.underLoad ? 400
+                                                      : ((hh.hovered || ui.menuOpen || ui.stackItem !== null) ? root.frameMs : Math.max(root.frameMs, 66)))
                                             repeat: true
                                             running: sc.wantFrames && sc.captureSource !== null
                                             onTriggered: if (typeof sc.captureFrame === "function") sc.captureFrame()
