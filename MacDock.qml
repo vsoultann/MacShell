@@ -5796,12 +5796,13 @@ Scope {
                     anchors.fill: parent
                     visible: ui.stackItem !== null || stackT.running
                     readonly property bool shown: ui.stackItem !== null
-                    readonly property real baseY: ui.height - root.margin - root.bgHeight - root.iconSize * (root.effMag - 1) - 16
+                    // just above the Dock: only part of the magnification headroom is reserved, so the fan starts at the folder
+                    readonly property real baseY: ui.height - root.margin - root.bgHeight - root.iconSize * (root.effMag - 1) * 0.4 - 6
                     readonly property int n: Math.max(1, root.stackFiles.length)
                     // the fan always sways to the right, unless the folder sits so close to the right edge
                     // that the arc would run off the screen
                     readonly property real lean: (ui.stackCx > ui.width - 260 ? -1 : 1)
-                    readonly property real step: Math.max(52, Math.min(66, (baseY - 40) / (n + 0.6)))
+                    readonly property real step: Math.max(48, Math.min(56, (baseY - 40) / (n + 0.6)))
                     property real t: 0
                     Behavior on t { NumberAnimation { id: stackT; duration: 460; easing.type: Easing.OutQuint } }
 
@@ -5821,10 +5822,13 @@ Scope {
                     }
                     onFanHoveredChanged: if (fanHovered) everHovered = true
                     Timer { id: stackGrace; interval: 1800; onTriggered: stack.settled = true }
+                    // "on the Dock" has to be a geometric test: while the fan is open the Dock's input mask covers the
+                    // whole fan, so hh.hovered alone was true everywhere above the Dock and the fan never folded.
+                    readonly property bool onDock: hh.hovered && hh.point.position.y > ui.activeTop
                     Timer {
                         id: stackLeave
                         interval: 500
-                        running: stack.shown && !stack.fanHovered && !hh.hovered && (stack.everHovered || stack.settled)
+                        running: stack.shown && !stack.fanHovered && !stack.onDock && (stack.everHovered || stack.settled)
                         onTriggered: ui.stackItem = null
                     }
 
@@ -5844,10 +5848,11 @@ Scope {
                             readonly property real ease: 1 - Math.pow(1 - p, 3)
                             // the sway: each step out leans further from the icon, and tilts with it
                             readonly property real angle: (index / Math.max(1, stack.n - 1)) * 0.62 * stack.lean
-                            readonly property real rr: stack.step * (index + 1) * ease
-                            width: 52; height: 72
+                            // the first item sits just above the folder, then one step per item
+                            readonly property real rr: (12 + stack.step * index) * ease
+                            width: 52; height: 54
                             x: ui.stackCx - width / 2 + Math.sin(angle) * rr * 0.78
-                            y: stack.baseY - height - rr + 18
+                            y: stack.baseY - height - rr
                             opacity: Math.min(1, ease * 1.6)
                             scale: 0.4 + 0.6 * ease
                             rotation: angle * 26 * ease
@@ -5864,7 +5869,7 @@ Scope {
                                 id: fanIcon
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 y: 0
-                                width: 44; height: 44
+                                width: 40; height: 40
                                 asynchronous: true; cache: true; smooth: true; mipmap: true
                                 sourceSize: Qt.size(80, 80)
                                 fillMode: fanItem.modelData.isImage ? Image.PreserveAspectCrop : Image.PreserveAspectFit
@@ -5875,7 +5880,7 @@ Scope {
                             Item {
                                 id: labelWrap
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                y: 47
+                                y: 42
                                 width: parent.width + 26; height: lbl.implicitHeight
                                 readonly property real lp: Math.max(0, Math.min(1, (fanItem.ease - 0.55) / 0.45))
                                 opacity: lp * (fanMa.containsMouse ? 1 : 0.82)

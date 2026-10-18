@@ -360,7 +360,7 @@ Scope {
         "showSeconds", "showBatteryPercent", "showTray", "showSearch",
         "spotlightEnabled", "ccEnabled", "notificationsEnabled", "clockAppEnabled", "ccStyle", "userDisplayName", "ccAnimate", "material", "tlAlwaysSymbols", "tlColorOnHover", "tintAccent", "windowBar", "windowBarTitle", "barLogoMode", "barCustomLogoPath", "barWidgets", "weekStartsMonday", "terminal", "launcher",
         "filesCmd", "clipboardCmd", "appUsage", "clipHistory", "clipAutoPaste", "emojiRecent", "screenshotDir", "screenshotSave", "screenshotClipboard", "screenshotNotify", "nightTemp", "ccControls", "ccMigRec", "wallpaperDir", "wallpaperFavs", "wallpaperCmd", "wallpaperVideo", "uiSounds", "gamingMode", "gamingAuto", "ccMigGame", "ccMigTahoe", "lockArtBackground",
-        "lockClockStyle", "switcherStyle", "lockClockFont", "lockClockWeight", "lockClockMaterial", "lockClockIntensity", "lockClockTint", "lockClockTall", "lockClockDate", "autoContrast", "wallpaperAppearance", "wpPairLight", "wpPairDark",
+        "lockClockStyle", "switcherStyle", "barTone", "lockClockFont", "lockClockWeight", "lockClockMaterial", "lockClockIntensity", "lockClockTint", "lockClockTall", "lockClockDate", "autoContrast", "wallpaperAppearance", "wpPairLight", "wpPairDark",
         "notifDnd", "dnd", "nightOn", "keepAwake",
         "kbRepeatRate", "kbRepeatDelay", "mouseSens", "mouseNatural", "tpNatural", "tpTap", "tpDwt", "tpScroll"]
     // Optional bar widgets; tray and Spotlight use their existing showTray/showSearch settings.
@@ -490,13 +490,35 @@ Scope {
     // switches to dark text / light glass on bright backgrounds and the reverse on dark ones; colours cross-fade.
     property bool autoContrast: true
     property int bgTone: 0
+    // The menu bar strip has no fill of its own, so its text has to follow whatever is behind it — exactly what
+    // macOS does with the desktop picture. Without this, Light mode over a dark wallpaper is near-black on black.
+    property int barTone: 0                  // 1 bright behind the bar → dark text · -1 dark behind → white text
+    readonly property bool barDark: (autoContrast && barTone !== 0) ? barTone < 0 : darkMode
+    function measureBarTone(sx, sy, sw, sh) {
+        if (!autoContrast || gaming || barToneProc.running) return;
+        barToneProc.command = ["sh", "-c", "grim -s 0.06 -g \"$1,$2 $3x$4\" - 2>/dev/null | magick - -format '%[fx:0.299*mean.r+0.587*mean.g+0.114*mean.b]' info: 2>/dev/null",
+                               "sh", String(Math.round(sx)), String(Math.round(sy)), String(Math.max(8, Math.round(sw))), String(Math.max(8, Math.round(sh)))];
+        barToneProc.running = true;
+    }
+    Process {
+        id: barToneProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var v = parseFloat(text);
+                if (isNaN(v)) return;
+                var L = Math.pow(Math.max(0, Math.min(1, v)), 2.2);
+                // whichever of the two text colours has the better WCAG contrast against what is behind the strip
+                root.barTone = (1.05 / (L + 0.05)) >= ((L + 0.05) / 0.062) ? -1 : 1;
+            }
+        }
+    }
     readonly property bool effDark: (autoContrast && bgTone !== 0) ? bgTone < 0 : darkMode
     property real dk: effDark ? 1 : 0
     Behavior on dk { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
     function mixc(l, d) { return Qt.rgba(l.r + (d.r - l.r) * dk, l.g + (d.g - l.g) * dk, l.b + (d.b - l.b) * dk, l.a + (d.a - l.a) * dk); }
     QtObject {
         id: bpal
-        readonly property bool dark: root.darkMode
+        readonly property bool dark: root.barDark
         readonly property string fam: root.fontFamily
         property color accent: root.accent
         Behavior on accent { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
@@ -3983,6 +4005,24 @@ Scope {
                 // notifications arriving with no panel open: measure what's behind the banners
                 onToastsShownChanged: if (toastsShown && pop === "") root.measureTone(win.modelData.x + ui.width - 374, win.modelData.y + root.barHeight + 8, 364, 90)
 
+                // what is behind the menu bar strip, so its text stays readable on any wallpaper (macOS does the same)
+                function sampleBar() {
+                    if (!ui.toastScreen || !root.barEnabled) return;
+                    root.measureBarTone(win.modelData.x, win.modelData.y, ui.width, Math.max(10, root.barHeight));
+                }
+                Timer {
+                    interval: 6000
+                    repeat: true
+                    running: root.autoContrast && !root.gaming && ui.toastScreen
+                    triggeredOnStart: true
+                    onTriggered: ui.sampleBar()
+                }
+                Connections {
+                    target: root
+                    function onWallpaperPathChanged() { ui.sampleBar(); }
+                    function onDarkModeChanged() { ui.sampleBar(); }
+                }
+
                 function openTray(item, x) {
                     if (!item || !item.hasMenu) return;
                     if (pop === "tray" && trayItem === item) { pop = ""; return; }
@@ -4636,7 +4676,7 @@ Scope {
                                     visible: mt.modelData.id === "apple" && root.barLogoMode === "apple"
                                     anchors.centerIn: parent
                                     width: 15; height: 15
-                                    source: root.darkMode ? Qt.resolvedUrl("apple-logo-white.svg") : Qt.resolvedUrl("apple-logo-black.svg")
+                                    source: root.barDark ? Qt.resolvedUrl("apple-logo-white.svg") : Qt.resolvedUrl("apple-logo-black.svg")
                                     sourceSize: Qt.size(128, 160)
                                     fillMode: Image.PreserveAspectFit
                                     smooth: true
