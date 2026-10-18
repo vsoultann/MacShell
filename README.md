@@ -76,8 +76,11 @@ The original MacShell is the menu bar, the Dock and the Liquid Glass shader. Eve
 - **AirDrop** — the radar, the devices around you, drag-to-send. It speaks LocalSend's protocol, so phones, tablets and
   other desktops running LocalSend appear here and can receive from here.
 - **App Store** — Flathub, laid out like the real App Store: Discover, categories, screenshots, search and updates.
+- **Reminders** — the macOS window: smart lists in the sidebar, a big title, type to add, click a circle to tick it off,
+  click the text to rename, × to delete. It edits the same `reminders.md` the desktop widget shows.
 - **Welcome** — runs once after installing: hello in thirty-odd languages, your name and picture, then the material
-  (Liquid Glass, Frosted, Blur, Opaque) with a live preview and an amount slider.
+  (Liquid Glass, Frosted, Blur, Opaque) over a page you can actually scroll, so you see the effect on moving content,
+  with the System Settings slider underneath.
 - **Desktop icons** — everything in ~/Desktop, drag and snap to the grid, double-click to open, drop one onto another
   to make a folder, rename and trash from the menu.
 - **Video player** — a QuickTime-looking player with a glass control bar, used by Quick Look and previews.

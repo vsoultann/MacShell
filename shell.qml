@@ -47,6 +47,7 @@ ShellRoot {
         property var desktop: desktopIcons
         property var airdrop: airDrop
         property var preview: previewApp
+        property var reminders: remindersApp
         function openSettings(pane) { macDock.openPrefs(pane); }
 
         // set by MacBar / MacDock (Binding elements) when their glass needs live data
@@ -289,6 +290,7 @@ ShellRoot {
     Desktop { id: desktopIcons; hub: sharedHub }
     AirDrop { id: airDrop; hub: sharedHub }
     Preview { id: previewApp; hub: sharedHub }
+    Reminders { id: remindersApp; hub: sharedHub }
     WindowBar { id: windowBar; hub: sharedHub }
 
     // reopen settings even when both the Dock and the Menu Bar are disabled:
@@ -339,6 +341,9 @@ ShellRoot {
     IpcHandler {
         target: "welcome"
         function open(): void { welcomeApp.open(); }
+        // jump straight to a page (0 hello · 1 you · 2 look · 3 welcome)
+        function step(n: int): void { if (n < 0) { welcomeApp.shown = false; return; } welcomeApp.shown = true; welcomeApp.step = n; }
+        function close(): void { welcomeApp.shown = false; }
     }
     IpcHandler {
         target: "finder"

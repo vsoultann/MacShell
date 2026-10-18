@@ -234,10 +234,28 @@ Scope {
                     transformOrigin: Item.TopLeft
                     Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
                     Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
+                    // Holding the Scope here keeps the menu's actions working: looking "root" up from inside the
+                    // delegate's handler fails at runtime, which is what used to make Move to Trash do nothing.
+                    readonly property var app: root
                     function show(it, mx, my) {
                         item = it;
                         x = Math.min(mx, iconLayer.width - width - 8);
                         y = Math.min(my, iconLayer.height - height - 8);
+                    }
+                    function run(k) {
+                        var a = dctx.app, it = dctx.item;
+                        dctx.item = undefined;
+                        if (k === "open" && it) a.openItem(it);
+                        else if (k === "ql" && it) {
+                            if (it.kind === "Image" && a.hub && a.hub.preview) a.hub.preview.open(it.path);
+                            else a.openItem(it);
+                        }
+                        else if (k === "rename" && it) renamer.begin(it);
+                        else if (k === "copy" && it) Quickshell.execDetached(["sh", "-c", "printf '%s' \"$1\" | wl-copy", "sh", it.path]);
+                        else if (k === "trash" && it) a.trash(it.path);
+                        else if (k === "newfolder") a.newFolder();
+                        else if (k === "cleanup") { a.places = ({}); a.savePlaces(); }
+                        else if (k === "wallpaper" && a.dock) a.dock.openSettings("wallpaper");
                     }
                     Rectangle {
                         anchors.fill: parent
@@ -267,7 +285,7 @@ Scope {
                                 Rectangle {
                                     visible: mrow.sep
                                     x: 12; y: 4; width: parent.width - 24; height: 1
-                                    color: root.darkMode ? Qt.rgba(1, 1, 1, 0.1) : Qt.rgba(0, 0, 0, 0.08)
+                                    color: dctx.app.darkMode ? Qt.rgba(1, 1, 1, 0.1) : Qt.rgba(0, 0, 0, 0.08)
                                 }
                                 Rectangle {
                                     visible: !mrow.sep && mMa.containsMouse
@@ -280,29 +298,15 @@ Scope {
                                     x: 16; anchors.verticalCenter: parent.verticalCenter
                                     text: mrow.modelData.t
                                     color: mMa.containsMouse ? "white"
-                                           : (mrow.modelData.danger ? "#FF453A" : (root.darkMode ? "#F5F5F7" : "#1D1D1F"))
-                                    font.family: root.fam; font.pixelSize: 13
+                                           : (mrow.modelData.danger ? "#FF453A" : (dctx.app.darkMode ? "#F5F5F7" : "#1D1D1F"))
+                                    font.family: dctx.app.fam; font.pixelSize: 13
                                 }
                                 MouseArea {
                                     id: mMa
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     enabled: !mrow.sep
-                                    onClicked: {
-                                        var k = mrow.modelData.k, it = dctx.item;
-                                        dctx.item = undefined;
-                                        if (k === "open" && it) root.openItem(it);
-                                        else if (k === "ql" && it) {
-                                            if (it.kind === "Image" && root.hub && root.hub.preview) root.hub.preview.open(it.path);
-                                            else root.openItem(it);
-                                        }
-                                        else if (k === "rename" && it) renamer.begin(it);
-                                        else if (k === "copy" && it) Quickshell.execDetached(["sh", "-c", "printf '%s' \"$1\" | wl-copy", "sh", it.path]);
-                                        else if (k === "trash" && it) root.trash(it.path);
-                                        else if (k === "newfolder") root.newFolder();
-                                        else if (k === "cleanup") { root.places = ({}); root.savePlaces(); }
-                                        else if (k === "wallpaper" && root.dock) root.dock.openSettings("wallpaper");
-                                    }
+                                    onClicked: dctx.run(mrow.modelData.k)
                                 }
                             }
                         }

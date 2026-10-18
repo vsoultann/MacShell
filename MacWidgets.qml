@@ -265,6 +265,30 @@ Scope {
         }
         return out;
     }
+    // The Repeater used to sit on the plain array, so rewriting the file rebuilt every row and the whole list
+    // replayed its entry animation on every tick. This model is patched in place: only the row that changed moves.
+    ListModel { id: remModel }
+    property bool remReady: false
+    function syncReminders() {
+        var r = root.reminders, i, j;
+        for (i = remModel.count - 1; i >= 0; i--) {
+            var gone = true;
+            for (j = 0; j < r.length; j++) if (r[j].text === remModel.get(i).text) { gone = false; break; }
+            if (gone) remModel.remove(i);
+        }
+        for (var k = 0; k < r.length; k++) {
+            if (k >= remModel.count || remModel.get(k).text !== r[k].text) {
+                remModel.insert(k, { line: r[k].line, done: r[k].done, text: r[k].text, fresh: root.remReady });
+            } else {
+                if (remModel.get(k).done !== r[k].done) remModel.setProperty(k, "done", r[k].done);
+                if (remModel.get(k).line !== r[k].line) remModel.setProperty(k, "line", r[k].line);
+            }
+        }
+        while (remModel.count > r.length) remModel.remove(remModel.count - 1);
+        if (r.length > 0) root.remReady = true;
+    }
+    onRemindersChanged: syncReminders()
+    Component.onCompleted: syncReminders()
     function toggleReminder(lineNo) {
         var l = remFile.text().split("\n");
         if (lineNo < 0 || lineNo >= l.length) return;
@@ -813,7 +837,9 @@ Scope {
             Grid {
                 visible: !parent.med
                 anchors.centerIn: parent
-                columns: 2; spacing: 14
+                // one battery is a single column, otherwise the empty second column throws the ring off centre
+                columns: Math.min(2, Math.max(1, Math.min(4, list.length)))
+                spacing: 14
                 Repeater {
                     model: Math.max(1, Math.min(4, list.length))
                     delegate: Item {
@@ -832,8 +858,13 @@ Scope {
                                 c.strokeStyle = col; c.beginPath(); c.arc(width / 2, height / 2, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct / 100); c.stroke();
                             }
                         }
-                        WIcon { anchors.centerIn: parent; width: 22; height: 22; kind: b ? b.kind : "laptop"; color: ctx ? ctx.fg : "white"; tinted: true }
-                        Text { visible: !!(b && b.charging); anchors.top: parent.top; anchors.right: parent.right; text: "⚡"; color: ctx && ctx.mono ? ctx.fg : "#30D158"; font.pixelSize: 11 }
+                        WIcon { anchors.centerIn: parent; width: 22; height: 22; anchors.verticalCenterOffset: (b && b.charging) ? -4 : 0; kind: b ? b.kind : "laptop"; color: ctx ? ctx.fg : "white"; tinted: true }
+                        Text {
+                            visible: !!(b && b.charging)
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.verticalCenter: parent.verticalCenter; anchors.verticalCenterOffset: 13
+                            text: "\u26A1"; color: ctx && ctx.mono ? ctx.fg : "#30D158"; font.pixelSize: 10
+                        }
                     }
                 }
             }
@@ -1356,23 +1387,25 @@ Scope {
                     }
                 }
                 Repeater {
-                    model: root.reminders
+                    model: remModel
                     delegate: Row {
                         id: remRow
-                        required property var modelData
+                        required property var model
+                        readonly property var modelData: remRow.model
                         required property int index
                         spacing: 8
                         width: parent.width
-                        // rows arrive one after another; the lift is a transform, so the Column keeps its own layout
+                        // the first list staggers in; a row added later springs in on its own, and nothing else moves
                         property real inT: 0
                         opacity: inT
                         transform: Translate { y: (1 - remRow.inT) * 8 }
-                        Component.onCompleted: rowIn.start()
+                        Component.onCompleted: remRow.model.fresh ? rowSolo.start() : rowIn.start()
                         SequentialAnimation {
                             id: rowIn
                             PauseAnimation { duration: Math.min(300, remRow.index * 45) }
                             NumberAnimation { target: remRow; property: "inT"; from: 0; to: 1; duration: 420; easing.type: Easing.OutCubic }
                         }
+                        NumberAnimation { id: rowSolo; target: remRow; property: "inT"; from: 0; to: 1; duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.4 }
                         Rectangle {
                             id: tick
                             width: 16; height: 16; radius: 8
@@ -1466,7 +1499,14 @@ Scope {
                     }
                 }
             }
-            MouseArea { anchors.fill: rHead; enabled: !root.editing; cursorShape: Qt.PointingHandCursor; onClicked: root.openFile(root.cfgDir + "/reminders.md") }
+            // the header opens the Reminders app, not a text editor
+            MouseArea {
+                anchors.fill: rHead; enabled: !root.editing; cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    if (root.hub && root.hub.reminders) root.hub.reminders.open();
+                    else root.openFile(root.cfgDir + "/reminders.md");
+                }
+            }
         }
     }
 

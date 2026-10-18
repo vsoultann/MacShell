@@ -206,8 +206,16 @@ do_config() {
     # your custom/ overrides are never overwritten
     rsync -a --exclude 'custom/' "$REPO/session"/ "$SESS"/
     [ -d "$SESS/custom" ] || cp -r "$REPO/session/custom" "$SESS/custom"
+    # our own helpers inside custom/ are always refreshed (they are ours, not your overrides)
+    mkdir -p "$SESS/custom/scripts"
+    rsync -a "$REPO/session/custom/scripts"/ "$SESS/custom/scripts"/
+    # SUPER + E opens MacShell's Finder unless you already pointed fileManager somewhere else
+    if ! grep -q '^fileManager' "$SESS/custom/variables.lua" 2>/dev/null; then
+        printf '%s\n' '-- MacShell: SUPER + E opens our Finder, not Dolphin.' \
+                       'fileManager = "~/.config/hypr-macshell/custom/scripts/open-finder.sh"' >> "$SESS/custom/variables.lua"
+    fi
     find "$SESS" -type f \( -name '*.conf' -o -name '*.lua' -o -name '*.sh' \) -exec sed -i "s|@HOME@|$HOME|g" {} +
-    chmod +x "$SESS"/scripts/*.sh "$SESS"/hyprland/scripts/*.sh 2>/dev/null || true
+    chmod +x "$SESS"/scripts/*.sh "$SESS"/hyprland/scripts/*.sh "$SESS"/custom/scripts/*.sh 2>/dev/null || true
     note "$SESS"
 }
 

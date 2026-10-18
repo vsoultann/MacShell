@@ -574,10 +574,14 @@ Scope {
         property string kind: ""
         property color color: "white"
         property real level: 3          // speaker / sun intensity 0..3, wifi bars 0..3, battery 0..100
+        property real frac: -1          // continuous 0..1 intensity; overrides level where a glyph supports it
+        property string parts: ""       // draw only one piece of a composite glyph, so the pieces can animate apart
         property bool flag: false       // "disabled" slash for wifi / bluetooth
         width: 18; height: 18
         antialiasing: true
         onKindChanged: requestPaint()
+        onFracChanged: requestPaint()
+        onPartsChanged: requestPaint()
         onColorChanged: requestPaint()
         onLevelChanged: requestPaint()
         onFlagChanged: requestPaint()
@@ -664,7 +668,9 @@ Scope {
                 circ(12.2, 6.4, 5.6); ctx.fill();
                 ctx.globalCompositeOperation = "source-over";
             } else if (k === "sun") {
-                var r = 2.2 + level * 0.5, a = r + 2.2, b = a + 1.2 + level * 0.4;
+                // the rays shrink to stubs as the level drops, the way the macOS brightness key glyph does
+                var lv = frac >= 0 ? Math.max(0, Math.min(1, frac)) : Math.max(0, Math.min(1, level / 3));
+                var r = 2.6 + lv * 0.9, a = r + 1.1, b = a + 0.35 + lv * 3.2;
                 circ(9, 9, r); ctx.stroke();
                 for (i2 = 0; i2 < 8; i2++) {
                     var ang = i2 * PI / 4;
@@ -684,12 +690,19 @@ Scope {
                 ctx.beginPath(); ctx.moveTo(6, 2.6); ctx.quadraticCurveTo(7.2, 4, 6, 5.4); ctx.stroke();
                 ctx.beginPath(); ctx.moveTo(9.4, 2.6); ctx.quadraticCurveTo(10.6, 4, 9.4, 5.4); ctx.stroke();
             } else if (k === "speaker") {
-                poly([2.2, 7, 5.4, 7, 9.2, 3.6, 9.2, 14.4, 5.4, 11, 2.2, 11], true);
-                if (level <= 0) {
+                if (parts === "" || parts === "body")
+                    poly([2.2, 7, 5.4, 7, 9.2, 3.6, 9.2, 14.4, 5.4, 11, 2.2, 11], true);
+                if (parts === "mute") {
                     line(12, 6.8, 16, 11.2); line(16, 6.8, 12, 11.2);
-                } else {
-                    for (i2 = 1; i2 <= Math.min(2, Math.ceil(level / 1.5)); i2++) {
-                        ctx.beginPath(); ctx.arc(9.2, 9, 2.4 + i2 * 3.0, -0.62, 0.62); ctx.stroke();
+                } else if (parts === "w1" || parts === "w2") {
+                    ctx.beginPath(); ctx.arc(9.2, 9, 2.4 + (parts === "w1" ? 3.0 : 6.0), -0.62, 0.62); ctx.stroke();
+                } else if (parts === "") {
+                    if (level <= 0) {
+                        line(12, 6.8, 16, 11.2); line(16, 6.8, 12, 11.2);
+                    } else {
+                        for (i2 = 1; i2 <= Math.min(2, Math.ceil(level / 1.5)); i2++) {
+                            ctx.beginPath(); ctx.arc(9.2, 9, 2.4 + i2 * 3.0, -0.62, 0.62); ctx.stroke();
+                        }
                     }
                 }
             } else if (k === "record") {
@@ -4481,17 +4494,17 @@ Scope {
                         debug: root.glassDebug
                         onShaderError: root.glassState = "failed"
                     }
-                    // the icon gives a little kick on every step, and the speaker's waves follow the level
-                    Glyph {
+                    // The sun turns a full revolution on every step and its rays grow out of the core as it brightens;
+                    // the speaker's waves and its mute cross fade and spring in and out instead of popping.
+                    Item {
                         id: osdIcon
-                        x: 20; anchors.verticalCenter: parent.verticalCenter
-                        width: 24; height: 24
-                        kind: root.osdKind === "brightness" ? "sun" : "speaker"
-                        level: root.osdKind === "brightness" ? 3 : (root.osdValue < 0.01 ? 0 : (root.osdValue < 0.34 ? 1 : (root.osdValue < 0.67 ? 2 : 3)))
-                        color: "white"
+                        x: 18; anchors.verticalCenter: parent.verticalCenter
+                        width: 28; height: 28
+                        readonly property bool bright: root.osdKind === "brightness"
                         property real kick: 0
+                        property real spin: 0
                         scale: 1 + kick * 0.16
-                        rotation: root.osdKind === "brightness" ? kick * 12 : 0
+                        Behavior on spin { NumberAnimation { duration: 680; easing.type: Easing.OutCubic } }
                         SequentialAnimation {
                             id: kickAnim
                             NumberAnimation { target: osdIcon; property: "kick"; to: 1; duration: 90; easing.type: Easing.OutCubic }
@@ -4499,14 +4512,68 @@ Scope {
                         }
                         Connections {
                             target: root
-                            function onOsdValueChanged() { kickAnim.restart(); }
+                            function onOsdValueChanged() {
+                                kickAnim.restart();
+                                if (root.osdKind === "brightness") osdIcon.spin += 360;
+                            }
+                        }
+                        Glyph {
+                            anchors.fill: parent
+                            kind: "sun"
+                            frac: root.osdValue
+                            color: "white"
+                            rotation: osdIcon.spin
+                            opacity: osdIcon.bright ? 1 : 0
+                            scale: osdIcon.bright ? 1 : 0.55
+                            visible: opacity > 0.01
+                            Behavior on frac { NumberAnimation { duration: 280; easing.type: Easing.OutQuint } }
+                            Behavior on opacity { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
+                            Behavior on scale { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.6 } }
+                        }
+                        Item {
+                            id: osdSpk
+                            anchors.fill: parent
+                            readonly property real v: root.osdValue
+                            opacity: osdIcon.bright ? 0 : 1
+                            scale: osdIcon.bright ? 0.55 : 1
+                            visible: opacity > 0.01
+                            Behavior on opacity { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
+                            Behavior on scale { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.6 } }
+                            Glyph { anchors.fill: parent; kind: "speaker"; parts: "body"; color: "white" }
+                            Glyph {
+                                anchors.fill: parent; kind: "speaker"; parts: "mute"; color: "white"
+                                transformOrigin: Item.Center
+                                opacity: osdSpk.v < 0.005 ? 1 : 0
+                                scale: osdSpk.v < 0.005 ? 1 : 0.5
+                                visible: opacity > 0.01
+                                Behavior on opacity { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
+                                Behavior on scale { NumberAnimation { duration: 300; easing.type: Easing.OutBack; easing.overshoot: 2 } }
+                            }
+                            Glyph {
+                                anchors.fill: parent; kind: "speaker"; parts: "w1"; color: "white"
+                                transformOrigin: Item.Center
+                                opacity: osdSpk.v >= 0.005 ? 1 : 0
+                                scale: osdSpk.v >= 0.005 ? 1 : 0.45
+                                visible: opacity > 0.01
+                                Behavior on opacity { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
+                                Behavior on scale { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 2.2 } }
+                            }
+                            Glyph {
+                                anchors.fill: parent; kind: "speaker"; parts: "w2"; color: "white"
+                                transformOrigin: Item.Center
+                                opacity: osdSpk.v >= 0.34 ? 1 : 0
+                                scale: osdSpk.v >= 0.34 ? 1 : 0.45
+                                visible: opacity > 0.01
+                                Behavior on opacity { NumberAnimation { duration: 190; easing.type: Easing.OutCubic } }
+                                Behavior on scale { NumberAnimation { duration: 340; easing.type: Easing.OutBack; easing.overshoot: 2.2 } }
+                            }
                         }
                     }
                     // one continuous fill that glides to the new level, with the track showing through behind it
                     Item {
                         id: osdBar
                         x: 62; anchors.verticalCenter: parent.verticalCenter
-                        width: levelOsd.width - 62 - 24
+                        width: levelOsd.width - 62 - 26
                         height: 8
                         Rectangle {
                             anchors.fill: parent

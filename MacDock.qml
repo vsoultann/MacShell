@@ -720,25 +720,25 @@ Scope {
             { id: "sharing",    sec: 1, name: "Internet Sharing", wg: "wifi",      c1: "#30D158", c2: "#15A52F", keys: "hotspot tether share wifi ap access point 2.0 passpoint" },
             { id: "network",    sec: 1, name: "Network",         wg: "ethernet",   c1: "#3D9BFF", c2: "#0A6CFF", keys: "ethernet ip address vpn tailscale connection" },
             { id: "battery",    sec: 1, name: "Battery",         wg: "bolt",       c1: "#4CD964", c2: "#28A745", keys: "power energy charge profile performance game mode" },
-            { id: "general",    sec: 2, name: "General",         glyph: "behavior", c1: "#8E8E93", c2: "#636366", keys: "enable disable dock menu bar panel show hide off on widgets sound game" },
-            { id: "appearance", sec: 2, name: "Appearance",      glyph: "appearance", c1: "#3A3A3C", c2: "#1C1C1E", keys: "theme dark light mode accent color glass liquid apple style translucency blur corner radius font" },
-            { id: "controlcenter", sec: 2, name: "Control Center", wg: "cc",       c1: "#8E8E93", c2: "#636366", keys: "modules tiles controls" },
-            { id: "dock",       sec: 2, name: "Desktop & Dock",  glyph: "dock",     c1: "#2C2C2E", c2: "#1C1C1E", keys: "size icon magnification zoom spacing margin distance edge hide auto labels indicators bounce trash monitor preview" },
+            { id: "general",    sec: 2, name: "General",         glyph: "behavior", c1: "#9A9AA0", c2: "#636366", keys: "enable disable dock menu bar panel show hide off on widgets sound game" },
+            { id: "appearance", sec: 2, name: "Appearance",      glyph: "appearance", c1: "#5A5A5F", c2: "#2C2C2E", keys: "theme dark light mode accent color glass liquid apple style translucency blur corner radius font" },
+            { id: "controlcenter", sec: 2, name: "Control Center", wg: "cc",       c1: "#7D7AFF", c2: "#5856D6", keys: "modules tiles controls" },
+            { id: "dock",       sec: 2, name: "Desktop & Dock",  glyph: "dock",     c1: "#3D9BFF", c2: "#0A54D6", keys: "size icon magnification zoom spacing margin distance edge hide auto labels indicators bounce trash monitor preview" },
             { id: "displays",   sec: 2, name: "Displays",        wg: "sun",        c1: "#3D9BFF", c2: "#0A6CFF", keys: "brightness night shift monitor resolution refresh scale" },
             { id: "menubar",    sec: 2, name: "Menu Bar",        glyph: "menubar",  c1: "#3D9BFF", c2: "#0A6CFF", keys: "panel bar height clock date seconds 24 hour battery tray search spotlight week monday style liquid bluetooth widget" },
             { id: "wallpaper",  sec: 2, name: "Wallpaper",       glyph: "wallpaper", c1: "#5AC8FA", c2: "#007AFF", keys: "wallpaper background picture image video animated live motion desktop dynamic" },
             { id: "notifications", sec: 3, name: "Notifications", wg: "bell",      c1: "#FF5E57", c2: "#E8342A", keys: "alerts banners popups do not disturb" },
             { id: "sound",      sec: 3, name: "Sound",           wg: "speaker",    c1: "#FF5E7E", c2: "#E8344F", keys: "volume output input microphone speakers headphones effects" },
-            { id: "focus",      sec: 3, name: "Focus",           wg: "moon",       c1: "#7D7AFF", c2: "#5856D6", keys: "do not disturb keep awake sleep" },
-            { id: "update",     sec: 4, name: "Software Update", wg: "sun",        c1: "#8E8E93", c2: "#5A5A5F", keys: "update version changelog release notes upgrade" },
-            { id: "lockscreen", sec: 4, name: "Lock Screen",     wg: "lock",       c1: "#3A3A3C", c2: "#1C1C1E", keys: "lock password album lyrics media clock" },
+            { id: "focus",      sec: 3, name: "Focus",           wg: "moon",       c1: "#BF5AF2", c2: "#8944AB", keys: "do not disturb keep awake sleep" },
+            { id: "update",     sec: 4, name: "Software Update", wg: "gear",       c1: "#FFB340", c2: "#FF8A00", keys: "update version changelog release notes upgrade" },
+            { id: "lockscreen", sec: 4, name: "Lock Screen",     wg: "lock",       c1: "#7D7AFF", c2: "#4B49C8", keys: "lock password album lyrics media clock" },
             { id: "users",      sec: 4, name: "Users & Groups",  wg: "smile",      c1: "#3D9BFF", c2: "#0A6CFF", keys: "account user name picture avatar" },
-            { id: "shortcuts",  sec: 5, name: "Keyboard Shortcuts", wg: "keyboard", c1: "#8E8E93", c2: "#5A5A5F", keys: "keybind shortcut hotkey spotlight switcher binds" },
-            { id: "keyboard",   sec: 5, name: "Keyboard",        wg: "keyboard",   c1: "#A7A7AD", c2: "#7C7C82", keys: "repeat rate delay layout typing" },
-            { id: "mouse",      sec: 5, name: "Mouse",           wg: "mouse",      c1: "#A7A7AD", c2: "#7C7C82", keys: "tracking speed scroll natural" },
-            { id: "trackpad",   sec: 5, name: "Trackpad",        wg: "trackpad",   c1: "#A7A7AD", c2: "#7C7C82", keys: "tap click natural scroll touchpad gestures" },
+            { id: "shortcuts",  sec: 5, name: "Keyboard Shortcuts", wg: "command", c1: "#3D9BFF", c2: "#0A54D6", keys: "keybind shortcut hotkey spotlight switcher binds" },
+            { id: "keyboard",   sec: 5, name: "Keyboard",        wg: "keyboard",   c1: "#9A9AA0", c2: "#6E6E73", keys: "repeat rate delay layout typing" },
+            { id: "mouse",      sec: 5, name: "Mouse",           wg: "mouse",      c1: "#64D2FF", c2: "#0A84FF", keys: "tracking speed scroll natural" },
+            { id: "trackpad",   sec: 5, name: "Trackpad",        wg: "trackpad",   c1: "#4CD964", c2: "#1E9E3A", keys: "tap click natural scroll touchpad gestures" },
             { id: "apps",       sec: 6, name: "Applications",    glyph: "apps",     c1: "#FFB340", c2: "#FF9500", keys: "pinned apps keep remove reset dock" },
-            { id: "about",      sec: 6, name: "About",           glyph: "about",    c1: "#A7A7AD", c2: "#7C7C82", keys: "version reset config folder macdock macbar macshell" }
+            { id: "about",      sec: 6, name: "About",           glyph: "about",    c1: "#C77DFF", c2: "#8944AB", keys: "version reset config folder macdock macbar macshell" }
         ]
 
         readonly property var filtered: {
@@ -5798,29 +5798,33 @@ Scope {
                     readonly property bool shown: ui.stackItem !== null
                     readonly property real baseY: ui.height - root.margin - root.bgHeight - root.iconSize * (root.effMag - 1) - 16
                     readonly property int n: Math.max(1, root.stackFiles.length)
-                    // leans away from the nearer screen edge, and leans hard — this is a fan, not a ladder
-                    readonly property real lean: (ui.stackCx > ui.width / 2 ? -1 : 1)
-                    readonly property real step: Math.max(40, Math.min(62, (baseY - 40) / (n + 0.6)))
+                    // the fan always sways to the right, unless the folder sits so close to the right edge
+                    // that the arc would run off the screen
+                    readonly property real lean: (ui.stackCx > ui.width - 260 ? -1 : 1)
+                    readonly property real step: Math.max(52, Math.min(66, (baseY - 40) / (n + 0.6)))
                     property real t: 0
                     Behavior on t { NumberAnimation { id: stackT; duration: 460; easing.type: Easing.OutQuint } }
 
 
                     // Folds itself away when you stop looking at it — but not before you have had a chance to reach it:
                     // it stays put until the pointer has been over it once, or a couple of seconds have passed.
-                    HoverHandler { id: stackHover }
+                    // Hover is counted on the fan's own items. (It used to be a HoverHandler filling the whole Dock
+                    // layer, so the pointer always counted as "on the fan" and it never folded itself away.)
+                    property int hovers: 0
+                    readonly property bool fanHovered: hovers > 0
                     property bool everHovered: false
                     property bool settled: false
                     onShownChanged: {
                         t = shown ? 1 : 0;
-                        everHovered = false; settled = false;
+                        everHovered = false; settled = false; hovers = 0;
                         if (shown) stackGrace.restart();
                     }
-                    Connections { target: stackHover; function onHoveredChanged() { if (stackHover.hovered) stack.everHovered = true; } }
-                    Timer { id: stackGrace; interval: 2500; onTriggered: stack.settled = true }
+                    onFanHoveredChanged: if (fanHovered) everHovered = true
+                    Timer { id: stackGrace; interval: 1800; onTriggered: stack.settled = true }
                     Timer {
                         id: stackLeave
-                        interval: 600
-                        running: stack.shown && !stackHover.hovered && !hh.hovered && (stack.everHovered || stack.settled)
+                        interval: 500
+                        running: stack.shown && !stack.fanHovered && !hh.hovered && (stack.everHovered || stack.settled)
                         onTriggered: ui.stackItem = null
                     }
 
@@ -5842,8 +5846,8 @@ Scope {
                             readonly property real angle: (index / Math.max(1, stack.n - 1)) * 0.62 * stack.lean
                             readonly property real rr: stack.step * (index + 1) * ease
                             width: 52; height: 72
-                            x: ui.stackCx - width / 2 + Math.sin(angle) * rr * 0.72
-                            y: stack.baseY - height - Math.cos(angle) * rr + 18
+                            x: ui.stackCx - width / 2 + Math.sin(angle) * rr * 0.78
+                            y: stack.baseY - height - rr + 18
                             opacity: Math.min(1, ease * 1.6)
                             scale: 0.4 + 0.6 * ease
                             rotation: angle * 26 * ease
@@ -5874,7 +5878,10 @@ Scope {
                                 y: 47
                                 width: parent.width + 26; height: lbl.implicitHeight
                                 readonly property real lp: Math.max(0, Math.min(1, (fanItem.ease - 0.55) / 0.45))
-                                opacity: lp
+                                opacity: lp * (fanMa.containsMouse ? 1 : 0.82)
+                                Behavior on opacity { NumberAnimation { duration: 140 } }
+                                // the icons tilt with the arc, the names stay upright and readable
+                                rotation: -fanItem.rotation
                                 transform: Translate { y: (1 - labelWrap.lp) * 6 }
                                 Text {
                                     id: lbl
@@ -5894,6 +5901,7 @@ Scope {
                                 id: fanMa
                                 anchors.fill: parent; anchors.margins: -4
                                 hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                onContainsMouseChanged: stack.hovers += containsMouse ? 1 : -1
                                 onClicked: {
                                     var it = fanItem.modelData;
                                     ui.stackItem = null;

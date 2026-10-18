@@ -13,7 +13,33 @@ Scope {
     property var hub: null
     readonly property var dock: hub ? hub.dock : null
     readonly property string fam: dock ? dock.fontFamily : "Inter Variable"
+    readonly property var bar: hub ? hub.bar : null
     readonly property color accent: dock ? dock.accent : "#0A84FF"
+    readonly property bool darkMode: dock ? dock.darkMode : true
+
+    // Light and dark follow the system appearance, and every colour eases across so the switch is a fade.
+    QtObject {
+        id: pal
+        readonly property bool dark: root.darkMode
+        property color frame: dark ? "#0B0B0C" : "#161617"
+        Behavior on frame { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color edge: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.18)
+        Behavior on edge { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color chrome: dark ? Qt.rgba(0.14, 0.14, 0.16, 0.86) : Qt.rgba(0.97, 0.97, 0.98, 0.9)
+        Behavior on chrome { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color chromeEdge: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.12)
+        Behavior on chromeEdge { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color fg: dark ? "#FFFFFF" : "#1D1D1F"
+        Behavior on fg { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color fg2: dark ? Qt.rgba(1, 1, 1, 0.75) : Qt.rgba(0, 0, 0, 0.6)
+        Behavior on fg2 { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color track: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.18)
+        Behavior on track { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color veil: dark ? Qt.rgba(0, 0, 0, 0.65) : Qt.rgba(0, 0, 0, 0.45)
+        Behavior on veil { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        property color lightOff: dark ? Qt.rgba(1, 1, 1, 0.2) : Qt.rgba(1, 1, 1, 0.3)
+        Behavior on lightOff { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+    }
 
     property string title: ""
     property bool resolving: false
@@ -83,8 +109,8 @@ Scope {
             radius: 12
             opacity: Math.min(1, win.arrive * 1.6)
             scale: 0.94 + 0.06 * win.arrive
-            color: "#0B0B0C"
-            border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.14)
+            color: pal.frame
+            border.width: 1; border.color: pal.edge
             clip: true
 
             VideoOutput { id: vout; anchors.fill: parent; fillMode: VideoOutput.PreserveAspectFit }
@@ -123,26 +149,40 @@ Scope {
                 opacity: ui.shownUi ? 1 : 0
                 Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
                 gradient: Gradient {
-                    GradientStop { position: 0; color: Qt.rgba(0, 0, 0, 0.65) }
+                    GradientStop { position: 0; color: pal.veil }
                     GradientStop { position: 1; color: "transparent" }
                 }
-                Row {
-                    x: 16; y: 18
-                    spacing: 8
-                    Repeater {
-                        model: ["#FF5F57", "#FEBC2E", "#28C840"]
-                        delegate: Rectangle {
-                            required property string modelData
-                            required property int index
-                            width: 13; height: 13; radius: 6.5; color: modelData
-                            MouseArea {
-                                anchors.fill: parent; anchors.margins: -3; cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    if (parent.index === 0) win.visible = false;
-                                    else if (parent.index === 1) root.hub && root.hub.minimizeWindow ? root.hub.minimizeWindow(win.title) : win.showMinimized();
-                                    else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen();
+                // the same traffic lights as every other MacShell window: the symbols come up on hover
+                Item {
+                    x: 16; y: 15; width: 58; height: 14
+                    Row {
+                        spacing: 8
+                        Repeater {
+                            model: [{ c: "#FF5F57", g: "\u00D7" }, { c: "#FEBC2E", g: "\u2212" }, { c: "#28C840", g: "\u2197" }]
+                            delegate: Rectangle {
+                                required property var modelData
+                                width: 14; height: 14; radius: 7
+                                color: ((root.bar && root.bar.tlColorOnHover) ? tlMa.containsMouse : (win.active || tlMa.containsMouse)) ? modelData.c : pal.lightOff
+                                border.width: 1; border.color: Qt.rgba(0, 0, 0, 0.14)
+                                Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: parent.modelData.g
+                                    font.pixelSize: 11; font.bold: true
+                                    color: Qt.rgba(0, 0, 0, 0.55)
+                                    opacity: (tlMa.containsMouse || (root.bar && root.bar.tlAlwaysSymbols)) ? 1 : 0
+                                    Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
                                 }
                             }
+                        }
+                    }
+                    MouseArea {
+                        id: tlMa
+                        anchors.fill: parent; anchors.margins: -3; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                        onClicked: mouse => {
+                            if (mouse.x < 25) win.visible = false;
+                            else if (mouse.x < 47) root.hub && root.hub.minimizeWindow ? root.hub.minimizeWindow(win.title) : win.showMinimized();
+                            else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen();
                         }
                     }
                 }
@@ -168,8 +208,8 @@ Scope {
                 Rectangle {
                     anchors.fill: parent
                     radius: 14
-                    color: Qt.rgba(0.14, 0.14, 0.16, 0.86)
-                    border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.16)
+                    color: pal.chrome
+                    border.width: 1; border.color: pal.chromeEdge
                     layer.enabled: true
                     layer.effect: MultiEffect { shadowEnabled: true; shadowBlur: 0.8; shadowOpacity: 0.45; shadowVerticalOffset: 6 }
                 }
@@ -184,19 +224,19 @@ Scope {
                 Text {
                     x: 48; anchors.verticalCenter: parent.verticalCenter
                     text: root.fmt(player.position)
-                    color: Qt.rgba(1, 1, 1, 0.75); font.family: root.fam; font.pixelSize: 11
+                    color: pal.fg2; font.family: root.fam; font.pixelSize: 11
                 }
                 // scrubber
                 Item {
                     x: 92; width: parent.width - 92 - 250
                     height: 20; anchors.verticalCenter: parent.verticalCenter
-                    Rectangle { y: 8; width: parent.width; height: 4; radius: 2; color: Qt.rgba(1, 1, 1, 0.22) }
+                    Rectangle { y: 8; width: parent.width; height: 4; radius: 2; color: pal.track }
                     Rectangle {
-                        y: 8; height: 4; radius: 2; color: "white"
+                        y: 8; height: 4; radius: 2; color: pal.fg
                         width: player.duration > 0 ? parent.width * (player.position / player.duration) : 0
                     }
                     Rectangle {
-                        y: 4; width: 12; height: 12; radius: 6; color: "white"
+                        y: 4; width: 12; height: 12; radius: 6; color: pal.fg
                         x: (player.duration > 0 ? parent.width * (player.position / player.duration) : 0) - 6
                         scale: scrub.pressed ? 1.25 : 1
                         Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutQuint } }
@@ -213,7 +253,7 @@ Scope {
                     anchors.right: parent.right; anchors.rightMargin: 212
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.fmt(player.duration)
-                    color: Qt.rgba(1, 1, 1, 0.75); font.family: root.fam; font.pixelSize: 11
+                    color: pal.fg2; font.family: root.fam; font.pixelSize: 11
                 }
                 Row {
                     anchors.right: parent.right; anchors.rightMargin: 14
@@ -236,7 +276,7 @@ Scope {
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         text: (player.playbackRate === 1 ? "1\u00D7" : player.playbackRate.toFixed(player.playbackRate < 1 ? 2 : 1).replace(/\.0$/, "") + "\u00D7")
-                        color: Qt.rgba(1, 1, 1, 0.8); font.family: root.fam; font.pixelSize: 11
+                        color: pal.fg2; font.family: root.fam; font.pixelSize: 11
                         MouseArea {
                             anchors.fill: parent; anchors.margins: -8; cursorShape: Qt.PointingHandCursor
                             onClicked: {
@@ -256,8 +296,8 @@ Scope {
                     Item {
                         anchors.verticalCenter: parent.verticalCenter
                         width: 56; height: 16
-                        Rectangle { y: 6; width: parent.width; height: 4; radius: 2; color: Qt.rgba(1, 1, 1, 0.22) }
-                        Rectangle { y: 6; width: parent.width * aout.volume; height: 4; radius: 2; color: "white" }
+                        Rectangle { y: 6; width: parent.width; height: 4; radius: 2; color: pal.track }
+                        Rectangle { y: 6; width: parent.width * aout.volume; height: 4; radius: 2; color: pal.fg }
                         MouseArea {
                             anchors.fill: parent; anchors.margins: -6
                             onPressed: mouse => { aout.muted = false; aout.volume = Math.max(0, Math.min(1, (mouse.x - 6) / parent.width)); }
@@ -293,13 +333,15 @@ Scope {
     component PGlyph: Canvas {
         id: pg
         property string kind: ""
+        property color color: pal.fg
         antialiasing: true
         onKindChanged: requestPaint()
+        onColorChanged: requestPaint()
         onWidthChanged: requestPaint()
         onPaint: {
             var c = getContext("2d"); c.reset();
             var s = width / 16; c.scale(s, s);
-            c.fillStyle = "white"; c.strokeStyle = "white"; c.lineWidth = 1.5; c.lineCap = "round"; c.lineJoin = "round";
+            c.fillStyle = pg.color; c.strokeStyle = pg.color; c.lineWidth = 1.5; c.lineCap = "round"; c.lineJoin = "round";
             if (kind === "play") { c.beginPath(); c.moveTo(4.5, 3); c.lineTo(13, 8); c.lineTo(4.5, 13); c.closePath(); c.fill(); }
             else if (kind === "pause") { c.beginPath(); c.roundedRect(4.2, 3, 2.8, 10, 0.9, 0.9); c.fill(); c.beginPath(); c.roundedRect(9, 3, 2.8, 10, 0.9, 0.9); c.fill(); }
             else if (kind === "cc") {

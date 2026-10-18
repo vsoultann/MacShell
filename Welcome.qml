@@ -243,52 +243,144 @@ Scope {
                     width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
                     color: Qt.rgba(1, 1, 1, 0.6); font.family: root.fam; font.pixelSize: 13
                 }
-                // live preview: a little desktop that reacts to the choice
+                // Live preview: a page you can actually scroll, with the shell's glass sitting over it,
+                // so the effect is visible on moving content — the way the macOS sheet shows it.
                 Rectangle {
+                    id: prevCard
                     anchors.horizontalCenter: parent.horizontalCenter
-                    width: Math.min(560, parent.width); height: 170
-                    radius: 14
+                    width: Math.min(560, parent.width); height: 250
+                    radius: 16
                     clip: true
-                    gradient: Gradient {
-                        GradientStop { position: 0; color: "#8C7A6B" }
-                        GradientStop { position: 1; color: "#3E3530" }
-                    }
-                    // the "window" behind the glass
-                    Rectangle { x: 40; y: 50; width: 220; height: 100; radius: 8; color: "#1b1b1f"; opacity: 0.9 }
-                    Text { x: 54; y: 64; text: "A window"; color: Qt.rgba(1, 1, 1, 0.7); font.family: root.fam; font.pixelSize: 11 }
-                    // the preview panel
-                    Rectangle {
-                        id: prevPanel
-                        x: 150; y: 36; width: 250; height: 96; radius: 12
-                        readonly property real a: root.material === "opaque" ? 0.97
-                                               : (root.material === "frosted" ? 0.42 + root.amount * 0.35
-                                               : (root.material === "blur" ? 0.18 + root.amount * 0.25 : 0.14 + root.amount * 0.18))
-                        color: Qt.rgba(0.12, 0.12, 0.14, a)
-                        border.width: 1; border.color: Qt.rgba(1, 1, 1, root.material === "liquid" ? 0.35 : 0.12)
-                        Behavior on color { ColorAnimation { duration: 260 } }
-                        layer.enabled: root.material !== "opaque"
-                        layer.effect: MultiEffect {
-                            blurEnabled: false
+                    color: "#15151A"
+
+                    Item {
+                        id: prevContent
+                        anchors.fill: parent
+                        Image {
+                            anchors.fill: parent
+                            source: root.bar && root.bar.wallpaperPath !== "" ? "file://" + root.bar.wallpaperPath : ""
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true; cache: true; smooth: true; mipmap: true
+                            sourceSize: Qt.size(900, 500)
                         }
-                        Column {
-                            x: 14; y: 14; spacing: 7
-                            Text { text: "Control Center"; color: "white"; font.family: root.fam; font.pixelSize: 12; font.weight: Font.DemiBold }
-                            Row {
-                                spacing: 8
+                        Rectangle {
+                            anchors.fill: parent
+                            visible: parent.children[0].status !== Image.Ready
+                            gradient: Gradient {
+                                GradientStop { position: 0; color: "#8C7A6B" }
+                                GradientStop { position: 1; color: "#3E3530" }
+                            }
+                        }
+                        Flickable {
+                            id: prevFlick
+                            anchors.fill: parent
+                            contentHeight: pcol.height + 150
+                            clip: true
+                            boundsBehavior: Flickable.OvershootBounds
+                            Column {
+                                id: pcol
+                                x: 22; y: 20; width: prevCard.width - 44
+                                spacing: 12
+                                Text {
+                                    text: "Scroll me"
+                                    color: "white"; font.family: root.fam; font.pixelSize: 22; font.weight: Font.Bold
+                                }
                                 Repeater {
-                                    model: 3
-                                    delegate: Rectangle { width: 34; height: 34; radius: 17; color: Qt.rgba(1, 1, 1, root.material === "opaque" ? 0.16 : 0.22) }
+                                    model: 7
+                                    delegate: Rectangle {
+                                        required property int index
+                                        width: pcol.width; height: 52; radius: 12
+                                        color: Qt.rgba(1, 1, 1, 0.14)
+                                        Rectangle {
+                                            x: 12; anchors.verticalCenter: parent.verticalCenter
+                                            width: 28; height: 28; radius: 8
+                                            color: ["#FF375F", "#FF9F0A", "#FFD60A", "#30D158", "#64D2FF", "#0A84FF", "#BF5AF2"][index % 7]
+                                        }
+                                        Rectangle { x: 52; y: 15; width: parent.width * 0.42; height: 8; radius: 4; color: Qt.rgba(1, 1, 1, 0.75) }
+                                        Rectangle { x: 52; y: 30; width: parent.width * 0.62; height: 7; radius: 3.5; color: Qt.rgba(1, 1, 1, 0.4) }
+                                    }
                                 }
                             }
-                            Rectangle { width: 210; height: 10; radius: 5; color: Qt.rgba(1, 1, 1, 0.25) }
                         }
                     }
-                    // what is behind the glass, blurred to match the choice
-                    Rectangle {
-                        anchors.fill: prevPanel
-                        visible: root.material !== "opaque"
-                        radius: 12
-                        color: "transparent"
+
+                    // what the chosen material does to everything behind it
+                    Item {
+                        id: prevGlass
+                        x: 26; width: parent.width - 52
+                        y: parent.height - 76; height: 54
+                        readonly property real amt: root.amount
+                        readonly property bool solid: root.material === "opaque"
+                        property real blurPx: root.material === "blur" ? (6 + amt * 52)
+                                                    : (root.material === "frosted" ? (10 + amt * 34) : (4 + amt * 22))
+                        Behavior on blurPx { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+
+                        ShaderEffectSource {
+                            id: prevSrc
+                            anchors.fill: parent
+                            visible: false
+                            live: true
+                            sourceItem: prevContent
+                            sourceRect: Qt.rect(prevGlass.x, prevGlass.y, prevGlass.width, prevGlass.height)
+                        }
+                        Rectangle {
+                            id: prevMask
+                            anchors.fill: parent
+                            radius: 16
+                            color: "black"
+                            visible: false
+                            layer.enabled: true
+                        }
+                        Item {
+                            anchors.fill: parent
+                            visible: !prevGlass.solid
+                            layer.enabled: true
+                            layer.effect: MultiEffect { maskEnabled: true; maskSource: prevMask }
+                            MultiEffect {
+                                anchors.fill: parent
+                                source: prevSrc
+                                blurEnabled: true
+                                blurMax: 64
+                                blur: Math.max(0, Math.min(1, prevGlass.blurPx / 64))
+                                saturation: root.material === "liquid" ? 0.35 : 0.1
+                                brightness: root.material === "liquid" ? 0.06 : 0
+                            }
+                        }
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 16
+                            color: Qt.rgba(0.12, 0.12, 0.14,
+                                           prevGlass.solid ? 0.97
+                                         : (root.material === "frosted" ? 0.24 + root.amount * 0.3
+                                         : (root.material === "blur" ? 0.12 + root.amount * 0.2 : 0.08 + root.amount * 0.16)))
+                            Behavior on color { ColorAnimation { duration: 240 } }
+                            border.width: 1
+                            border.color: Qt.rgba(1, 1, 1, root.material === "liquid" ? 0.3 + root.amount * 0.2 : 0.12)
+                        }
+                        // a search field, the way the macOS sheet shows one over the page
+                        Row {
+                            anchors.verticalCenter: parent.verticalCenter
+                            x: 16; spacing: 10
+                            Rectangle {
+                                width: 26; height: 26; radius: 13
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: Qt.rgba(1, 1, 1, 0.18)
+                                Canvas {
+                                    anchors.centerIn: parent; width: 13; height: 13
+                                    onPaint: {
+                                        var c = getContext("2d"); c.reset();
+                                        c.strokeStyle = "white"; c.lineWidth = 1.6; c.lineCap = "round";
+                                        c.beginPath(); c.arc(5.4, 5.4, 4.1, 0, Math.PI * 2); c.stroke();
+                                        c.beginPath(); c.moveTo(8.6, 8.6); c.lineTo(12, 12); c.stroke();
+                                    }
+                                }
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Search"
+                                color: Qt.rgba(1, 1, 1, 0.8); font.family: root.fam; font.pixelSize: 14
+                            }
+                        }
                     }
                 }
                 Row {
@@ -302,32 +394,36 @@ Scope {
                             width: 128; height: 36; radius: 10
                             color: sel ? root.accent : Qt.rgba(1, 1, 1, 0.12)
                             Behavior on color { ColorAnimation { duration: 200 } }
+                            scale: wma.pressed ? 0.96 : 1
+                            Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutQuint } }
                             Text { anchors.centerIn: parent; text: parent.modelData.n; color: "white"; font.family: root.fam; font.pixelSize: 13; font.weight: parent.sel ? Font.DemiBold : Font.Normal }
-                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.material = parent.modelData.id }
+                            MouseArea { id: wma; anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.material = parent.modelData.id }
                         }
                     }
                 }
-                // the amount slider — not shown for Opaque, and Blur never goes fully clear
-                Item {
+                // the amount slider — the System Settings one, with an icon at each end
+                Column {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    width: 360; height: 40
+                    spacing: 10
                     opacity: root.material === "opaque" ? 0 : 1
                     visible: opacity > 0.01
                     Behavior on opacity { NumberAnimation { duration: 240 } }
-                    Text { anchors.horizontalCenter: parent.horizontalCenter; y: 0; text: root.material === "blur" ? "How much blur" : "How much glass"; color: Qt.rgba(1, 1, 1, 0.6); font.family: root.fam; font.pixelSize: 12 }
-                    Rectangle {
-                        y: 26; width: parent.width; height: 5; radius: 2.5
-                        color: Qt.rgba(1, 1, 1, 0.18)
-                        Rectangle { width: parent.width * root.amount; height: parent.height; radius: 2.5; color: root.accent }
-                        Rectangle {
-                            x: parent.width * root.amount - 9; y: -6
-                            width: 18; height: 18; radius: 9; color: "white"
-                        }
-                        MouseArea {
-                            anchors.fill: parent; anchors.margins: -10
-                            onPositionChanged: mouse => { if (pressed) root.amount = Math.max(root.material === "blur" ? 0.15 : 0, Math.min(1, mouse.x / width)); }
-                            onPressed: mouse => root.amount = Math.max(root.material === "blur" ? 0.15 : 0, Math.min(1, mouse.x / width))
-                        }
+                    WSlider {
+                        id: amtSlider
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 420
+                        value: root.amount
+                        accent: root.accent
+                        minimum: root.material === "blur" ? 0.15 : 0
+                        onMoved: v => root.amount = v
+                    }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 420; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
+                        text: root.material === "blur"
+                              ? "Less blur keeps more of the desktop visible; more blur hides it and makes text easier to read."
+                              : "Clear is more transparent and tinted increases opacity, adding contrast to content and controls."
+                        color: Qt.rgba(1, 1, 1, 0.55); font.family: root.fam; font.pixelSize: 12
                     }
                 }
                 WButton { label: "Continue"; onPressed2: { root.step = 3; root.finish(); } }
