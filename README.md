@@ -72,7 +72,9 @@ The original MacShell is the menu bar, the Dock and the Liquid Glass shader. Eve
 - **Finder** — sidebar with favourites and colour tags, list and icon views, coloured folders, search, new folder, trash,
   Quick Look (pictures, text, PDF and video in our own player), **Merge Photos** (grid, side by side or stacked),
   pinning a folder to the Dock, where it fans its contents out in an arc, and dragging files straight out into any
-  other app.
+  other app. **Locations** lists USB sticks and cards as you plug them in — click to mount and open, eject from the
+  sidebar — and the right-click menu does what a file manager should: Open With, Rename, Duplicate, Compress, Copy,
+  Cut, Paste, Get Info, Share with AirDrop, with the usual keys (⌘C/⌘X/⌘V/⌘D/⌘I/F2/Delete and ⌘⇧. for dotfiles).
 - **Photos** — your library grouped by day, folders as albums, favourites, a zoom slider and a full-screen viewer.
 - **AirDrop** — the radar, the devices around you, drag-to-send. Drag files onto someone to send straight away, or
   drop them anywhere in the window and pick who gets them; Finder's menu has **Share with AirDrop** too. It speaks

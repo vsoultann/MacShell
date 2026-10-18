@@ -138,12 +138,15 @@ Scope {
     function goFwd() { if (fwd.length === 0) return; back.push(dir); dir = fwd.pop(); selected = ""; read(); }
     function up() { var p = dir.replace(/\/+$/, ""); var i = p.lastIndexOf("/"); if (i > 0) go(p.substring(0, i)); else go("/"); }
 
+    property bool showHidden: false
+    onShowHiddenChanged: read()
     function read() {
         loading = true;
         lsProc.running = false;
         lsProc.command = ["sh", "-c",
             "cd \"$1\" 2>/dev/null || exit 0; "
-            + "find . -mindepth 1 -maxdepth 1 ! -name '.*' -printf '%y\\t%s\\t%T@\\t%f\\n' 2>/dev/null | LC_ALL=C sort -t\"$(printf '\\t')\" -k1,1 -k4,4f | head -3000", "sh", dir];
+            + "find . -mindepth 1 -maxdepth 1 " + (showHidden ? "" : "! -name '.*' ")
+            + "-printf '%y\\t%s\\t%T@\\t%f\\n' 2>/dev/null | LC_ALL=C sort -t\"$(printf '\\t')\" -k1,1 -k4,4f | head -3000", "sh", dir];
         lsProc.running = true;
     }
     Process {
@@ -205,6 +208,76 @@ Scope {
         reloadLater.restart();
     }
     Timer { id: reloadLater; interval: 350; onTriggered: root.read() }
+
+    // ── the everyday file-manager actions ──
+    property var clipFiles: []          // what Copy / Cut put aside
+    property bool clipCut: false
+    function copyFiles(list) {
+        clipFiles = (list || []).slice();
+        clipCut = false;
+        // and on the system clipboard, so pasting into other apps works too
+        if (clipFiles.length > 0)
+            Quickshell.execDetached(["sh", "-c", "printf '%s' \"$1\" | wl-copy --type text/uri-list", "sh",
+                                     clipFiles.map(function (f) { return root.uriOf(f); }).join("\r\n")]);
+    }
+    function cutFiles(list) { copyFiles(list); clipCut = true; }
+    function pasteFiles() {
+        if (clipFiles.length === 0) return;
+        var args = ["sh", "-c",
+            "d=\"$1\"; shift; mode=\"$1\"; shift; for f; do "
+            + "b=$(basename \"$f\"); t=\"$d/$b\"; i=2; "
+            + "while [ -e \"$t\" ]; do t=\"$d/${b%.*} ($i)${b##*.}\"; "
+            + "  case \"$b\" in *.*) t=\"$d/$(printf '%s' \"${b%.*}\") ($i).${b##*.}\";; *) t=\"$d/$b ($i)\";; esac; i=$((i+1)); done; "
+            + "if [ \"$mode\" = cut ]; then mv -- \"$f\" \"$t\"; else cp -a -- \"$f\" \"$t\"; fi; done",
+            "sh", dir, clipCut ? "cut" : "copy"].concat(clipFiles);
+        Quickshell.execDetached(args);
+        if (clipCut) { clipFiles = []; clipCut = false; }
+        reloadLater.restart();
+    }
+    function duplicate(path) {
+        Quickshell.execDetached(["sh", "-c",
+            "f=\"$1\"; d=$(dirname \"$f\"); b=$(basename \"$f\"); "
+            + "case \"$b\" in *.*) n=\"$d/${b%.*} copy.${b##*.}\";; *) n=\"$d/$b copy\";; esac; "
+            + "i=2; while [ -e \"$n\" ]; do case \"$b\" in *.*) n=\"$d/${b%.*} copy $i.${b##*.}\";; *) n=\"$d/$b copy $i\";; esac; i=$((i+1)); done; "
+            + "cp -a -- \"$f\" \"$n\"", "sh", path]);
+        reloadLater.restart();
+    }
+    function compress(list) {
+        if (!list || list.length === 0) return;
+        var args = ["sh", "-c",
+            "d=\"$1\"; shift; n=\"$1\"; shift; out=\"$d/$n.zip\"; i=2; "
+            + "while [ -e \"$out\" ]; do out=\"$d/$n $i.zip\"; i=$((i+1)); done; "
+            + "cd \"$d\" && zip -r -q \"$out\" \"$@\" 2>/dev/null || tar -czf \"${out%.zip}.tar.gz\" \"$@\"",
+            "sh", dir, list.length === 1 ? list[0].split("/").pop() : "Archive"];
+        for (var i = 0; i < list.length; i++) args.push(list[i].split("/").pop());
+        Quickshell.execDetached(args);
+        reloadLater.restart();
+    }
+    function renameTo(path, name) {
+        var n = String(name || "").trim();
+        if (n === "" || n.indexOf("/") >= 0) return;
+        Quickshell.execDetached(["sh", "-c", "d=$(dirname \"$1\"); [ -e \"$d/$2\" ] || mv -- \"$1\" \"$d/$2\"", "sh", path, n]);
+        reloadLater.restart();
+    }
+    function openWith(path) {
+        // the desktop's own "Open With" chooser, whichever one is installed
+        Quickshell.execDetached(["sh", "-c",
+            "mimeopen -a \"$1\" 2>/dev/null || exo-open \"$1\" 2>/dev/null || xdg-open \"$1\"", "sh", path]);
+    }
+    // ── Get Info ──
+    property var infoFor: null
+    property string infoText: ""
+    function getInfo(e) {
+        infoFor = e;
+        infoText = "";
+        infoProc.running = false;
+        infoProc.command = ["sh", "-c",
+            "f=\"$1\"; stat -c 'Size:\t%s bytes%nKind:\t%F%nOwner:\t%U:%G%nPermissions:\t%A%nModified:\t%y%nCreated:\t%w' \"$f\" 2>/dev/null; "
+            + "[ -d \"$f\" ] && printf 'Contains:\t%s items\n' \"$(find \"$f\" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)\"; "
+            + "printf 'Where:\t%s\n' \"$(dirname \"$f\")\"; exit 0", "sh", e.path];
+        infoProc.running = true;
+    }
+    Process { id: infoProc; stdout: StdioCollector { onStreamFinished: root.infoText = text } }
     Process {
         id: mergeProc
         stdout: StdioCollector {
@@ -238,6 +311,81 @@ Scope {
         selection = []; selected = "";
         open(where);
     }
+    // ── Locations: USB sticks, SD cards and anything else you plug in ──
+    property var drives: []            // { dev, name, size, mount, mounted }
+    property string driveBusy: ""
+    Process {
+        id: drivesProc
+        command: ["sh", "-c",
+            "lsblk -J -o PATH,LABEL,SIZE,MOUNTPOINT,RM,HOTPLUG,TYPE,FSTYPE 2>/dev/null"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var out = [];
+                try {
+                    var o = JSON.parse(text);
+                    var walk = function (list) {
+                        for (var i = 0; i < list.length; i++) {
+                            var d = list[i];
+                            if (d.children && d.children.length) walk(d.children);
+                            // a disk with partitions is not itself a volume: list what you can actually open
+                            if (d.type === "disk" && d.children && d.children.length) continue;
+                            if (d.type !== "part" && d.type !== "disk") continue;
+                            if (!(d.rm || d.hotplug)) continue;
+                            if (!d.fstype || d.fstype === "swap") continue;
+                            if (d.mountpoint === "[SWAP]" || d.mountpoint === "/" ) continue;
+                            out.push({ dev: d.path, name: d.label || d.path.split("/").pop(),
+                                       size: d.size || "", mount: d.mountpoint || "",
+                                       mounted: !!d.mountpoint });
+                        }
+                    };
+                    walk(o.blockdevices || []);
+                } catch (e) { }
+                // a whole disk that also lists its partitions is not a volume you can open: drop it
+                var keep = [];
+                for (var a = 0; a < out.length; a++) {
+                    var covered = false;
+                    for (var b = 0; b < out.length; b++) {
+                        if (a === b) continue;
+                        if (out[b].dev.length > out[a].dev.length && out[b].dev.indexOf(out[a].dev) === 0) { covered = true; break; }
+                    }
+                    if (!covered) keep.push(out[a]);
+                }
+                if (JSON.stringify(keep) !== JSON.stringify(root.drives)) root.drives = keep;
+            }
+        }
+    }
+    function scanDrives() { if (!drivesProc.running) drivesProc.running = true; }
+    function openDrive(d) {
+        if (d.mounted) { go(d.mount); return; }
+        driveBusy = d.dev;
+        mountProc.running = false;
+        mountProc.command = ["sh", "-c",
+            "p=$(udisksctl mount -b \"$1\" 2>&1); echo \"$p\" | sed -n 's/.* at \\(.*\\)\\.$/\\1/p'", "sh", d.dev];
+        mountProc.running = true;
+    }
+    Process {
+        id: mountProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var m = text.trim().replace(/^[`'\"]+|[`'\".]+$/g, "");
+                root.driveBusy = "";
+                root.scanDrives();
+                if (m !== "" && m.charAt(0) === "/") root.go(m);
+            }
+        }
+        onExited: { root.driveBusy = ""; root.scanDrives(); }
+    }
+    function ejectDrive(d) {
+        driveBusy = d.dev;
+        ejectProc.running = false;
+        // unmount, then spin it down so it is safe to pull out
+        ejectProc.command = ["sh", "-c",
+            "udisksctl unmount -b \"$1\" >/dev/null 2>&1; udisksctl power-off -b \"$1\" >/dev/null 2>&1; exit 0", "sh", d.dev];
+        ejectProc.running = true;
+        if (dir.indexOf(d.mount) === 0 && d.mount !== "") go(home);
+    }
+    Process { id: ejectProc; onExited: { root.driveBusy = ""; root.scanDrives(); } }
+
     function chooseDone(ok) {
         var cb = chooseCb, files = selection.slice();
         chooseCb = null; chooseVerb = "";
@@ -252,7 +400,12 @@ Scope {
         visible: false
         color: "transparent"
         flags: Qt.Window | Qt.FramelessWindowHint
-        onVisibleChanged: if (!visible) { root.chooseCb = null; root.chooseVerb = ""; root.entries = []; root.selection = []; root.qlText = ""; Qt.callLater(gc); }
+        onVisibleChanged: {
+            if (visible) root.scanDrives();
+            else { root.chooseCb = null; root.chooseVerb = ""; root.entries = []; root.selection = []; root.qlText = ""; Qt.callLater(gc); }
+        }
+        // a stick you plug in shows up on its own
+        Timer { interval: 3000; repeat: true; running: win.visible; onTriggered: root.scanDrives() }
 
         QtObject {
             id: pal
@@ -363,6 +516,68 @@ Scope {
                                 MouseArea { id: fMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.go(favRow.modelData.p) }
                             }
                         }
+                        Item { width: 1; height: 10; visible: root.drives.length > 0 }
+                        Text {
+                            x: 10; text: "Locations"; color: pal.text3
+                            visible: root.drives.length > 0
+                            font.family: root.fam; font.pixelSize: 11; font.weight: Font.DemiBold
+                        }
+                        Repeater {
+                            model: root.drives
+                            delegate: Rectangle {
+                                id: drvRow
+                                required property var modelData
+                                readonly property bool sel: root.dir === drvRow.modelData.mount && drvRow.modelData.mounted
+                                width: parent.width; height: 27; radius: 6
+                                color: sel ? pal.selRow : (dMa.containsMouse ? pal.pill : "transparent")
+                                Behavior on color { ColorAnimation { duration: 140 } }
+                                // arriving drives slide in instead of appearing
+                                property real inT: 0
+                                opacity: inT
+                                transform: Translate { x: (1 - drvRow.inT) * -8 }
+                                Component.onCompleted: drvIn.start()
+                                NumberAnimation { id: drvIn; target: drvRow; property: "inT"; from: 0; to: 1; duration: 320; easing.type: Easing.OutCubic }
+                                FnGlyph { x: 9; anchors.verticalCenter: parent.verticalCenter; width: 15; height: 15; kind: "drive"; color: root.accent }
+                                Text {
+                                    x: 32; anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width - 32 - (dMa.containsMouse ? 26 : 8); elide: Text.ElideRight
+                                    text: drvRow.modelData.name
+                                    color: drvRow.modelData.mounted ? pal.text : pal.text2
+                                    font.family: root.fam; font.pixelSize: 12
+                                    font.weight: drvRow.sel ? Font.DemiBold : Font.Normal
+                                }
+                                // eject
+                                Item {
+                                    anchors.right: parent.right; anchors.rightMargin: 7
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 15; height: 15
+                                    opacity: dMa.containsMouse && drvRow.modelData.mounted ? 1 : 0
+                                    visible: opacity > 0.01
+                                    Behavior on opacity { NumberAnimation { duration: 140 } }
+                                    FnGlyph { anchors.fill: parent; kind: "eject"; color: ejMa.containsMouse ? root.accent : pal.text2 }
+                                    MouseArea {
+                                        id: ejMa
+                                        anchors.fill: parent; anchors.margins: -4
+                                        hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                        enabled: dMa.containsMouse && drvRow.modelData.mounted
+                                        onClicked: root.ejectDrive(drvRow.modelData)
+                                    }
+                                }
+                                Text {
+                                    anchors.right: parent.right; anchors.rightMargin: 8
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: root.driveBusy === drvRow.modelData.dev
+                                    text: "\u2026"; color: pal.text3; font.family: root.fam; font.pixelSize: 13
+                                }
+                                MouseArea {
+                                    id: dMa
+                                    anchors.fill: parent; anchors.rightMargin: 24
+                                    hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.openDrive(drvRow.modelData)
+                                }
+                            }
+                        }
+
                         Item { width: 1; height: 10 }
                         Text { x: 10; text: "Tags"; color: pal.text3; font.family: root.fam; font.pixelSize: 11; font.weight: Font.DemiBold }
                         Repeater {
@@ -442,6 +657,15 @@ Scope {
                             color: nfMa.containsMouse ? pal.pill : "transparent"
                             FnGlyph { anchors.centerIn: parent; width: 15; height: 15; kind: "newfolder"; color: pal.text }
                             MouseArea { id: nfMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.newFolder() }
+                        }
+                        // dotfiles on or off (⌘⇧. does the same)
+                        Rectangle {
+                            width: 26; height: 26; radius: 7
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: root.showHidden ? root.accent : (hidMa.containsMouse ? pal.pill : "transparent")
+                            Behavior on color { ColorAnimation { duration: 160 } }
+                            FnGlyph { anchors.centerIn: parent; width: 15; height: 15; kind: "eye"; color: root.showHidden ? "white" : pal.text }
+                            MouseArea { id: hidMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.showHidden = !root.showHidden }
                         }
                         Rectangle {
                             width: 150; height: 26; radius: 7; color: pal.field
@@ -704,13 +928,18 @@ Scope {
                         id: ctxCol
                         y: 5; width: parent.width
                         Repeater {
-                            model: ["Open", "Quick Look", "Merge Photos\u2026", "Pin to Dock", "sep", "Share with AirDrop\u2026", "Copy Path", "Move to Trash"]
+                            model: ["Open", "Open With\u2026", "Quick Look", "sep",
+                                    "Rename\u2026", "Duplicate", "Compress", "Merge Photos\u2026", "sep",
+                                    "Copy", "Cut", "Paste", "Copy Path", "sep",
+                                    "Share with AirDrop\u2026", "Pin to Dock", "Get Info", "Move to Trash"]
                             delegate: Item {
                                 required property string modelData
                                 width: parent.width; height: modelData === "sep" ? 7 : 26
                                 visible: (modelData !== "Pin to Dock" || (ctx.item && ctx.item.isDir))
                                        && (modelData !== "Merge Photos\u2026" || root.selectedImages.length >= 2)
                                        && (modelData !== "Share with AirDrop\u2026" || (ctx.item && !ctx.item.isDir))
+                                       && (modelData !== "Open With\u2026" || (ctx.item && !ctx.item.isDir))
+                                       && (modelData !== "Paste" || root.clipFiles.length > 0)
                                 Rectangle { visible: parent.modelData === "sep"; x: 10; width: parent.width - 20; height: 1; y: 3; color: pal.sep }
                                 Rectangle { visible: parent.modelData !== "sep" && cxMa.containsMouse; x: 5; width: parent.width - 10; height: 24; radius: 5; color: root.accent }
                                 Text {
@@ -728,7 +957,16 @@ Scope {
                                         var m = parent.modelData, it = ctx.item;
                                         ctx.item = null;
                                         if (!it) return;
+                                        var sel = root.isSelected(it.path) && root.selection.length > 0 ? root.selection : [it.path];
                                         if (m === "Open") root.openEntry(it);
+                                        else if (m === "Open With\u2026") root.openWith(it.path);
+                                        else if (m === "Rename\u2026") renamer.begin(it);
+                                        else if (m === "Duplicate") { for (var di = 0; di < sel.length; di++) root.duplicate(sel[di]); }
+                                        else if (m === "Compress") root.compress(sel);
+                                        else if (m === "Copy") root.copyFiles(sel);
+                                        else if (m === "Cut") root.cutFiles(sel);
+                                        else if (m === "Paste") root.pasteFiles();
+                                        else if (m === "Get Info") root.getInfo(it);
                                         else if (m === "Quick Look") ql.showFor(it);
                                         else if (m === "Merge Photos\u2026") root.mergeSheet = true;
                                         else if (m === "Share with AirDrop\u2026") {
@@ -777,6 +1015,156 @@ Scope {
                     z: 40
                     visible: ctx.item !== null
                     onClicked: ctx.item = null
+                }
+
+                // the keys a file manager is expected to answer to
+                focus: true
+                Keys.onPressed: event => {
+                    var ctrl = (event.modifiers & Qt.ControlModifier) !== 0;
+                    if (ctrl && event.key === Qt.Key_C) { root.copyFiles(root.selection); event.accepted = true; }
+                    else if (ctrl && event.key === Qt.Key_X) { root.cutFiles(root.selection); event.accepted = true; }
+                    else if (ctrl && event.key === Qt.Key_V) { root.pasteFiles(); event.accepted = true; }
+                    else if (ctrl && event.key === Qt.Key_D && root.selected !== "") { root.duplicate(root.selected); event.accepted = true; }
+                    else if (ctrl && (event.modifiers & Qt.ShiftModifier) && event.key === Qt.Key_Period) { root.showHidden = !root.showHidden; event.accepted = true; }
+                    else if (ctrl && (event.modifiers & Qt.ShiftModifier) && event.key === Qt.Key_N) { root.newFolder(); event.accepted = true; }
+                    else if (ctrl && event.key === Qt.Key_I && root.selected !== "") {
+                        for (var i = 0; i < root.shown.length; i++)
+                            if (root.shown[i].path === root.selected) { root.getInfo(root.shown[i]); break; }
+                        event.accepted = true;
+                    }
+                    else if (event.key === Qt.Key_F2 && root.selected !== "") {
+                        for (var j = 0; j < root.shown.length; j++)
+                            if (root.shown[j].path === root.selected) { renamer.begin(root.shown[j]); break; }
+                        event.accepted = true;
+                    }
+                    else if (event.key === Qt.Key_Delete && root.selection.length > 0) {
+                        for (var k = 0; k < root.selection.length; k++) root.trash(root.selection[k]);
+                        event.accepted = true;
+                    }
+                    else if (event.key === Qt.Key_Backspace && (event.modifiers & Qt.AltModifier)) { root.up(); event.accepted = true; }
+                }
+
+                // ── rename sheet ──
+                Item {
+                    id: renamer
+                    property var item: null
+                    readonly property bool open: item !== null
+                    anchors.fill: parent
+                    z: 70
+                    visible: opacity > 0.01
+                    opacity: open ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                    function begin(it) { item = it; nameField.text = it.name; nameField.forceActiveFocus(); nameField.selectAll(); }
+                    function commit() { if (item) root.renameTo(item.path, nameField.text); item = null; }
+                    Rectangle { anchors.fill: parent; color: Qt.rgba(0, 0, 0, 0.3); MouseArea { anchors.fill: parent; onClicked: renamer.item = null } }
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 360; height: 128; radius: 14
+                        color: pal.bg
+                        border.width: 1; border.color: pal.sep
+                        scale: renamer.open ? 1 : 0.94
+                        Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
+                        layer.enabled: true
+                        layer.effect: MultiEffect { shadowEnabled: true; shadowBlur: 0.9; shadowOpacity: 0.4; shadowVerticalOffset: 8 }
+                        Text { x: 18; y: 16; text: "Rename"; color: pal.text; font.family: root.fam; font.pixelSize: 14; font.weight: Font.DemiBold }
+                        Rectangle {
+                            x: 18; y: 44; width: parent.width - 36; height: 30; radius: 8; color: pal.field
+                            TextInput {
+                                id: nameField
+                                x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
+                                color: pal.text; font.family: root.fam; font.pixelSize: 13
+                                selectByMouse: true
+                                onAccepted: renamer.commit()
+                                Keys.onEscapePressed: renamer.item = null
+                            }
+                        }
+                        Row {
+                            anchors.right: parent.right; anchors.rightMargin: 18
+                            anchors.bottom: parent.bottom; anchors.bottomMargin: 14
+                            spacing: 10
+                            Rectangle {
+                                width: 84; height: 28; radius: 8; color: rcMa.containsMouse ? pal.selRow : pal.pill
+                                Text { anchors.centerIn: parent; text: "Cancel"; color: pal.text; font.family: root.fam; font.pixelSize: 12 }
+                                MouseArea { id: rcMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: renamer.item = null }
+                            }
+                            Rectangle {
+                                width: 84; height: 28; radius: 8; color: root.accent
+                                Text { anchors.centerIn: parent; text: "Rename"; color: "white"; font.family: root.fam; font.pixelSize: 12; font.weight: Font.DemiBold }
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: renamer.commit() }
+                            }
+                        }
+                    }
+                }
+
+                // ── Get Info sheet ──
+                Item {
+                    id: infoSheet
+                    readonly property bool open: root.infoFor !== null
+                    anchors.fill: parent
+                    z: 70
+                    visible: opacity > 0.01
+                    opacity: open ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                    Rectangle { anchors.fill: parent; color: Qt.rgba(0, 0, 0, 0.3); MouseArea { anchors.fill: parent; onClicked: root.infoFor = null } }
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 400; height: 300; radius: 14
+                        color: pal.bg
+                        border.width: 1; border.color: pal.sep
+                        clip: true
+                        scale: infoSheet.open ? 1 : 0.94
+                        Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
+                        layer.enabled: true
+                        layer.effect: MultiEffect { shadowEnabled: true; shadowBlur: 0.9; shadowOpacity: 0.4; shadowVerticalOffset: 8 }
+                        FnGlyph {
+                            anchors.horizontalCenter: parent.horizontalCenter; y: 18
+                            width: 44; height: 44
+                            kind: root.infoFor ? (root.infoFor.isDir ? "folder" : root.iconFor(root.infoFor.kind)) : "doc"
+                            color: root.infoFor && root.infoFor.isDir ? root.accent : pal.text2
+                            filled: root.infoFor ? root.infoFor.isDir : false
+                        }
+                        Text {
+                            y: 68; width: parent.width - 36; x: 18
+                            horizontalAlignment: Text.AlignHCenter; elide: Text.ElideMiddle
+                            text: root.infoFor ? root.infoFor.name : ""
+                            color: pal.text; font.family: root.fam; font.pixelSize: 14; font.weight: Font.DemiBold
+                        }
+                        Flickable {
+                            x: 18; y: 96; width: parent.width - 36; height: parent.height - 96 - 52
+                            contentHeight: infoCol.height
+                            clip: true
+                            Column {
+                                id: infoCol
+                                width: parent.width
+                                spacing: 4
+                                Repeater {
+                                    model: root.infoText.split("\n").filter(function (l) { return l.indexOf("\t") > 0; })
+                                    delegate: Item {
+                                        required property string modelData
+                                        width: parent.width; height: 20
+                                        Text {
+                                            width: 110
+                                            text: modelData.split("\t")[0]
+                                            color: pal.text2; font.family: root.fam; font.pixelSize: 12
+                                        }
+                                        Text {
+                                            x: 114; width: parent.width - 114
+                                            elide: Text.ElideMiddle
+                                            text: modelData.split("\t").slice(1).join(" ")
+                                            color: pal.text; font.family: root.fam; font.pixelSize: 12
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Rectangle {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.bottom: parent.bottom; anchors.bottomMargin: 14
+                            width: 96; height: 28; radius: 8; color: root.accent
+                            Text { anchors.centerIn: parent; text: "Done"; color: "white"; font.family: root.fam; font.pixelSize: 12; font.weight: Font.DemiBold }
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.infoFor = null }
+                        }
+                    }
                 }
 
                 // ── Merge Photos sheet ──
@@ -986,6 +1374,17 @@ Scope {
             if (k === "folder") {
                 c.beginPath(); c.moveTo(1.6, 12.8); c.lineTo(1.6, 4.2); c.lineTo(6.2, 4.2); c.lineTo(7.4, 5.6); c.lineTo(14.4, 5.6); c.lineTo(14.4, 12.8); c.closePath();
                 g.filled ? c.fill() : c.stroke();
+            } else if (k === "eye") {
+                c.beginPath(); c.moveTo(1.6, 8); c.bezierCurveTo(4.5, 3.4, 11.5, 3.4, 14.4, 8);
+                c.bezierCurveTo(11.5, 12.6, 4.5, 12.6, 1.6, 8); c.closePath(); c.stroke();
+                c.beginPath(); c.arc(8, 8, 2.2, 0, Math.PI * 2); c.stroke();
+            } else if (k === "drive") {
+                c.beginPath(); c.roundedRect(1.8, 4.6, 12.4, 7, 1.6, 1.6); c.stroke();
+                c.beginPath(); c.arc(11.4, 8.1, 0.95, 0, Math.PI * 2); c.fill();
+                c.beginPath(); c.moveTo(3.6, 8.1); c.lineTo(8.2, 8.1); c.stroke();
+            } else if (k === "eject") {
+                c.beginPath(); c.moveTo(8, 3.2); c.lineTo(13, 9.2); c.lineTo(3, 9.2); c.closePath(); c.fill();
+                c.beginPath(); c.roundedRect(3, 11, 10, 1.8, 0.9, 0.9); c.fill();
             } else if (k === "home") {
                 c.beginPath(); c.moveTo(2.4, 8); c.lineTo(8, 3); c.lineTo(13.6, 8); c.stroke();
                 c.beginPath(); c.moveTo(4, 7.4); c.lineTo(4, 13); c.lineTo(12, 13); c.lineTo(12, 7.4); c.stroke();
