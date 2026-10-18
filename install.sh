@@ -17,6 +17,9 @@
 #   config      the Hyprland session config + helper scripts (wallpapers, Game Mode, lock); your custom/ files are kept
 #   session     add "Hyprland (MacShell)" as a SEPARATE login session (your own Hyprland is untouched; needs sudo)
 #   existing    instead of a separate session, start MacShell from your CURRENT Hyprland config
+#   hotspot     let Internet Sharing share your connection WITHOUT dropping Wi-Fi: installs a small
+#               root helper (it can only add/remove one virtual AP interface) and, if you agree, a
+#               sudoers line for that one file so the switch never asks for a password
 #   sandbox     a SECOND copy, side by side: its own shell folder, session, settings and login entry,
 #               so you can try a version without touching the MacShell you already run.
 #               Name it with  MACSHELL_SANDBOX_NAME=tahoe ./install.sh sandbox   (default: test)
@@ -41,7 +44,7 @@ QS="$HOME/.config/quickshell"
 SESS="$HOME/.config/hypr-macshell"
 SHARE="$HOME/.local/share/macshell"
 YES=0
-ORDER=(deps shell applemusic menubar spotlight controlcenter notifications dock widgets clock lock config session existing sandbox icons fonts apply defaults emoji wallpapers sounds)
+ORDER=(deps shell applemusic menubar spotlight controlcenter notifications dock widgets clock lock config session existing sandbox hotspot icons fonts apply defaults emoji wallpapers sounds)
 # the parts of the shell you can pick individually (one set of files, each part switched on or off)
 PARTS=(menubar spotlight controlcenter notifications dock widgets clock desktop)
 declare -A DESC=(
@@ -60,6 +63,7 @@ declare -A DESC=(
     [config]="Session config + helper scripts (wallpapers, Game Mode, lock)"
     [session]="\"Hyprland (MacShell)\" login session (separate, needs sudo)"
     [sandbox]="A SECOND copy to try out, with its own settings and login entry (nothing shared)"
+    [hotspot]="Internet Sharing that keeps your Wi-Fi connected (installs one small root helper)"
     [existing]="Start from my CURRENT Hyprland config instead of a separate session"
     [deps]="Dependencies (pacman + paru/yay)"
     [icons]="MacTahoe icon theme"
@@ -232,6 +236,32 @@ do_config() {
 # Installs MacShell again under its own name, so you can try a version without disturbing the one you
 # already run: its own shell folder, its own session config, its own settings, its own login entry.
 # Nothing it does can reach the install you already have.
+# ── the one privileged helper Internet Sharing needs ──────────────────────────────────────────────
+# Running a hotspot without dropping your Wi-Fi needs a second, virtual interface, and creating one
+# needs root. This installs a script that does only that, and (if you agree) a sudoers line for it,
+# so the switch in Settings works without asking for a password every time.
+do_hotspot() {
+    local src="$REPO/session/scripts/macshell-ap.sh"
+    [ -f "$src" ] || die "missing $src"
+    if [ "$(sh "$src" check 2>/dev/null)" != yes ]; then
+        warn "This Wi-Fi adapter can't run a hotspot and stay connected at the same time."
+        note "Internet Sharing will still work; it takes the adapter over while it is on."
+        return 0
+    fi
+    say "Installing the Internet Sharing helper"
+    note "It can only add or remove one virtual AP interface — nothing else."
+    sudo install -m 755 "$src" /usr/local/bin/macshell-ap
+    if [ "$YES" = 1 ] || ask "Let it run without asking for a password each time (adds a sudoers line for that one file)?"; then
+        printf '%%wheel ALL=(root) NOPASSWD: /usr/local/bin/macshell-ap\n' | sudo tee /etc/sudoers.d/macshell-ap >/dev/null
+        sudo chmod 440 /etc/sudoers.d/macshell-ap
+        sudo visudo -cf /etc/sudoers.d/macshell-ap >/dev/null || { sudo rm -f /etc/sudoers.d/macshell-ap; die "sudoers line rejected; nothing was changed"; }
+        note "/etc/sudoers.d/macshell-ap (remove that file to undo it)"
+    else
+        note "Settings will ask for your password when you switch Internet Sharing on."
+    fi
+    note "Internet Sharing will now keep your Wi-Fi connection while it shares it."
+}
+
 do_sandbox() {
     local name="${MACSHELL_SANDBOX_NAME:-test}"
     name="$(printf '%s' "$name" | tr -cd '[:alnum:]-' | tr '[:upper:]' '[:lower:]')"

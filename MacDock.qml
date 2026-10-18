@@ -2938,8 +2938,18 @@ Scope {
                 onBandChanged: root.hotspotBand = band
                 property string status: ""
                 property int clients: 0
-                Component.onCompleted: shPane.refresh()
+                Component.onCompleted: { shPane.refresh(); capProc.running = true; }
                 Timer { interval: 4000; repeat: true; running: prefsWindow.visible && prefsWindow.panes[prefsWindow.cur].id === "sharing"; onTriggered: shPane.refresh() }
+                // Can this radio run a client and an access point at once, and is the helper that makes
+                // the AP interface there? If both, sharing never touches the Wi-Fi connection.
+                property string apMode: "checking"      // checking | shared | takeover
+                Process {
+                    id: capProc
+                    command: ["sh", "-c",
+                        "h=/usr/local/bin/macshell-ap; "
+                        + "if [ -x \"$h\" ] && [ \"$($h check 2>/dev/null)\" = yes ]; then echo shared; else echo takeover; fi"]
+                    stdout: StdioCollector { onStreamFinished: shPane.apMode = text.trim() === "shared" ? "shared" : "takeover" }
+                }
                 function refresh() { if (!hsProc.running) hsProc.running = true; }
                 Process {
                     id: hsProc
@@ -2962,11 +2972,25 @@ Scope {
                     if (root.bar && root.bar.wifiSsid !== "") root.hotspotPrevWifi = root.bar.wifiSsid;
                     hsStart.running = false;
                     hsStart.command = ["sh", "-c",
-                        "nmcli con delete MacShell-Hotspot >/dev/null 2>&1; "
-                        + "dev=$(nmcli -t -f DEVICE,TYPE dev | grep ':wifi$' | cut -d: -f1 | head -1); "
-                        + "[ -n \"$dev\" ] || { echo 'no Wi-Fi adapter'; exit 1; }; "
-                        + "nmcli dev wifi hotspot ifname \"$dev\" con-name MacShell-Hotspot ssid \"$1\" band \"$3\" password \"$2\" 2>&1 | tail -1",
-                        "sh", shPane.ssid, shPane.pass.length >= 8 ? shPane.pass : "macshell1", shPane.band];
+                        "set -e; mode=\"$4\"; ssid=\"$1\"; pass=\"$2\"; band=\"$3\"; "
+                        + "nmcli con delete MacShell-Hotspot >/dev/null 2>&1 || true; "
+                        + "wifi=$(nmcli -t -f DEVICE,TYPE dev | grep ':wifi$' | cut -d: -f1 | head -1); "
+                        + "[ -n \"$wifi\" ] || { echo 'no Wi-Fi adapter'; exit 1; }; "
+                        // Shared: the access point gets its own interface, so the client connection stays up.
+                        // One radio means one channel, so the AP has to sit on the channel we are already on.
+                        + "if [ \"$mode\" = shared ]; then "
+                        + "  dev=$(sudo -n /usr/local/bin/macshell-ap add 2>/dev/null || pkexec /usr/local/bin/macshell-ap add) || "
+                        + "    { echo 'could not create the AP interface'; exit 1; }; "
+                        + "  ch=$(iw dev \"$wifi\" info 2>/dev/null | awk '/channel/{print $2; exit}'); "
+                        + "  if [ -n \"$ch\" ] && [ \"$ch\" -gt 14 ] 2>/dev/null; then band=a; elif [ -n \"$ch\" ]; then band=bg; fi; "
+                        + "else dev=\"$wifi\"; ch=''; fi; "
+                        + "nmcli con add type wifi ifname \"$dev\" con-name MacShell-Hotspot autoconnect no ssid \"$ssid\" >/dev/null; "
+                        + "nmcli con modify MacShell-Hotspot 802-11-wireless.mode ap 802-11-wireless.band \"$band\" "
+                        + "  ipv4.method shared ipv6.method ignore "
+                        + "  wifi-sec.key-mgmt wpa-psk wifi-sec.proto rsn wifi-sec.pairwise ccmp wifi-sec.group ccmp wifi-sec.psk \"$pass\" >/dev/null; "
+                        + "[ -n \"$ch\" ] && nmcli con modify MacShell-Hotspot 802-11-wireless.channel \"$ch\" >/dev/null || true; "
+                        + "nmcli con up MacShell-Hotspot 2>&1 | tail -1",
+                        "sh", shPane.ssid, shPane.pass.length >= 8 ? shPane.pass : "macshell1", shPane.band, shPane.apMode];
                     hsStart.running = true;
                 }
                 function stop() {
@@ -2975,9 +2999,11 @@ Scope {
                     // and re-join whatever we were on before, so the Wi-Fi menu is not left empty
                     hsStop.command = ["sh", "-c",
                         "nmcli con down MacShell-Hotspot >/dev/null 2>&1; nmcli con delete MacShell-Hotspot >/dev/null 2>&1; "
-                        + "[ -n \"$1\" ] && nmcli --wait 20 con up \"$1\" >/dev/null 2>&1; "
+                        + "sudo -n /usr/local/bin/macshell-ap del >/dev/null 2>&1 || true; "
+                        // only needed when sharing had taken the adapter over; a no-op otherwise
+                        + "[ -n \"$1\" ] && [ \"$2\" != shared ] && nmcli --wait 20 con up \"$1\" >/dev/null 2>&1; "
                         + "nmcli dev wifi rescan >/dev/null 2>&1; exit 0",
-                        "sh", root.hotspotPrevWifi];
+                        "sh", root.hotspotPrevWifi, shPane.apMode];
                     hsStop.running = true;
                 }
                 Process {
@@ -2993,7 +3019,9 @@ Scope {
                         t: pal
                         title: "Share this computer's connection"
                         subtitle: shPane.on ? (shPane.clients > 0 ? shPane.clients + (shPane.clients === 1 ? " device connected" : " devices connected") : "On \u2014 waiting for devices")
-                                            : "Turns the Wi-Fi adapter into a hotspot other devices can join"
+                                 : (shPane.apMode === "shared" ? "Other devices can join. Your Wi\u2011Fi connection stays up."
+                                 : (shPane.apMode === "checking" ? "\u2026"
+                                 : "Takes the Wi\u2011Fi adapter over while it is on"))
                         SSwitch {
                             t: pal
                             checked: shPane.on
@@ -3046,6 +3074,27 @@ Scope {
                         t: pal
                         visible: shPane.status !== ""
                         title: shPane.status
+                    }
+                }
+                // Sharing without dropping Wi-Fi needs one small helper installed as root; until it is
+                // there, sharing works the old way and takes the adapter.
+                SCard {
+                    t: pal
+                    visible: shPane.apMode === "takeover"
+                    SRow {
+                        t: pal
+                        title: "Keep Wi\u2011Fi connected while sharing"
+                        subtitle: "Runs the hotspot on its own interface, the way Windows and KDE do. Needs a small "
+                                + "helper installed once (it can only add or remove that interface)."
+                        SButton {
+                            t: pal
+                            text: "Set Up\u2026"
+                            onClicked: {
+                                var inst = Quickshell.env("HOME") + "/.local/share/macshell/install.sh";
+                                var term = root.bar ? root.bar.terminal : "kitty";
+                                Quickshell.execDetached(["sh", "-c", term + " -e sh -c '\"$0\" hotspot; echo; echo Press Enter to close; read x'", inst]);
+                            }
+                        }
                     }
                 }
             }

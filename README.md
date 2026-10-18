@@ -84,6 +84,12 @@ Settings live in the shell itself: Apple menu → **System Settings…** (Instal
 
 The original MacShell is the menu bar, the Dock and the Liquid Glass shader. Everything below is new in this fork:
 
+**Internet Sharing that doesn't cost you Wi-Fi** — most Wi-Fi chips can run a client and an access point at the
+same time, as long as both sit on one channel. `./install.sh hotspot` installs the one privileged piece that needs
+(a script that can only add or remove a virtual AP interface, plus an optional sudoers line for that one file), and
+then sharing runs the hotspot on its own interface and takes the channel you are already on — your connection stays
+up, the network list stays real. Adapters that can't do both still work the old way, and Settings says which you get.
+
 **Try it without disturbing the one you run** — `./install.sh sandbox` installs a second, complete copy under its
 own name: its own shell folder, session config, settings and login entry. Nothing is shared with the MacShell you
 already have, so you can test a version and then just delete it. Name it with
