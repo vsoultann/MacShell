@@ -4449,7 +4449,12 @@ Scope {
     Process {
         id: trashWatch
         running: root.showTrash && root.trashReady && !root.trashPoll
-        command: ["inotifywait", "-m", "-q", "-e", "create", "-e", "delete", "-e", "moved_to", "-e", "moved_from", root.trashDir]
+        // Wrapped so it cannot outlive the shell: a hard restart orphaned the watcher and left one
+        // inotifywait running for ever, one more on every restart.
+        command: ["sh", "-c",
+                  "p=$PPID; inotifywait -m -q -e create -e delete -e moved_to -e moved_from \"$1\" & w=$!; "
+                  + "while kill -0 \"$p\" 2>/dev/null; do sleep 5; done; kill \"$w\" 2>/dev/null",
+                  "sh", root.trashDir]
         stdout: SplitParser { onRead: data => trashDebounce.restart() }
     }
     // Empty Trash: KDE's ktrash when it exists (it also cleans trashes on other drives and keeps Dolphin's trash icon in sync),

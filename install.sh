@@ -17,6 +17,9 @@
 #   config      the Hyprland session config + helper scripts (wallpapers, Game Mode, lock); your custom/ files are kept
 #   session     add "Hyprland (MacShell)" as a SEPARATE login session (your own Hyprland is untouched; needs sudo)
 #   existing    instead of a separate session, start MacShell from your CURRENT Hyprland config
+#   sandbox     a SECOND copy, side by side: its own shell folder, session, settings and login entry,
+#               so you can try a version without touching the MacShell you already run.
+#               Name it with  MACSHELL_SANDBOX_NAME=tahoe ./install.sh sandbox   (default: test)
 #   deps        dependencies (Arch / CachyOS / EndeavourOS / Manjaro via pacman + paru/yay for AUR)
 #   icons       the MacTahoe icon theme (Apple-style app icons)
 #   fonts       Inter, Roboto Flex, Nunito and Noto Serif Display (the lock screen clock styles)
@@ -38,7 +41,7 @@ QS="$HOME/.config/quickshell"
 SESS="$HOME/.config/hypr-macshell"
 SHARE="$HOME/.local/share/macshell"
 YES=0
-ORDER=(deps shell applemusic menubar spotlight controlcenter notifications dock widgets clock lock config session existing icons fonts apply defaults emoji wallpapers sounds)
+ORDER=(deps shell applemusic menubar spotlight controlcenter notifications dock widgets clock lock config session existing sandbox icons fonts apply defaults emoji wallpapers sounds)
 # the parts of the shell you can pick individually (one set of files, each part switched on or off)
 PARTS=(menubar spotlight controlcenter notifications dock widgets clock desktop)
 declare -A DESC=(
@@ -56,6 +59,7 @@ declare -A DESC=(
     [lock]="Lock screen (MacLock)"
     [config]="Session config + helper scripts (wallpapers, Game Mode, lock)"
     [session]="\"Hyprland (MacShell)\" login session (separate, needs sudo)"
+    [sandbox]="A SECOND copy to try out, with its own settings and login entry (nothing shared)"
     [existing]="Start from my CURRENT Hyprland config instead of a separate session"
     [deps]="Dependencies (pacman + paru/yay)"
     [icons]="MacTahoe icon theme"
@@ -222,6 +226,89 @@ do_config() {
     find "$SESS" -type f \( -name '*.conf' -o -name '*.lua' -o -name '*.sh' \) -exec sed -i "s|@HOME@|$HOME|g" {} +
     chmod +x "$SESS"/scripts/*.sh "$SESS"/hyprland/scripts/*.sh "$SESS"/custom/scripts/*.sh 2>/dev/null || true
     note "$SESS"
+}
+
+# ── a second, side-by-side copy ────────────────────────────────────────────────────────────────────
+# Installs MacShell again under its own name, so you can try a version without disturbing the one you
+# already run: its own shell folder, its own session config, its own settings, its own login entry.
+# Nothing it does can reach the install you already have.
+do_sandbox() {
+    local name="${MACSHELL_SANDBOX_NAME:-test}"
+    name="$(printf '%s' "$name" | tr -cd '[:alnum:]-' | tr '[:upper:]' '[:lower:]')"
+    [ -n "$name" ] || name=test
+    # MacShellTest for the Quickshell config name, -test for the dot-config folders
+    local camel="MacShell$(printf '%s' "${name:0:1}" | tr '[:lower:]' '[:upper:]')${name:1}"
+    local qsdir="$QS/$camel"
+    local sess="$HOME/.config/hypr-macshell-$name"
+    local share="$HOME/.local/share/macshell-$name"
+
+    say "Installing a second copy called \"$camel\""
+    note "shell:    $qsdir"
+    note "session:  $sess"
+    note "settings: ~/.config/macbar-$name, ~/.config/macdock-$name, ~/.config/macshell-$name"
+
+    rm -rf "$qsdir"
+    mkdir -p "$qsdir"
+    rsync -a --exclude '.git' --exclude 'MacLock' --exclude 'session' --exclude 'docs' \
+          --exclude 'install.sh' --exclude '*.qsb' "$REPO"/ "$qsdir"/
+    mkdir -p "$qsdir/MacLock"
+    rsync -a --exclude '*.qsb' "$REPO/MacLock"/ "$qsdir/MacLock"/
+
+    # point every path in the copy at the copy's own folders
+    find "$qsdir" -type f \( -name '*.qml' -o -name '*.js' \) -exec sed -i \
+        -e "s|/\.config/macbar|/.config/macbar-$name|g" \
+        -e "s|/\.config/macdock|/.config/macdock-$name|g" \
+        -e "s|/\.config/macshell|/.config/macshell-$name|g" \
+        -e "s|/\.config/hypr-macshell|/.config/hypr-macshell-$name|g" \
+        -e "s|/\.local/share/macshell|/.local/share/macshell-$name|g" \
+        -e "s|qs -c MacShell|qs -c $camel|g" \
+        -e "s|quickshell/MacShell|quickshell/$camel|g" {} +
+    compile_shaders "$qsdir"
+    compile_shaders "$qsdir/MacLock"
+
+    # its own session config, pointed at the copy
+    rm -rf "$sess"
+    mkdir -p "$sess"
+    rsync -a "$REPO/session"/ "$sess"/
+    find "$sess" -type f \( -name '*.lua' -o -name '*.conf' -o -name '*.sh' -o -name '*.desktop' \) -exec sed -i \
+        -e "s|@HOME@|$HOME|g" \
+        -e "s|hypr-macshell|hypr-macshell-$name|g" \
+        -e "s|qs -c MacShell|qs -c $camel|g" \
+        -e "s|quickshell/MacShell|quickshell/$camel|g" \
+        -e "s|-c MacLock|-c $camel/MacLock|g" {} +
+    chmod +x "$sess"/scripts/*.sh "$sess"/hyprland/scripts/*.sh "$sess"/custom/scripts/*.sh 2>/dev/null || true
+
+    mkdir -p "$share"
+    cp "$REPO/install.sh" "$share/install.sh" 2>/dev/null || true
+
+    # and its own login entry, beside the one you already have
+    local title="Hyprland (MacShell $name)"
+    local launcher="/usr/local/bin/start-hyprland-macshell-$name"
+    cat > "$sess/install-sddm-session-$name.sh" <<EOS
+#!/bin/sh
+set -e
+cat > "$launcher" <<'W'
+#!/bin/sh
+exec /usr/bin/start-hyprland -- --config "$sess/hyprland.lua"
+W
+chmod 755 "$launcher"
+cat > /usr/share/wayland-sessions/hyprland-macshell-$name.desktop <<'E'
+[Desktop Entry]
+Name=$title
+Comment=A second MacShell, separate from the one you already run
+Exec=$launcher
+TryExec=$launcher
+Type=Application
+E
+echo "done: \"$title\" is now on the login screen"
+EOS
+    chmod +x "$sess/install-sddm-session-$name.sh"
+    if [ "$YES" = 1 ] || ask "Add \"$title\" to the login screen (needs sudo)?"; then
+        sudo sh "$sess/install-sddm-session-$name.sh"
+    else
+        note "later: sudo sh $sess/install-sddm-session-$name.sh"
+    fi
+    note "Pick \"$title\" at the login screen. Your existing MacShell is untouched."
 }
 
 do_session() {

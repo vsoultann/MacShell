@@ -68,6 +68,11 @@ Settings live in the shell itself: Apple menu → **System Settings…** (Instal
 
 The original MacShell is the menu bar, the Dock and the Liquid Glass shader. Everything below is new in this fork:
 
+**Try it without disturbing the one you run** — `./install.sh sandbox` installs a second, complete copy under its
+own name: its own shell folder, session config, settings and login entry. Nothing is shared with the MacShell you
+already have, so you can test a version and then just delete it. Name it with
+`MACSHELL_SANDBOX_NAME=tahoe ./install.sh sandbox`.
+
 **Quiet under load** — while the machine is busy (a build, a system update, a big install) the Liquid Glass stops
 refracting live and the window captures pause, so the desktop stays responsive; everything comes back when the load
 drops. No setting to remember: it watches the load average and uses hysteresis so it never flaps.
