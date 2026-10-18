@@ -296,8 +296,16 @@ Scope {
                                 required property var modelData
                                 width: 14; height: 14; radius: 7
                                 color: ((root.bar && root.bar.tlColorOnHover) ? tlMa.containsMouse : (win.active || tlMa.containsMouse)) ? modelData.c : pal.lightOff
+                                Behavior on color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
                                 border.width: 1; border.color: Qt.rgba(0, 0, 0, 0.14)
-                                Text { anchors.centerIn: parent; visible: tlMa.containsMouse || (root.bar && root.bar.tlAlwaysSymbols); text: parent.modelData.g; font.pixelSize: 11; font.bold: true; color: Qt.rgba(0, 0, 0, 0.55) }
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: parent.modelData.g
+                                    font.pixelSize: 11; font.bold: true
+                                    color: Qt.rgba(0, 0, 0, 0.55)
+                                    opacity: (tlMa.containsMouse || (root.bar && root.bar.tlAlwaysSymbols)) ? 1 : 0
+                                    Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                                }
                             }
                         }
                     }

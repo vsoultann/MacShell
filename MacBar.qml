@@ -1871,6 +1871,7 @@ Scope {
             "nmcli dev wifi rescan >/dev/null 2>&1; "
             + "nmcli -t -f NAME,TYPE connection show 2>/dev/null | sed -n 's/:802-11-wireless$//p' | sed 's/^/S:/'; "
             + "nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY dev wifi list --rescan no 2>/dev/null | sed 's/^/N:/'"]
+        // while we are the hotspot the adapter cannot scan, so the list would otherwise go empty
         stdout: StdioCollector {
             onStreamFinished: {
                 var lines = text.split("\n"), saved = {}, best = {}, i, f;
@@ -1891,10 +1892,21 @@ Scope {
                         if (n.inUse) o.inUse = true;
                     }
                 }
-                var arr = [];
-                for (var k in best) arr.push(best[k]);
+                var hs = root.hub && root.hub.dock ? root.hub.dock.hotspotSsid : "";
+                var arr = [], k;
+                for (k in best) {
+                    if (hs !== "" && k === hs) continue;        // our own hotspot is not somewhere to join
+                    arr.push(best[k]);
+                }
+                // Networks you have joined before stay on the list even when they are not in range — which is
+                // every one of them while Internet Sharing has the adapter — instead of the list emptying out.
+                for (k in saved) {
+                    if (k === "" || best[k] || (hs !== "" && k === hs)) continue;
+                    arr.push({ ssid: k, signal: 0, secure: true, inUse: false, saved: true, away: true });
+                }
                 arr.sort(function (a, b) {
                     if (a.inUse !== b.inUse) return a.inUse ? -1 : 1;
+                    if (!!a.away !== !!b.away) return a.away ? 1 : -1;
                     return b.signal - a.signal;
                 });
                 if (JSON.stringify(arr) !== JSON.stringify(root.wifiNets)) root.wifiNets = arr;
@@ -6042,6 +6054,16 @@ Scope {
                             color: pal.fg2
                             font.family: pal.fam; font.pixelSize: 11; font.weight: Font.DemiBold
                         }
+                        // why the list is only the ones you know while the adapter is busy being a hotspot
+                        Text {
+                            visible: root.wifiOn && root.hub && root.hub.dock && root.hub.dock.hotspotSsid !== "" && root.hotspotOn
+                            leftPadding: 6; rightPadding: 6
+                            width: parent.width
+                            wrapMode: Text.WordWrap
+                            text: "Internet Sharing is using the Wi-Fi adapter, so it can't look for networks. Your saved ones are listed."
+                            color: pal.fg2
+                            font.family: pal.fam; font.pixelSize: 11
+                        }
 
                         // the list
                         Flickable {
@@ -6087,7 +6109,8 @@ Scope {
                                                 width: parent.width - 30 - 96
                                                 elide: Text.ElideRight
                                                 text: nr.modelData.ssid
-                                                color: wma.containsMouse ? "white" : pal.fg
+                                                // a network you know that is not in range right now reads dimmer
+                                                color: wma.containsMouse ? "white" : (nr.modelData.away ? pal.fg2 : pal.fg)
                                                 font.family: pal.fam; font.pixelSize: 13
                                                 font.weight: nr.modelData.inUse ? Font.DemiBold : Font.Normal
                                             }

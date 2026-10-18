@@ -330,6 +330,12 @@ ShellRoot {
         //   qs -c MacShell ipc call airdrop stage /path/to/file
         function stage(path: string): void { airDrop.stagePaths(airDrop.pending.concat([path])); }
         function clear(): void { airDrop.pending = []; }
+        // choose files in Finder, then pick who gets them
+        function pick(): void {
+            airDrop.open();
+            if (finderApp && finderApp.chooseFiles)
+                finderApp.chooseFiles(function (files) { airDrop.stagePaths(files); }, "Send");
+        }
     }
     IpcHandler {
         target: "desktop"

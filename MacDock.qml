@@ -224,6 +224,11 @@ Scope {
         if (settingsReady && iconMode === "auto") applyIconTheme();
         if (bar && bar.darkMode !== darkMode) bar.darkMode = darkMode;
     }
+    // Internet Sharing: kept here (and saved) so the name, password and band survive closing Settings
+    property string hotspotSsid: ""
+    property string hotspotPass: ""
+    property string hotspotBand: "bg"       // bg = 2.4 GHz, a = 5 GHz
+    property string hotspotPrevWifi: ""     // the network to re-join when sharing is switched off
     property bool desktopIcons: true    // files, folders and apps shown on the desktop
     property var pinnedFolders: []      // folder paths pinned next to the Trash
     function pinFolder(p) {
@@ -2919,9 +2924,13 @@ Scope {
                 id: shPane
                 spacing: 10
                 property bool on: false
-                property string ssid: ""
-                property string pass: ""
-                property string band: "bg"          // bg = 2.4 GHz (reaches further), a = 5 GHz (faster)
+                // kept on the shell, not on this page, so closing Settings doesn't forget them
+                property string ssid: root.hotspotSsid
+                property string pass: root.hotspotPass
+                property string band: root.hotspotBand
+                onSsidChanged: root.hotspotSsid = ssid
+                onPassChanged: root.hotspotPass = pass
+                onBandChanged: root.hotspotBand = band
                 property string status: ""
                 property int clients: 0
                 Component.onCompleted: shPane.refresh()
@@ -2937,13 +2946,15 @@ Scope {
                         onStreamFinished: {
                             var l = text.split("\n");
                             shPane.on = (l[0] || "").trim() === "MacShell-Hotspot";
-                            shPane.clients = parseInt((l[1] || "0").trim()) || 0;
+                            shPane.clients = shPane.on ? (parseInt((l[1] || "0").trim()) || 0) : 0;
                             if (shPane.ssid === "") shPane.ssid = (Quickshell.env("USER") || "MacShell") + "'s MacShell";
                         }
                     }
                 }
                 function start() {
                     shPane.status = "Starting\u2026";
+                    // remember the network we are on, so switching sharing back off puts us back on it
+                    if (root.bar && root.bar.wifiSsid !== "") root.hotspotPrevWifi = root.bar.wifiSsid;
                     hsStart.running = false;
                     hsStart.command = ["sh", "-c",
                         "nmcli con delete MacShell-Hotspot >/dev/null 2>&1; "
@@ -2953,12 +2964,23 @@ Scope {
                         "sh", shPane.ssid, shPane.pass.length >= 8 ? shPane.pass : "macshell1", shPane.band];
                     hsStart.running = true;
                 }
+                function stop() {
+                    shPane.status = "Stopping\u2026";
+                    hsStop.running = false;
+                    // and re-join whatever we were on before, so the Wi-Fi menu is not left empty
+                    hsStop.command = ["sh", "-c",
+                        "nmcli con down MacShell-Hotspot >/dev/null 2>&1; nmcli con delete MacShell-Hotspot >/dev/null 2>&1; "
+                        + "[ -n \"$1\" ] && nmcli --wait 20 con up \"$1\" >/dev/null 2>&1; "
+                        + "nmcli dev wifi rescan >/dev/null 2>&1; exit 0",
+                        "sh", root.hotspotPrevWifi];
+                    hsStop.running = true;
+                }
                 Process {
                     id: hsStart
                     stdout: StdioCollector { onStreamFinished: { shPane.status = text.trim().indexOf("success") >= 0 || text.trim() === "" ? "" : text.trim(); shPane.refresh(); } }
                     onExited: (code) => { if (code !== 0 && shPane.status === "") shPane.status = "Couldn't start the hotspot."; shPane.refresh(); }
                 }
-                Process { id: hsStop; command: ["sh", "-c", "nmcli con down MacShell-Hotspot >/dev/null 2>&1; nmcli con delete MacShell-Hotspot >/dev/null 2>&1"]; onExited: shPane.refresh() }
+                Process { id: hsStop; onExited: { shPane.status = ""; shPane.refresh(); if (root.bar) root.bar.scanWifi(); } }
 
                 SCard {
                     t: pal
@@ -2970,7 +2992,7 @@ Scope {
                         SSwitch {
                             t: pal
                             checked: shPane.on
-                            onToggled: v => { if (v) shPane.start(); else hsStop.running = true; }
+                            onToggled: v => { if (v) shPane.start(); else shPane.stop(); }
                         }
                     }
                     SRow {
@@ -2991,7 +3013,7 @@ Scope {
                     SRow {
                         t: pal
                         title: "Password"
-                        subtitle: "At least 8 characters. Left empty, it uses \"macshell1\"."
+                        subtitle: "At least 8 characters. Left empty, it uses \"macshell1\". Remembered for next time."
                         Rectangle {
                             width: 230; height: 26; radius: 7; color: pal.field
                             TextInput {
@@ -4299,7 +4321,7 @@ Scope {
     }
 
     // ── settings persistence (~/.config/macdock/settings.json) ──
-    readonly property string settingsSig: [dockEnabled, windowsFloat, iconSizePref, magnification, magnificationEnabled, spacing, margin,
+    readonly property string settingsSig: [dockEnabled, windowsFloat, hotspotSsid, hotspotPass, hotspotBand, iconSizePref, magnification, magnificationEnabled, spacing, margin,
         cornerRadius, darkMode, glassOpacity, glassBlur, glassLiquid, dockStyle, wallpaperPath, String(accent), fontFamily, hideMode, hideDelay, monitor,
         showTrash, showLabels, showIndicators, bounceOnLaunch, showThumbs, windowCapture].join("|")
     property bool settingsReady: false
@@ -4314,7 +4336,7 @@ Scope {
 
     function saveSettings() {
         var o = {
-            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, hyprBinds: hyprBinds, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, iconMode: iconMode, pinMigTahoe: pinMigTahoe, iconSize: iconSizePref, magnification: magnification, magnificationEnabled: magnificationEnabled,
+            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, hyprBinds: hyprBinds, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, iconMode: iconMode, pinMigTahoe: pinMigTahoe, hotspotSsid: hotspotSsid, hotspotPass: hotspotPass, hotspotBand: hotspotBand, iconSize: iconSizePref, magnification: magnification, magnificationEnabled: magnificationEnabled,
             spacing: spacing, margin: margin, cornerRadius: cornerRadius,
             darkMode: darkMode, glassOpacity: glassOpacity, dockStyle: dockStyle, wallpaperPath: wallpaperPath, glassDebug: glassDebug,
             glassRim: glassRim, glassGrain: glassGrain, glassLiquid: glassLiquid, glassBlur: glassBlur,
@@ -4330,7 +4352,8 @@ Scope {
         if (!o || typeof o !== "object") return;
         var keys = ["dockEnabled", "windowsFloat", "shortcuts", "hyprBinds", "pinnedFolders", "desktopIcons", "iconMode", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
                     "darkMode", "glassOpacity", "dockStyle", "wallpaperPath", "glassDebug", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "accent", "fontFamily", "hideMode", "hideDelay", "monitor",
-                    "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture", "pinMigTahoe"];
+                    "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture", "pinMigTahoe",
+                    "hotspotSsid", "hotspotPass", "hotspotBand"];
         for (var i = 0; i < keys.length; i++) {
             if (o[keys[i]] === undefined) continue;
             try { root[keys[i]] = o[keys[i]]; } catch (err) { }

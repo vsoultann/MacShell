@@ -227,6 +227,23 @@ Scope {
         read();
     }
 
+    // Choosing files happens in Finder itself, the way an Open sheet does on macOS, instead of handing you a
+    // file dialog from another desktop. chooseFiles(cb, "Send") → cb(["/path", …]) when you press the button.
+    property var chooseCb: null
+    property string chooseVerb: ""
+    readonly property bool choosing: chooseCb !== null
+    function chooseFiles(cb, verb, where) {
+        chooseCb = cb;
+        chooseVerb = verb || "Choose";
+        selection = []; selected = "";
+        open(where);
+    }
+    function chooseDone(ok) {
+        var cb = chooseCb, files = selection.slice();
+        chooseCb = null; chooseVerb = "";
+        if (ok && cb && files.length > 0) cb(files);
+    }
+
     Window {
         id: win
         title: "Finder"
@@ -235,7 +252,7 @@ Scope {
         visible: false
         color: "transparent"
         flags: Qt.Window | Qt.FramelessWindowHint
-        onVisibleChanged: if (!visible) { root.entries = []; root.selection = []; root.qlText = ""; Qt.callLater(gc); }
+        onVisibleChanged: if (!visible) { root.chooseCb = null; root.chooseVerb = ""; root.entries = []; root.selection = []; root.qlText = ""; Qt.callLater(gc); }
 
         QtObject {
             id: pal
@@ -292,8 +309,16 @@ Scope {
                                 required property var modelData
                                 width: 14; height: 14; radius: 7
                                 color: ((root.bar && root.bar.tlColorOnHover) ? tlMa.containsMouse : (win.active || tlMa.containsMouse)) ? modelData.c : pal.lightOff
+                                Behavior on color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
                                 border.width: 1; border.color: Qt.rgba(0, 0, 0, 0.14)
-                                Text { anchors.centerIn: parent; visible: tlMa.containsMouse || (root.bar && root.bar.tlAlwaysSymbols); text: parent.modelData.g; font.pixelSize: 11; font.bold: true; color: Qt.rgba(0, 0, 0, 0.55) }
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: parent.modelData.g
+                                    font.pixelSize: 11; font.bold: true
+                                    color: Qt.rgba(0, 0, 0, 0.55)
+                                    opacity: (tlMa.containsMouse || (root.bar && root.bar.tlAlwaysSymbols)) ? 1 : 0
+                                    Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                                }
                             }
                         }
                     }
@@ -600,17 +625,61 @@ Scope {
                     }
                 }
 
-                // ── status bar ──
+                // ── status bar, and the Choose / Cancel bar when Finder is picking files for something ──
                 Rectangle {
                     id: statusBar
                     anchors.bottom: parent.bottom
-                    width: parent.width; height: 24
+                    width: parent.width
+                    height: root.choosing ? 52 : 24
+                    Behavior on height { NumberAnimation { duration: 260; easing.type: Easing.OutQuint } }
                     color: Qt.rgba(pal.bg.r, pal.bg.g, pal.bg.b, 0.95)
                     Rectangle { width: parent.width; height: 1; color: pal.sep }
                     Text {
                         anchors.centerIn: parent
-                        text: root.loading ? "Loading…" : (root.shown.length + (root.shown.length === 1 ? " item" : " items") + (root.selection.length > 0 ? ", " + root.selection.length + " selected" : ""))
+                        visible: !root.choosing
+                        text: root.loading ? "Loading\u2026" : (root.shown.length + (root.shown.length === 1 ? " item" : " items") + (root.selection.length > 0 ? ", " + root.selection.length + " selected" : ""))
                         color: pal.text3; font.family: root.fam; font.pixelSize: 11
+                    }
+                    Text {
+                        x: 16; anchors.verticalCenter: parent.verticalCenter
+                        visible: root.choosing
+                        opacity: root.choosing ? 1 : 0
+                        Behavior on opacity { NumberAnimation { duration: 200 } }
+                        text: root.selection.length === 0 ? "Select the files to send"
+                            : (root.selection.length === 1 ? "1 file selected" : root.selection.length + " files selected")
+                        color: pal.text2; font.family: root.fam; font.pixelSize: 12
+                    }
+                    Row {
+                        anchors.right: parent.right; anchors.rightMargin: 16
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 10
+                        visible: root.choosing
+                        opacity: root.choosing ? 1 : 0
+                        Behavior on opacity { NumberAnimation { duration: 200 } }
+                        Rectangle {
+                            width: 86; height: 28; radius: 8
+                            color: cancelMa.containsMouse ? pal.selRow : pal.pill
+                            Behavior on color { ColorAnimation { duration: 140 } }
+                            scale: cancelMa.pressed ? 0.96 : 1
+                            Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutQuint } }
+                            Text { anchors.centerIn: parent; text: "Cancel"; color: pal.text; font.family: root.fam; font.pixelSize: 12 }
+                            MouseArea { id: cancelMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.chooseDone(false); win.visible = false; } }
+                        }
+                        Rectangle {
+                            width: Math.max(86, okText.implicitWidth + 28); height: 28; radius: 8
+                            color: root.accent
+                            opacity: root.selection.length > 0 ? 1 : 0.45
+                            Behavior on opacity { NumberAnimation { duration: 160 } }
+                            scale: okMa.pressed ? 0.96 : 1
+                            Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutQuint } }
+                            Text { id: okText; anchors.centerIn: parent; text: root.chooseVerb; color: "white"; font.family: root.fam; font.pixelSize: 12; font.weight: Font.DemiBold }
+                            MouseArea {
+                                id: okMa; anchors.fill: parent; hoverEnabled: true
+                                enabled: root.selection.length > 0
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: { root.chooseDone(true); win.visible = false; }
+                            }
+                        }
                     }
                 }
 

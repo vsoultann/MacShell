@@ -28,6 +28,7 @@ Scope {
     // ── Receiving: we stay visible on the network and take what people send (saved in ~/Downloads) ──
     property bool receiving: true
     property bool ready: false
+    onReceivingChanged: if (!receiving) ready = false
     property var incoming: null             // { session, from, files, size }
     property var landed: []                 // names of files that just arrived
     Process {
@@ -113,7 +114,9 @@ Scope {
         setPeer(peer.fingerprint, "sending", "Waiting…");
         sendingTo = peer.fingerprint;
         sendProc.running = false;
-        sendProc.command = ["python3", "-I", helper, "send", peer.ip, String(peer.port)].concat(files);
+        // use the scheme the device announced (recent LocalSend builds are HTTPS); the helper falls back to the other
+        sendProc.command = ["python3", "-I", helper, "send", peer.ip, String(peer.port),
+                            "--protocol", peer.protocol === "https" ? "https" : "http"].concat(files);
         sendProc.running = true;
     }
     Process {
@@ -138,6 +141,7 @@ Scope {
     // Files dropped on the window (rather than straight onto someone) wait here until you pick who gets them,
     // the way macOS holds a drag over the AirDrop sheet.
     property var pending: []
+    property bool discMenu: false
     function dropUris(d) {
         var files = [];
         if (d.hasUrls) {
@@ -168,10 +172,16 @@ Scope {
         pick(peer);
     }
 
-    // picking files: the portal's chooser if there is one, otherwise zenity
+    // picking files: our own Finder, the way an Open sheet works on macOS; zenity only if Finder is missing
     property var pickFor: null
     function pick(peer) {
         pickFor = peer;
+        if (hub && hub.finder && hub.finder.chooseFiles) {
+            hub.finder.chooseFiles(function (files) {
+                if (files && files.length > 0 && root.pickFor) root.sendTo(root.pickFor, files);
+            }, "Send");
+            return;
+        }
         pickProc.running = false;
         pickProc.command = ["sh", "-c", "zenity --file-selection --multiple --separator='\\n' --title='Send with AirDrop' 2>/dev/null"];
         pickProc.running = true;
@@ -245,8 +255,16 @@ Scope {
                             required property var modelData
                             width: 14; height: 14; radius: 7
                             color: ((root.bar && root.bar.tlColorOnHover) ? tlMa.containsMouse : (win.active || tlMa.containsMouse)) ? modelData.c : pal.lightOff
+                            Behavior on color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
                             border.width: 1; border.color: Qt.rgba(0, 0, 0, 0.14)
-                            Text { anchors.centerIn: parent; visible: tlMa.containsMouse || (root.bar && root.bar.tlAlwaysSymbols); text: parent.modelData.g; font.pixelSize: 11; font.bold: true; color: Qt.rgba(0, 0, 0, 0.55) }
+                            Text {
+                                anchors.centerIn: parent
+                                text: parent.modelData.g
+                                font.pixelSize: 11; font.bold: true
+                                color: Qt.rgba(0, 0, 0, 0.55)
+                                opacity: (tlMa.containsMouse || (root.bar && root.bar.tlAlwaysSymbols)) ? 1 : 0
+                                Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                            }
                         }
                     }
                 }
@@ -482,6 +500,16 @@ Scope {
                 }
             }
 
+            // clicking anywhere else closes the discoverability pop-up
+            MouseArea {
+                anchors.fill: parent
+                z: 8
+                visible: root.discMenu
+                enabled: root.discMenu
+                acceptedButtons: Qt.AllButtons
+                onPressed: root.discMenu = false
+            }
+
             // Drop files anywhere on the window: they wait, and the next person you click gets them.
             DropArea {
                 id: winDrop
@@ -518,14 +546,86 @@ Scope {
                     text: "Allow me to be discovered by:"
                     color: pal.text2; font.family: root.fam; font.pixelSize: 12
                 }
-                Text {
-                    x: 20; y: 32
-                    text: root.receiving ? (root.ready ? "Everyone on this network" : "Starting\u2026") : "No one"
-                    color: pal.text; font.family: root.fam; font.pixelSize: 12; font.weight: Font.DemiBold
+                // the macOS pop-up: the value, a chevron that turns, and a little menu that springs open
+                Rectangle {
+                    id: discPill
+                    x: 14; y: 28
+                    width: discLabel.implicitWidth + 34; height: 22; radius: 6
+                    color: discMa.containsMouse || root.discMenu ? pal.sep : "transparent"
+                    Behavior on color { ColorAnimation { duration: 140 } }
+                    Text {
+                        id: discLabel
+                        x: 6; anchors.verticalCenter: parent.verticalCenter
+                        text: root.receiving ? (root.ready ? "Everyone on this network" : "Starting\u2026") : "No one"
+                        color: pal.text; font.family: root.fam; font.pixelSize: 12; font.weight: Font.DemiBold
+                    }
+                    ADGlyph {
+                        anchors.right: parent.right; anchors.rightMargin: 7
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 10; height: 10
+                        kind: "chev"; color: pal.text2
+                        rotation: root.discMenu ? 180 : 0
+                        Behavior on rotation { NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.6 } }
+                    }
                     MouseArea {
-                        anchors.fill: parent; anchors.margins: -6
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.receiving = !root.receiving
+                        id: discMa
+                        anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                        onClicked: root.discMenu = !root.discMenu
+                    }
+                }
+                Rectangle {
+                    id: discPop
+                    x: 14
+                    y: discPill.y - height - 6
+                    z: 20
+                    width: 204; height: discCol.height + 10
+                    radius: 10
+                    color: pal.dark ? Qt.rgba(0.17, 0.17, 0.18, 0.98) : Qt.rgba(0.99, 0.99, 1, 0.99)
+                    border.width: 1; border.color: pal.sep
+                    visible: opacity > 0.01
+                    opacity: root.discMenu ? 1 : 0
+                    scale: root.discMenu ? 1 : 0.94
+                    transformOrigin: Item.BottomLeft
+                    Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                    Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
+                    layer.enabled: true
+                    layer.effect: MultiEffect { shadowEnabled: true; shadowBlur: 0.9; shadowOpacity: 0.35; shadowVerticalOffset: 6 }
+                    Column {
+                        id: discCol
+                        y: 5; width: parent.width
+                        Repeater {
+                            model: [{ t: "No one", on: false }, { t: "Everyone on this network", on: true }]
+                            delegate: Item {
+                                id: dRow
+                                required property var modelData
+                                width: parent.width; height: 26
+                                readonly property bool picked: root.receiving === dRow.modelData.on
+                                Rectangle {
+                                    visible: dMa.containsMouse
+                                    x: 5; y: 1; width: parent.width - 10; height: 24; radius: 5
+                                    color: root.accent
+                                }
+                                ADGlyph {
+                                    x: 12; anchors.verticalCenter: parent.verticalCenter
+                                    width: 11; height: 11
+                                    kind: "tick"
+                                    color: dMa.containsMouse ? "white" : pal.text
+                                    opacity: dRow.picked ? 1 : 0
+                                    Behavior on opacity { NumberAnimation { duration: 160 } }
+                                }
+                                Text {
+                                    x: 30; anchors.verticalCenter: parent.verticalCenter
+                                    text: dRow.modelData.t
+                                    color: dMa.containsMouse ? "white" : pal.text
+                                    font.family: root.fam; font.pixelSize: 12
+                                }
+                                MouseArea {
+                                    id: dMa
+                                    anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                    onClicked: { root.receiving = dRow.modelData.on; root.discMenu = false; }
+                                }
+                            }
+                        }
                     }
                 }
                 // what is waiting to be sent, and a way to drop it again
@@ -595,6 +695,12 @@ Scope {
             } else if (kind === "phone") {
                 c.beginPath(); c.roundedRect(4.6, 1.8, 6.8, 12.4, 1.6, 1.6); c.stroke();
                 c.beginPath(); c.moveTo(7.2, 12.4); c.lineTo(8.8, 12.4); c.stroke();
+            } else if (kind === "chev") {
+                c.lineWidth = 1.7;
+                c.beginPath(); c.moveTo(3.6, 6.2); c.lineTo(8, 10.4); c.lineTo(12.4, 6.2); c.stroke();
+            } else if (kind === "tick") {
+                c.lineWidth = 1.9;
+                c.beginPath(); c.moveTo(3, 8.4); c.lineTo(6.4, 11.8); c.lineTo(13, 4.4); c.stroke();
             } else {
                 c.beginPath(); c.arc(8, 8, 6.2, 0, Math.PI * 2); c.stroke();
                 c.beginPath(); c.moveTo(1.8, 8); c.lineTo(14.2, 8); c.stroke();

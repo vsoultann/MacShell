@@ -6,9 +6,11 @@ in its downloads. Nothing is installed or configured: discovery is a UDP multica
 local network, and sending is two HTTPS-less HTTP calls.
 
     macshell-airdrop.py discover [seconds]        print one JSON object per device found
-    macshell-airdrop.py send <ip> <port> <file…>  send files to a device, print progress as JSON lines
+    macshell-airdrop.py send <ip> <port> [--protocol http|https] <file…>
+                                                  send files to a device, print progress as JSON lines
     macshell-airdrop.py serve                     be visible and receive files (answers accept/decline on stdin)
 """
+import fcntl
 import hashlib
 import http.server
 import json
@@ -16,6 +18,8 @@ import mimetypes
 import os
 import random
 import socket
+import ssl
+import struct
 import string
 import sys
 import threading
@@ -29,6 +33,91 @@ ALIAS = os.environ.get("MACSHELL_AIRDROP_ALIAS") or socket.gethostname()
 # Stable per machine: the sending half and the receiving half must agree, or each half sees the other
 # as a stranger and the radar fills up with copies of this computer.
 FINGERPRINT = hashlib.sha256(("macshell:" + socket.gethostname() + ":" + (os.environ.get("USER") or "")).encode()).hexdigest()
+
+
+def _ipv4_interfaces():
+    """Every interface with an IPv4 address: Ethernet, Wi-Fi and the hotspot all at once.
+
+    Multicast on Linux only goes out of one interface unless you say otherwise, which is why a phone on the
+    hotspot (or on Wi-Fi while this machine is on Ethernet) never saw us and we never saw it.
+    """
+    out = []
+    try:
+        names = socket.if_nameindex()
+    except OSError:
+        return out
+    for _, name in names:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            addr = socket.inet_ntoa(fcntl.ioctl(
+                s.fileno(), 0x8915,                              # SIOCGIFADDR
+                struct.pack("256s", name[:15].encode()))[20:24])
+        except OSError:
+            addr = None
+        finally:
+            s.close()
+        if addr and not addr.startswith("127."):
+            out.append((name, addr))
+    return out
+
+
+def _join_all(sock):
+    """Listen for announcements on every interface, not just the default one."""
+    joined = 0
+    for _, addr in _ipv4_interfaces():
+        try:
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP,
+                            socket.inet_aton(MULTICAST) + socket.inet_aton(addr))
+            joined += 1
+        except OSError:
+            pass
+    if joined == 0:
+        try:
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP,
+                            socket.inet_aton(MULTICAST) + socket.inet_aton("0.0.0.0"))
+        except OSError:
+            pass
+
+
+def _announce(sock, payload=None):
+    """Say hello out of every interface."""
+    data = payload if payload is not None else json.dumps(ME).encode()
+    addrs = [a for _, a in _ipv4_interfaces()]
+    sent = False
+    for addr in addrs:
+        try:
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(addr))
+            sock.sendto(data, (MULTICAST, PORT))
+            sent = True
+        except OSError:
+            pass
+    try:
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton("0.0.0.0"))
+    except OSError:
+        pass
+    if not sent:
+        try:
+            sock.sendto(data, (MULTICAST, PORT))
+        except OSError:
+            pass
+
+
+def _register_with(ip, port, protocol="http"):
+    """Tell a device about us over HTTP as well as multicast.
+
+    Multicast is the part that gets dropped on guest networks and between a hotspot and a wired link, so
+    LocalSend also accepts a plain POST that says "here I am". Doing both is what makes the two lists agree.
+    """
+    def go():
+        for scheme in (["https", "http"] if protocol == "https" else ["http", "https"]):
+            url = "%s://%s:%s/api/localsend/v2/register" % (scheme, ip, port)
+            try:
+                _post(url, ME, timeout=4)
+                return
+            except Exception:
+                continue
+
+    threading.Thread(target=go, daemon=True).start()
 
 
 def _own_addresses():
@@ -47,10 +136,24 @@ def _own_addresses():
         s.close()
     except OSError:
         pass
+    for _, addr in _ipv4_interfaces():
+        out.add(addr)
     return out
 
 
 OWN = _own_addresses()
+
+
+def _is_self(d, addr):
+    """Our own announcement, our loopback copy of it, or this machine's own receiver on its own port."""
+    if d.get("fingerprint") == FINGERPRINT:
+        return True
+    if addr[0] in ("127.0.0.1", "::1"):
+        return True
+    try:
+        return addr[0] in OWN and int(d.get("port", PORT)) == PORT
+    except (TypeError, ValueError):
+        return False
 
 ME = {
     "alias": ALIAS,
@@ -76,18 +179,14 @@ def discover(seconds=3.0):
         pass
     try:
         sock.bind(("", PORT))
-        mreq = socket.inet_aton(MULTICAST) + socket.inet_aton("0.0.0.0")
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        _join_all(sock)
     except OSError:
         # another LocalSend is already bound to the port; we can still announce and catch unicast replies
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 
     payload = json.dumps(ME).encode()
     for _ in range(3):
-        try:
-            sock.sendto(payload, (MULTICAST, PORT))
-        except OSError:
-            pass
+        _announce(sock, payload)
         time.sleep(0.15)
 
     sock.settimeout(0.4)
@@ -104,15 +203,17 @@ def discover(seconds=3.0):
         except (ValueError, UnicodeDecodeError):
             continue
         fp = d.get("fingerprint")
-        if not fp or fp == FINGERPRINT or fp in seen or addr[0] in ("127.0.0.1", "::1"):
+        if not fp or fp in seen or _is_self(d, addr):
             continue
         seen[fp] = True
+        _register_with(addr[0], d.get("port", PORT), d.get("protocol", "http"))
         print(json.dumps({
             "alias": d.get("alias", addr[0]),
             "ip": addr[0],
             "port": d.get("port", PORT),
             "deviceModel": d.get("deviceModel", ""),
             "deviceType": d.get("deviceType", "desktop"),
+            "protocol": d.get("protocol", "http"),
             "fingerprint": fp,
         }), flush=True)
         # answering an announce is what makes us visible on their screen
@@ -125,15 +226,27 @@ def discover(seconds=3.0):
     return 0
 
 
+# LocalSend serves HTTPS with a certificate it signed itself, so verification can only ever fail.
+_TLS = ssl.create_default_context()
+_TLS.check_hostname = False
+_TLS.verify_mode = ssl.CERT_NONE
+
+
+def _open(req, timeout):
+    if req.full_url.startswith("https://"):
+        return urllib.request.urlopen(req, timeout=timeout, context=_TLS)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
 def _post(url, obj, timeout=10):
     req = urllib.request.Request(url, data=json.dumps(obj).encode(),
                                  headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with _open(req, timeout) as r:
         body = r.read().decode()
     return json.loads(body) if body.strip() else {}
 
 
-def send(ip, port, paths):
+def send(ip, port, paths, protocol=None):
     files = {}
     by_id = {}                      # the receiver answers with its own ids, so keep the mapping
     for i, p in enumerate(paths):
@@ -151,16 +264,27 @@ def send(ip, port, paths):
         print(json.dumps({"event": "error", "message": "no files"}), flush=True)
         return 1
 
-    base = "http://%s:%s/api/localsend/v2" % (ip, port)
+    # Recent LocalSend builds speak HTTPS and announce it; older ones are plain HTTP. Try what the device
+    # asked for first and fall back to the other, so a wrong guess is not a failed send.
+    order = ["https", "http"] if protocol == "https" else ["http", "https"]
     print(json.dumps({"event": "asking"}), flush=True)
-    try:
-        res = _post(base + "/prepare-upload", {"info": ME, "files": files}, timeout=90)
-    except urllib.error.HTTPError as e:
-        msg = "declined" if e.code in (403, 204) else "HTTP %s" % e.code
-        print(json.dumps({"event": "error", "message": msg}), flush=True)
-        return 1
-    except OSError as e:
-        print(json.dumps({"event": "error", "message": str(e)}), flush=True)
+    base, res, last = None, None, None
+    for scheme in order:
+        attempt = "%s://%s:%s/api/localsend/v2" % (scheme, ip, port)
+        try:
+            res = _post(attempt + "/prepare-upload", {"info": ME, "files": files}, timeout=90)
+            base = attempt
+            break
+        except urllib.error.HTTPError as e:
+            # the device answered, so this is its decision, not the wrong scheme
+            msg = "declined" if e.code in (403, 204) else ("busy" if e.code == 409 else "HTTP %s" % e.code)
+            print(json.dumps({"event": "error", "message": msg}), flush=True)
+            return 1
+        except (OSError, ssl.SSLError) as e:
+            last = e
+            continue
+    if base is None:
+        print(json.dumps({"event": "error", "message": "could not reach the device (%s)" % last}), flush=True)
         return 1
 
     session = res.get("sessionId", "")
@@ -179,7 +303,7 @@ def send(ip, port, paths):
             with open(path, "rb") as fh:
                 req = urllib.request.Request(url, data=fh.read(),
                                              headers={"Content-Type": "application/octet-stream"}, method="POST")
-                urllib.request.urlopen(req, timeout=600).read()
+                _open(req, 600).read()
             sent += 1
         except OSError as e:
             print(json.dumps({"event": "error", "file": os.path.basename(path), "message": str(e)}), flush=True)
@@ -372,22 +496,38 @@ def _read_answers():
             PING.set()
 
 
+
 def _announce_on_request(sock):
     """`search` on stdin: say hello again, so anything new answers."""
     while True:
         PING.wait()
         PING.clear()
         for _ in range(3):
-            try:
-                sock.sendto(json.dumps(ME).encode(), (MULTICAST, PORT))
-            except OSError:
-                pass
+            _announce(sock)
             time.sleep(0.2)
+
+
+def _die_with_parent():
+    """Don't outlive the shell: an orphaned receiver keeps port 53317 and the next one can never bind,
+    which left AirDrop saying "Starting…" for ever after a restart."""
+    # (PR_SET_PDEATHSIG is no use here: it fires when the *thread* that forked us exits, and Qt spawns
+    # processes from a worker thread, so the receiver was killed the moment it started.)
+    parent = os.getppid()
+
+    def watch():
+        while True:
+            # reparented (to init, or to a subreaper) means whoever started us is gone
+            if os.getppid() != parent:
+                os._exit(0)
+            time.sleep(3.0)
+
+    threading.Thread(target=watch, daemon=True).start()
 
 
 def serve():
     """Be visible to the devices around you, and take what they send."""
     os.makedirs(DOWNLOADS, exist_ok=True)
+    _die_with_parent()
     threading.Thread(target=_read_answers, daemon=True).start()
 
     # a previous instance may still be letting go of the port: wait for it rather than giving up
@@ -415,17 +555,25 @@ def serve():
         pass
     try:
         sock.bind(("", PORT))
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP,
-                        socket.inet_aton(MULTICAST) + socket.inet_aton("0.0.0.0"))
+        _join_all(sock)
     except OSError:
         pass
-    try:
-        sock.sendto(json.dumps(ME).encode(), (MULTICAST, PORT))
-    except OSError:
-        pass
+    _announce(sock)
     sock.settimeout(1.0)
     announced = {}
     threading.Thread(target=_announce_on_request, args=(sock,), daemon=True).start()
+    # interfaces come and go (the hotspot, a cable, a VPN): rejoin and say hello again every now and then,
+    # so a device that appears on a new network still finds us without anyone pressing Search
+    def _keepalive():
+        while True:
+            time.sleep(20.0)
+            try:
+                _join_all(sock)
+                _announce(sock)
+            except OSError:
+                pass
+
+    threading.Thread(target=_keepalive, daemon=True).start()
     while True:
         try:
             data, addr = sock.recvfrom(8192)
@@ -437,8 +585,7 @@ def serve():
             d = json.loads(data.decode())
         except (ValueError, UnicodeDecodeError):
             continue
-        # our own announcement, or our own loopback copy of it
-        if d.get("fingerprint") == FINGERPRINT or addr[0] in ("127.0.0.1", "::1"):
+        if _is_self(d, addr):
             continue
         if announced.get(d.get("fingerprint")) == addr[0]:
             # already on the list; answering again is enough
@@ -449,9 +596,11 @@ def serve():
                     pass
             continue
         announced[d.get("fingerprint")] = addr[0]
+        _register_with(addr[0], d.get("port", PORT), d.get("protocol", "http"))
         print(json.dumps({"event": "device", "alias": d.get("alias", addr[0]), "ip": addr[0],
                           "port": d.get("port", PORT), "deviceModel": d.get("deviceModel", ""),
                           "deviceType": d.get("deviceType", "desktop"),
+                          "protocol": d.get("protocol", "http"),
                           "fingerprint": d.get("fingerprint", addr[0])}), flush=True)
         if d.get("announce"):
             try:
@@ -469,7 +618,14 @@ def main(argv):
     if cmd == "discover":
         return discover(argv[2] if len(argv) > 2 else 3.0)
     if cmd == "send" and len(argv) >= 5:
-        return send(argv[2], argv[3], argv[4:])
+        # send <ip> <port> [--protocol http|https] <file…>
+        rest, proto = argv[4:], None
+        if rest and rest[0] == "--protocol" and len(rest) > 1:
+            proto, rest = rest[1], rest[2:]
+        if not rest:
+            print(__doc__)
+            return 2
+        return send(argv[2], argv[3], rest, proto)
     if cmd == "serve":
         return serve()
     print(__doc__)
