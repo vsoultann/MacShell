@@ -235,7 +235,15 @@ Scope {
     onAccentChanged: if (bar && String(bar.accent) !== String(accent)) bar.accent = accent
     // How minimising looks: "genie" (the window pours into the Dock, the macOS default), "fade" (0.35 s), "instant".
     property string minimizeEffect: "genie"
-    property real minimizeSecs: 0.42          // how long Magic Lamp takes (Settings → Desktop & Dock → Speed)
+    property real minimizeSecs: 0.42
+    // Settings → Mouse → Pointer: Apple's macOS cursors (black "macOS" or "macOS-White") and their size
+    property string cursorTheme: "macOS"
+    property int cursorSize: 24
+    function applyCursor() {
+        Quickshell.execDetached([Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-cursor.sh", cursorTheme, String(cursorSize)]);
+    }
+    onCursorThemeChanged: if (settingsReady) applyCursor()
+    onCursorSizeChanged: if (settingsReady) applyCursor()          // how long Magic Lamp takes (Settings → Desktop & Dock → Speed)
     // Settings → Icons: "default" or "tinted" (every app icon in one colour, like macOS Tahoe); only with Frosted
     // or Liquid Glass. iconTint "" = the accent colour
     property string iconStyle: "default"
@@ -3877,6 +3885,30 @@ Scope {
                 SCard {
                     t: pal
                     SRow {
+                        t: pal; title: "Pointer"
+                        subtitle: "Apple's macOS pointer, black or white"
+                        SSegmented {
+                            t: pal
+                            model: ["Black", "White"]
+                            segWidth: 72
+                            current: root.cursorTheme === "macOS-White" ? 1 : 0
+                            onPicked: i => root.cursorTheme = ["macOS", "macOS-White"][i]
+                        }
+                    }
+                    SRow {
+                        t: pal; title: "Pointer size"
+                        SSegmented {
+                            t: pal
+                            model: ["Normal", "Large", "Larger"]
+                            segWidth: 72
+                            current: root.cursorSize >= 48 ? 2 : (root.cursorSize >= 32 ? 1 : 0)
+                            onPicked: i => root.cursorSize = [24, 32, 48][i]
+                        }
+                    }
+                }
+                SCard {
+                    t: pal
+                    SRow {
                         t: pal; title: "Tracking speed"
                         SSlider { t: pal; leftLabel: "Slow"; rightLabel: "Fast"; from: -1; to: 1; value: root.bar ? root.bar.mouseSens : 0; onMoved: v => { if (root.bar) root.bar.mouseSens = v; } }
                     }
@@ -4530,7 +4562,7 @@ Scope {
     }
 
     // ── settings persistence (~/.config/macdock/settings.json) ──
-    readonly property string settingsSig: [dockEnabled, windowsFloat, minimizeEffect, minimizeSecs, iconStyle, iconTint, hotspotSsid, hotspotPass, hotspotBand, iconSizePref, magnification, magnificationEnabled, spacing, margin,
+    readonly property string settingsSig: [dockEnabled, windowsFloat, minimizeEffect, minimizeSecs, cursorTheme, cursorSize, iconStyle, iconTint, hotspotSsid, hotspotPass, hotspotBand, iconSizePref, magnification, magnificationEnabled, spacing, margin,
         cornerRadius, darkMode, glassOpacity, glassBlur, glassLiquid, dockStyle, wallpaperPath, String(accent), fontFamily, hideMode, hideDelay, monitor,
         showTrash, showLabels, showIndicators, bounceOnLaunch, showThumbs, windowCapture].join("|")
     property bool settingsReady: false
@@ -4545,7 +4577,7 @@ Scope {
 
     function saveSettings() {
         var o = {
-            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, hyprBinds: hyprBinds, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, iconMode: iconMode, pinMigTahoe: pinMigTahoe, minimizeEffect: minimizeEffect, minimizeSecs: minimizeSecs, iconStyle: iconStyle, iconTint: iconTint, hotspotSsid: hotspotSsid, hotspotPass: hotspotPass, hotspotBand: hotspotBand, iconSize: iconSizePref, magnification: magnification, magnificationEnabled: magnificationEnabled,
+            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, hyprBinds: hyprBinds, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, iconMode: iconMode, pinMigTahoe: pinMigTahoe, minimizeEffect: minimizeEffect, minimizeSecs: minimizeSecs, cursorTheme: cursorTheme, cursorSize: cursorSize, iconStyle: iconStyle, iconTint: iconTint, hotspotSsid: hotspotSsid, hotspotPass: hotspotPass, hotspotBand: hotspotBand, iconSize: iconSizePref, magnification: magnification, magnificationEnabled: magnificationEnabled,
             spacing: spacing, margin: margin, cornerRadius: cornerRadius,
             darkMode: darkMode, glassOpacity: glassOpacity, dockStyle: dockStyle, wallpaperPath: wallpaperPath, glassDebug: glassDebug,
             glassRim: glassRim, glassGrain: glassGrain, glassLiquid: glassLiquid, glassBlur: glassBlur,
@@ -4562,7 +4594,7 @@ Scope {
         var keys = ["dockEnabled", "windowsFloat", "shortcuts", "hyprBinds", "pinnedFolders", "desktopIcons", "iconMode", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
                     "darkMode", "glassOpacity", "dockStyle", "wallpaperPath", "glassDebug", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "accent", "fontFamily", "hideMode", "hideDelay", "monitor",
                     "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture", "pinMigTahoe",
-                    "hotspotSsid", "hotspotPass", "hotspotBand", "minimizeEffect", "minimizeSecs", "iconStyle", "iconTint"];
+                    "hotspotSsid", "hotspotPass", "hotspotBand", "minimizeEffect", "minimizeSecs", "iconStyle", "iconTint", "cursorTheme", "cursorSize"];
         for (var i = 0; i < keys.length; i++) {
             if (o[keys[i]] === undefined) continue;
             try { root[keys[i]] = o[keys[i]]; } catch (err) { }

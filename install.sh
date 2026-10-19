@@ -401,6 +401,15 @@ EOF
 }
 
 do_icons() {
+    # Apple's macOS pointers (ful1e5/apple_cursor, GPL-3.0): black and white, chosen in Settings → Mouse
+    say "Installing the macOS pointers"
+    local c; c=$(mktemp -d)
+    for n in macOS macOS-White; do
+        curl -fsSL -o "$c/$n.tar.xz" "https://github.com/ful1e5/apple_cursor/releases/download/v2.0.1/$n.tar.xz" \
+            && mkdir -p "$HOME/.local/share/icons" && tar -xf "$c/$n.tar.xz" -C "$HOME/.local/share/icons" \
+            || warn "couldn't fetch the $n pointer"
+    done
+    rm -rf "$c"
     say "Installing the MacTahoe icon theme"
     local t; t=$(mktemp -d)
     git clone --depth 1 https://github.com/vinceliuice/MacTahoe-icon-theme.git "$t/icons" >/dev/null 2>&1 || die "couldn't download MacTahoe"
