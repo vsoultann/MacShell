@@ -2944,7 +2944,7 @@ Scope {
                 m.push(mchk("Dark Mode", "", root.darkMode, function () { root.setDark(!root.darkMode); }));
             } else if (name === "window") {
                 if (has) {
-                    m.push(mi("Minimize", "", disp('hl.dsp.window.move({ workspace = "special:minimized", follow = false })')));
+                    m.push(mi("Minimize", "\u2318M", function () { if (root.hub && root.hub.minimizeActive) root.hub.minimizeActive(); }));
                     m.push(mchk("Zoom", "", fsMode === 1, disp('hl.dsp.window.fullscreen({ mode = "maximized", action = "toggle" })')));
                     m.push(mi(floating ? "Tile Window" : "Float Window", "", disp('hl.dsp.window.float({ action = "toggle" })')));
                     m.push(msep());
@@ -2958,7 +2958,7 @@ Scope {
                     m.push(msep());
                 }
                 m.push(mi("Show Hidden Windows", "", disp('hl.dsp.workspace.toggle_special("hidden")')));
-                m.push(mi("Show Minimized Windows", "", disp('hl.dsp.workspace.toggle_special("minimized")')));
+                m.push(mi("Bring Back Minimized Window", "\u21E7\u2318M", function () { if (root.hub && root.hub.restoreLast) root.hub.restoreLast(); }));
                 var tls = ToplevelManager.toplevels.values;
                 if (tls.length > 0) m.push(msep());
                 for (i = 0; i < tls.length && i < 8; i++) {

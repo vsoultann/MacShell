@@ -229,6 +229,29 @@ Scope {
         if (bar && bar.darkMode !== darkMode) bar.darkMode = darkMode;
     }
     onAccentChanged: if (bar && String(bar.accent) !== String(accent)) bar.accent = accent
+    // How minimising looks: "genie" (the window pours into the Dock, the macOS default), "fade" (0.35 s), "instant".
+    property string minimizeEffect: "genie"
+    property var uiByScreen: ({})          // each screen's Dock, so the minimise effect knows where to aim
+    // Where a window should pour into: its own preview cell in the Dock if it has one, otherwise its app's icon.
+    // Returned in global (layout) coordinates, or null when the Dock isn't on that screen.
+    function minimizeTarget(waylandTl, screenName) {
+        var ui = uiByScreen[screenName];
+        var scr = null, ss = Quickshell.screens;
+        for (var s = 0; s < ss.length; s++) if (ss[s].name === screenName) { scr = ss[s]; break; }
+        if (!ui || !scr) return null;
+        var idx = -1, i;
+        if (waylandTl) {
+            var wk = "win:" + winIdFor(waylandTl);
+            for (i = 0; i < dockModel.count; i++) if (dockModel.get(i).key === wk) { idx = i; break; }
+            if (idx < 0) {
+                var ak = keyOf(appOf(waylandTl));
+                for (i = 0; i < dockModel.count; i++) if (dockModel.get(i).key === ak) { idx = i; break; }
+            }
+        }
+        var cx = idx >= 0 ? ui.naturalCenter(idx) : ui.width / 2;
+        var size = iconSize;
+        return { x: scr.x + cx - size / 2, y: scr.y + scr.height - margin - bottomPad - size, width: size, height: size };
+    }
     // Internet Sharing: kept here (and saved) so the name, password and band survive closing Settings
     property string hotspotSsid: ""
     property string hotspotPass: ""
@@ -736,7 +759,7 @@ Scope {
             { id: "general",    sec: 2, name: "General",         glyph: "behavior", c1: "#9A9AA0", c2: "#636366", keys: "enable disable dock menu bar panel show hide off on widgets sound game" },
             { id: "appearance", sec: 2, name: "Appearance",      glyph: "appearance", c1: "#5A5A5F", c2: "#2C2C2E", keys: "theme dark light mode accent color glass liquid apple style translucency blur corner radius font" },
             { id: "controlcenter", sec: 2, name: "Control Center", wg: "cc",       c1: "#7D7AFF", c2: "#5856D6", keys: "modules tiles controls" },
-            { id: "dock",       sec: 2, name: "Desktop & Dock",  glyph: "dock",     c1: "#3D9BFF", c2: "#0A54D6", keys: "size icon magnification zoom spacing margin distance edge hide auto labels indicators bounce trash monitor preview" },
+            { id: "dock",       sec: 2, name: "Desktop & Dock",  glyph: "dock",     c1: "#3D9BFF", c2: "#0A54D6", keys: "size icon magnification zoom spacing margin distance edge hide auto labels indicators bounce trash monitor preview minimise minimize genie fade effect" },
             { id: "displays",   sec: 2, name: "Displays",        wg: "sun",        c1: "#3D9BFF", c2: "#0A6CFF", keys: "brightness night shift monitor resolution refresh scale" },
             { id: "menubar",    sec: 2, name: "Menu Bar",        glyph: "menubar",  c1: "#3D9BFF", c2: "#0A6CFF", keys: "panel bar height clock date seconds 24 hour battery tray search spotlight week monday style liquid bluetooth widget" },
             { id: "wallpaper",  sec: 2, name: "Wallpaper",       glyph: "wallpaper", c1: "#5AC8FA", c2: "#007AFF", keys: "wallpaper background picture image video animated live motion desktop dynamic" },
@@ -2218,6 +2241,24 @@ Scope {
                     t: pal
                     SRow {
                         t: pal
+                        title: "Minimise windows using"
+                        subtitle: root.minimizeEffect === "genie" ? "The window pours into the Dock like the macOS genie, and back out again"
+                                : (root.minimizeEffect === "fade" ? "A quick fade (0.35 s) toward the Dock"
+                                                                   : "No animation: the window just goes")
+                        SSegmented {
+                            t: pal
+                            model: ["Genie", "Fade", "Instant"]
+                            segWidth: 70
+                            current: root.minimizeEffect === "fade" ? 1 : (root.minimizeEffect === "instant" ? 2 : 0)
+                            onPicked: i => root.minimizeEffect = ["genie", "fade", "instant"][i]
+                        }
+                    }
+                }
+
+                SCard {
+                    t: pal
+                    SRow {
+                        t: pal
                         title: "Automatically hide and show the Dock"
                         subtitle: root.hideMode === "smart" ? "Hides while a window fills the screen — maximised, fullscreen or tiled"
                                 : (root.hideMode === "always" ? "Always hidden until the pointer touches the screen edge"
@@ -3189,8 +3230,8 @@ Scope {
                     { id: "gaming",     name: "Game Mode",            def: "SUPER + G",         cmd: "gaming toggle" },
                     { id: "airdrop",    name: "AirDrop",              def: "SUPER + SHIFT + D", cmd: "airdrop open" },
                     { id: "finder",     name: "Finder",               def: "SUPER + E",         cmd: "finder open" },
-                    { id: "minimize",   name: "Minimize window",      def: "SUPER + M",         dsp: 'hl.dsp.window.move({ workspace = "special:minimized", follow = false })' },
-                    { id: "unminimize", name: "Show minimized windows", def: "SUPER + SHIFT + M", dsp: 'hl.dsp.workspace.toggle_special("minimized")' },
+                    { id: "minimize",   name: "Minimize window",      def: "SUPER + M",         dsp: 'hl.dsp.exec_cmd("qs -c MacShell ipc call window minimize")' },
+                    { id: "unminimize", name: "Bring back the last minimized window", def: "SUPER + SHIFT + M", dsp: 'hl.dsp.exec_cmd("qs -c MacShell ipc call window restorelast")' },
                     { id: "closewin",   name: "Close window",         def: "SUPER + W",         dsp: "hl.dsp.window.close()" },
                     { id: "zoomwin",    name: "Zoom (fullscreen)",    def: "SUPER + F",         dsp: "hl.dsp.window.fullscreen_state({ internal = 2, client = 0 })" }
                 ]
@@ -4375,7 +4416,7 @@ Scope {
     }
 
     // ── settings persistence (~/.config/macdock/settings.json) ──
-    readonly property string settingsSig: [dockEnabled, windowsFloat, hotspotSsid, hotspotPass, hotspotBand, iconSizePref, magnification, magnificationEnabled, spacing, margin,
+    readonly property string settingsSig: [dockEnabled, windowsFloat, minimizeEffect, hotspotSsid, hotspotPass, hotspotBand, iconSizePref, magnification, magnificationEnabled, spacing, margin,
         cornerRadius, darkMode, glassOpacity, glassBlur, glassLiquid, dockStyle, wallpaperPath, String(accent), fontFamily, hideMode, hideDelay, monitor,
         showTrash, showLabels, showIndicators, bounceOnLaunch, showThumbs, windowCapture].join("|")
     property bool settingsReady: false
@@ -4390,7 +4431,7 @@ Scope {
 
     function saveSettings() {
         var o = {
-            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, hyprBinds: hyprBinds, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, iconMode: iconMode, pinMigTahoe: pinMigTahoe, hotspotSsid: hotspotSsid, hotspotPass: hotspotPass, hotspotBand: hotspotBand, iconSize: iconSizePref, magnification: magnification, magnificationEnabled: magnificationEnabled,
+            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, hyprBinds: hyprBinds, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, iconMode: iconMode, pinMigTahoe: pinMigTahoe, minimizeEffect: minimizeEffect, hotspotSsid: hotspotSsid, hotspotPass: hotspotPass, hotspotBand: hotspotBand, iconSize: iconSizePref, magnification: magnification, magnificationEnabled: magnificationEnabled,
             spacing: spacing, margin: margin, cornerRadius: cornerRadius,
             darkMode: darkMode, glassOpacity: glassOpacity, dockStyle: dockStyle, wallpaperPath: wallpaperPath, glassDebug: glassDebug,
             glassRim: glassRim, glassGrain: glassGrain, glassLiquid: glassLiquid, glassBlur: glassBlur,
@@ -4407,7 +4448,7 @@ Scope {
         var keys = ["dockEnabled", "windowsFloat", "shortcuts", "hyprBinds", "pinnedFolders", "desktopIcons", "iconMode", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
                     "darkMode", "glassOpacity", "dockStyle", "wallpaperPath", "glassDebug", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "accent", "fontFamily", "hideMode", "hideDelay", "monitor",
                     "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture", "pinMigTahoe",
-                    "hotspotSsid", "hotspotPass", "hotspotBand"];
+                    "hotspotSsid", "hotspotPass", "hotspotBand", "minimizeEffect"];
         for (var i = 0; i < keys.length; i++) {
             if (o[keys[i]] === undefined) continue;
             try { root[keys[i]] = o[keys[i]]; } catch (err) { }
@@ -4556,21 +4597,25 @@ Scope {
     }
 
     function activate(item, forceNew) {
-        if (item.kind === "win") { if (item.tl) item.tl.activate(); return; }
+        // a minimised window comes back out of the Dock with the minimise effect played in reverse
+        if (item.kind === "win") {
+            if (item.tl && !(root.hub && root.hub.restoreIfMinimized && root.hub.restoreIfMinimized(item.tl))) item.tl.activate();
+            return;
+        }
         if (item.kind === "folder") { root.loadStack(item.path); return; }
         if (item.special === "trash") {
-            // the file manager first (Dolphin understands trash:/ natively); xdg-open only as the last resort
-            Quickshell.execDetached(["sh", "-c",
-                "if command -v dolphin >/dev/null 2>&1; then exec dolphin trash:/; fi; "
-                + "for fm in nautilus thunar nemo pcmanfm-qt; do if command -v $fm >/dev/null 2>&1; then exec $fm trash:///; fi; done; "
-                + "exec xdg-open trash:///"]);
+            // our Finder, at the trash's own folder — not another desktop's file manager
+            var tdir = (Quickshell.env("XDG_DATA_HOME") || (Quickshell.env("HOME") + "/.local/share")) + "/Trash/files";
+            if (root.hub && root.hub.openFolder) { root.hub.openFolder(tdir); return; }
+            Quickshell.execDetached(["xdg-open", tdir]);
             return;
         }
         var wins = windowsFor(item.key);
         if (wins.length > 0 && !forceNew) {
             var idx = -1;
             for (var i = 0; i < wins.length; i++) if (wins[i].activated) idx = i;
-            wins[(idx + 1) % wins.length].activate();
+            var next = wins[(idx + 1) % wins.length];
+            if (!(root.hub && root.hub.restoreIfMinimized && root.hub.restoreIfMinimized(next))) next.activate();
             return;
         }
         if (item.entry || item.key) {
@@ -5114,6 +5159,7 @@ Scope {
             Item {
                 id: ui
                 anchors.fill: parent
+                Component.onCompleted: root.uiByScreen[win.modelData.name] = ui
 
                 property real mx: 0
                 Behavior on mx { NumberAnimation { duration: 55; easing.type: Easing.OutQuad } }

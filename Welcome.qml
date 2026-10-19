@@ -6,6 +6,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Effects
+import QtMultimedia
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -39,6 +40,21 @@ Scope {
                                      : "file://" + Quickshell.env("HOME") + "/.config/macbar/liquidglass.frag.qsb"
     readonly property string goldenGate: Quickshell.env("HOME") + "/Pictures/Wallpapers/macos-27-GoldenGate-" + (appearance === "dark" ? "Dark" : "Light") + ".png"
     property bool hasGoldenGate: false
+    // One of Apple's aerials behind the greeting, nature first. They are the films Apple uses for its screen
+    // savers and wallpapers; if there are none on this machine the Mac picture below is used instead.
+    property string aerial: ""
+    Process {
+        id: aerialFind
+        running: true
+        command: ["sh", "-c",
+            "for d in \"$HOME/Pictures/Wallpapers/Apple Aerials\" \"$HOME/.local/share/macshell/aerials\" \"$HOME/Videos/Apple Aerials\"; do "
+            + "  [ -d \"$d\" ] || continue; "
+            + "  for n in 'Greenland Icebergs' 'Zhangjiajie' 'Greenland Sunset' 'Iceland' 'Hawaii' 'Yosemite' 'Patagonia' 'Scotland'; do "
+            + "    f=$(ls \"$d\"/*\"$n\"*.mp4 2>/dev/null | head -1); [ -n \"$f\" ] && { echo \"$f\"; exit 0; }; "
+            + "  done; "
+            + "done; exit 0"]
+        stdout: StdioCollector { onStreamFinished: root.aerial = text.trim() }
+    }
     readonly property string macWallpaper: hasGoldenGate ? "file://" + goldenGate
                                          : (bar && bar.wallpaperPath ? "file://" + bar.wallpaperPath : "")
     // how much tint the glass carries for the chosen material and amount (the same curve the shell uses)
@@ -65,7 +81,7 @@ Scope {
 
     Timer {
         id: helloTimer
-        interval: 900; repeat: true; running: root.shown && root.step === 0
+        interval: 1700; repeat: true; running: root.shown && root.step === 0
         onTriggered: {
             root.helloIdx++;
             if (root.helloIdx >= root.hellos.length) { root.helloIdx = 0; root.step = 1; }
@@ -163,7 +179,37 @@ Scope {
             // A Mac picture behind everything: the macOS Golden Gate wallpaper when it is installed, otherwise
             // your own. Blurred and dimmed the way Setup Assistant sits over its backdrop, so text stays legible.
             Item {
+                id: backdrop
                 anchors.fill: parent
+                // Apple's aerial: full and clear behind the greeting, then soft and dim behind the pages that follow
+                Item {
+                    id: aerialLayer
+                    anchors.fill: parent
+                    visible: w.isMain && root.aerial !== ""
+                    MediaPlayer {
+                        id: aerialPlayer
+                        source: root.aerial !== "" ? "file://" + root.aerial : ""
+                        loops: MediaPlayer.Infinite
+                        videoOutput: aerialOut
+                        audioOutput: AudioOutput { muted: true }
+                    }
+                    VideoOutput { id: aerialOut; anchors.fill: parent; fillMode: VideoOutput.PreserveAspectCrop; visible: false }
+                    MultiEffect {
+                        anchors.fill: parent
+                        source: aerialOut
+                        blurEnabled: true; blurMax: 64
+                        blur: root.step === 0 ? 0 : 0.8
+                        brightness: root.step === 0 ? -0.06 : -0.32
+                        Behavior on blur { NumberAnimation { duration: 900; easing.type: Easing.InOutCubic } }
+                        Behavior on brightness { NumberAnimation { duration: 900; easing.type: Easing.InOutCubic } }
+                    }
+                    Connections {
+                        target: root
+                        function onShownChanged() { if (root.shown && root.aerial !== "" && w.isMain) aerialPlayer.play(); else aerialPlayer.stop(); }
+                        function onAerialChanged() { if (root.shown && root.aerial !== "" && w.isMain) aerialPlayer.play(); }
+                    }
+                    Component.onCompleted: if (root.shown && root.aerial !== "" && w.isMain) aerialPlayer.play()
+                }
                 Image {
                     id: helloWall
                     anchors.fill: parent
@@ -176,7 +222,7 @@ Scope {
                 MultiEffect {
                     anchors.fill: parent
                     source: helloWall
-                    visible: helloWall.status === Image.Ready
+                    visible: helloWall.status === Image.Ready && !aerialLayer.visible
                     blurEnabled: true; blurMax: 64; blur: 0.85
                     saturation: 0.15
                     // dim in both modes: the page's text is white, and Light / Dark is shown in the preview card
@@ -192,7 +238,7 @@ Scope {
                 // no picture at all: the old soft glow
                 Rectangle {
                     anchors.centerIn: parent
-                    visible: helloWall.status !== Image.Ready
+                    visible: helloWall.status !== Image.Ready && !aerialLayer.visible
                     width: Math.hypot(parent.width, parent.height) * 1.1; height: width
                     gradient: Gradient {
                         GradientStop { position: 0; color: Qt.rgba(0.05, 0.25, 0.65, 0.55) }
@@ -209,16 +255,19 @@ Scope {
                 opacity: root.step === 0 ? 1 : 0
                 visible: opacity > 0.01
                 Behavior on opacity { NumberAnimation { duration: 500; easing.type: Easing.OutCubic } }
-                MorphText {
+                // the greeting is Liquid Glass — the lock screen clock's material — with the aerial bent through it.
+                // One real font family: Qt then falls back glyph by glyph for every script Inter doesn't cover.
+                GlassText {
                     anchors.centerIn: parent
                     text: root.hellos[Math.min(root.helloIdx, root.hellos.length - 1)]
-                    color: "white"
-                    // One real family. The old value was a comma-separated list, which Qt reads as a single
-                    // family name that doesn't exist — so scripts Inter lacks never found a fallback.
                     font.family: root.fam
-                    font.pixelSize: Math.round(w.height * 0.11); font.weight: Font.Light
-                    duration: 620
-                    blurMax: 60
+                    font.pixelSize: Math.round(w.height * 0.13)
+                    font.weight: Font.DemiBold
+                    duration: 1000
+                    backdrop: backdrop
+                    frame: w.contentItem
+                    intensity: 0.32
+                    refract: Math.round(w.height * 0.012)
                 }
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter

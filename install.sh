@@ -145,7 +145,7 @@ compile_shaders() {
     local qsb=/usr/lib/qt6/bin/qsb
     [ -x "$qsb" ] || qsb=$(command -v qsb || true)
     [ -n "$qsb" ] || { warn "qsb (qt6-shadertools) not found: the Liquid Glass shaders compile on first launch instead"; return 0; }
-    for f in "$1"/*.frag; do [ -f "$f" ] && "$qsb" --qt6 -o "$f.qsb" "$f" >/dev/null 2>&1 || true; done
+    for f in "$1"/*.frag "$1"/*.vert; do [ -f "$f" ] && "$qsb" --qt6 -o "$f.qsb" "$f" >/dev/null 2>&1 || true; done
 }
 
 do_shell() {

@@ -39,8 +39,113 @@ ShellRoot {
         property var finder: finderApp
         // one way to open a folder, and one way to put a window away — every part of the shell uses these
         function openFolder(path) { if (finderApp) finderApp.open(path); else Quickshell.execDetached(["xdg-open", path]); }
+        // ── Minimise / restore, with the effect from Settings → Desktop & Dock (genie, fade or instant) ──
+        // Every way of minimising goes through here, so they all animate the same way.
+        property var minimizedAt: ({})     // address → { win, screen }: where it was, so restoring puts it back
+        // newest first, and only windows that still exist: the list can still hold a window that was just
+        // destroyed (a shell reload recreates our own windows under the same title)
+        function hyprWin(match) {
+            var ts = Hyprland.toplevels.values;
+            for (var i = ts.length - 1; i >= 0; i--) if (ts[i].wayland && match(ts[i])) return ts[i];
+            return null;
+        }
+        function winRect(h, screenName) {
+            var o = h.lastIpcObject || {};
+            if (o.at && o.size && o.size[0] > 0) return { x: o.at[0], y: o.at[1], width: o.size[0], height: o.size[1] };
+            // not known yet: the middle of its screen, so the effect at least starts somewhere sensible
+            var ss = Quickshell.screens;
+            for (var i = 0; i < ss.length; i++) if (ss[i].name === screenName)
+                return { x: ss[i].x + ss[i].width * 0.2, y: ss[i].y + ss[i].height * 0.15, width: ss[i].width * 0.6, height: ss[i].height * 0.6 };
+            return { x: 0, y: 0, width: 800, height: 600 };
+        }
+        function monitorOf(h) {
+            if (h.monitor && h.monitor.name) return h.monitor.name;
+            var fm = Hyprland.focusedMonitor;
+            return fm ? fm.name : (Quickshell.screens.length ? Quickshell.screens[0].name : "");
+        }
+        function fallbackTarget(screenName) {
+            var ss = Quickshell.screens;
+            for (var i = 0; i < ss.length; i++) if (ss[i].name === screenName)
+                return { x: ss[i].x + ss[i].width / 2 - 26, y: ss[i].y + ss[i].height - 70, width: 52, height: 52 };
+            return { x: 0, y: 0, width: 52, height: 52 };
+        }
+        function minimizeHyprWin(h) {
+            if (!h) return;
+            var addr = "0x" + String(h.address).replace(/^0x/, "");
+            var mon = monitorOf(h);
+            try { Hyprland.refreshToplevels(); } catch (e) {}
+            minFx.play({
+                screen: mon, tl: h.wayland, reverse: false,
+                winFn: function () {
+                    var r = sharedHub.winRect(h, mon);
+                    var m = {}; for (var k in sharedHub.minimizedAt) m[k] = sharedHub.minimizedAt[k];
+                    m[addr] = { win: r, screen: mon };
+                    sharedHub.minimizedAt = m;
+                    return r;
+                },
+                targetFn: function () { return macDock.minimizeTarget(h.wayland, mon) || sharedHub.fallbackTarget(mon); },
+                before: function () {
+                    Hyprland.dispatch('hl.dsp.window.move({ workspace = "special:minimized", follow = false, window = "address:' + addr + '" })');
+                },
+                after: function () {}
+            });
+        }
         function minimizeWindow(title) {
-            Hyprland.dispatch('hl.dsp.window.move({ workspace = "special:minimized", follow = false, window = "title:^' + title + '$" })');
+            try {
+                try { Hyprland.refreshToplevels(); } catch (e0) {}
+                var h = hyprWin(function (t) { return t.title === title; });
+                minimizeHyprWin(h);
+            } catch (e) {
+                console.log("[minimize] failed: " + e + " " + (e.stack || ""));
+            }
+        }
+        function minimizeActive() {
+            var a = Hyprland.activeToplevel;
+            if (a) minimizeHyprWin(a);
+        }
+        // the live workspace, not lastIpcObject: that one is a snapshot and was still saying "minimised" afterwards
+        function isMinimized(h) {
+            if (!h) return false;
+            if (h.workspace && h.workspace.name) return String(h.workspace.name) === "special:minimized";
+            var o = h.lastIpcObject || {};
+            return !!(o.workspace && String(o.workspace.name || "") === "special:minimized");
+        }
+        function restoreHyprWin(h) {
+            if (!h) return;
+            var addr = "0x" + String(h.address).replace(/^0x/, "");
+            var fm = Hyprland.focusedMonitor;
+            var mon = fm ? fm.name : monitorOf(h);
+            var ws = fm && fm.activeWorkspace ? fm.activeWorkspace.id : 1;
+            var rec = minimizedAt[addr];
+            var win = rec && rec.screen === mon ? rec.win : winRect(h, mon);
+            minFx.play({
+                screen: mon, tl: h.wayland, win: win, reverse: true,
+                target: macDock.minimizeTarget(h.wayland, mon) || fallbackTarget(mon),
+                before: function () {},
+                after: function () {
+                    Hyprland.dispatch('hl.dsp.window.move({ workspace = "' + ws + '", follow = false, window = "address:' + addr + '" })');
+                    Hyprland.dispatch('hl.dsp.focus({ window = "address:' + addr + '" })');
+                    var m = {}; for (var k in sharedHub.minimizedAt) if (k !== addr) m[k] = sharedHub.minimizedAt[k];
+                    sharedHub.minimizedAt = m;
+                }
+            });
+        }
+        // the Dock calls this with a Wayland window: if it is minimised, bring it back with the effect
+        function restoreIfMinimized(waylandTl) {
+            var h = hyprWin(function (t) { return t.wayland === waylandTl; });
+            if (!h || !isMinimized(h)) return false;
+            restoreHyprWin(h);
+            return true;
+        }
+        function restoreAddr(addr) {
+            var a = String(addr).replace(/^0x/, "");
+            restoreHyprWin(hyprWin(function (t) { return String(t.address).replace(/^0x/, "") === a; }));
+        }
+        // the most recently minimised window comes back first
+        function restoreLast() {
+            try { Hyprland.refreshToplevels(); } catch (e) {}
+            var ts = Hyprland.toplevels.values;
+            for (var i = ts.length - 1; i >= 0; i--) if (ts[i].wayland && isMinimized(ts[i])) { restoreHyprWin(ts[i]); return; }
         }
         property var welcome: welcomeApp
         property var player: videoPlayer
@@ -294,6 +399,7 @@ ShellRoot {
     AirDrop { id: airDrop; hub: sharedHub }
     Preview { id: previewApp; hub: sharedHub }
     Reminders { id: remindersApp; hub: sharedHub }
+    MinimizeFx { id: minFx; hub: sharedHub; effect: macDock.minimizeEffect }
     WindowBar { id: windowBar; hub: sharedHub }
 
     // reopen settings even when both the Dock and the Menu Bar are disabled:
@@ -350,6 +456,16 @@ ShellRoot {
         function play(src: string): void { videoPlayer.play(src, src.split("/").pop()); }
         function youtube(url: string): void { videoPlayer.playYoutube(url, "Video"); }
         function toggle(): void { videoPlayer.toggle(); }
+    }
+    // qs -c MacShell ipc call window minimize | restore | restorelast
+    IpcHandler {
+        target: "window"
+        function minimize(): void { sharedHub.minimizeActive(); }
+        function minimizetitle(title: string): void { sharedHub.minimizeWindow(title); }
+        // genie | fade | instant  (the same as Settings → Desktop & Dock)
+        function effect(name: string): void { if (["genie", "fade", "instant"].indexOf(name) >= 0) macDock.minimizeEffect = name; }
+        function restore(addr: string): void { sharedHub.restoreAddr(addr); }
+        function restorelast(): void { sharedHub.restoreLast(); }
     }
     IpcHandler {
         target: "welcome"
