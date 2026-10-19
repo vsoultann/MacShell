@@ -1059,7 +1059,7 @@ Scope {
             radius: g.cornerR
             // lighter than it was: the tint hid the blur under it
             // full tint (Opaque / Game Mode) is a solid card
-            color: g.tint >= 0.99 ? (g.dark ? Qt.rgb(0.12, 0.12, 0.13) : Qt.rgb(0.97, 0.97, 0.98))
+            color: g.tint >= 0.99 ? (g.dark ? Qt.rgba(0.12, 0.12, 0.13, 1) : Qt.rgba(0.97, 0.97, 0.98, 1))
                  : (g.dark ? Qt.rgba(0.12, 0.12, 0.13, 0.16 + g.tint * 0.62) : Qt.rgba(1, 1, 1, 0.18 + g.tint * 0.55))
             border.width: 1
             border.color: g.dark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.55)
@@ -1948,9 +1948,31 @@ Scope {
                                                      || bat.state === UPowerDeviceState.FullyCharged)
 
     // media
+    // Media players that really exist: Quickshell can keep a player whose app has quit (a closed Firefox tab stays
+    // "Playing" forever), and picking that one made the controls and the lyrics talk to nothing. The bus is asked
+    // which players are there; when that can't be answered, nothing is filtered.
+    property var liveMpris: ({})
+    Process {
+        id: mprisBusProc
+        command: ["sh", "-c", "busctl --user --no-pager --no-legend list 2>/dev/null | awk '$1 ~ /^org\\.mpris\\.MediaPlayer2\\./ && $2 != \"-\" {print $1}'"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var m = {}, l = text.split("\n"), any = false;
+                for (var i = 0; i < l.length; i++) if (l[i].trim() !== "") { m[l[i].trim()] = true; any = true; }
+                if (JSON.stringify(m) !== JSON.stringify(root.liveMpris)) root.liveMpris = any ? m : ({});
+            }
+        }
+    }
+    Timer { interval: 3000; repeat: true; running: true; triggeredOnStart: true; onTriggered: if (!mprisBusProc.running) mprisBusProc.running = true }
+    function playerAlive(p) {
+        var m = root.liveMpris, k;
+        for (k in m) return m[p.dbusName] === true;     // known list: the player must be on it
+        return true;                                    // nothing known (no busctl): trust Quickshell
+    }
     readonly property var player: {
         var ps = Mpris.players.values, best = null;
         for (var i = 0; i < ps.length; i++) {
+            if (!root.playerAlive(ps[i])) continue;
             if (ps[i].isPlaying) return ps[i];
             if (!best) best = ps[i];
         }
