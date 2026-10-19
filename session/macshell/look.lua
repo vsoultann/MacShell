@@ -47,7 +47,9 @@ hl.config({
         focus_on_activate = true,
     },
     binds = { scroll_event_delay = 0, hide_special_on_workspace_change = true },
-    cursor = { zoom_factor = 1, zoom_rigid = false, zoom_disable_aa = true, hotspot_padding = 1 },
+    -- no_warps: the pointer stays where you put it (on the Dock when you minimise or bring a window back),
+    -- instead of jumping to whichever window gets focus
+    cursor = { zoom_factor = 1, zoom_rigid = false, zoom_disable_aa = true, hotspot_padding = 1, no_warps = true },
     xwayland = { force_zero_scaling = true },
     animations = { enabled = true },
 })

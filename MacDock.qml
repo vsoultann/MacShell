@@ -4695,7 +4695,7 @@ Scope {
     readonly property var ownApps: ({
         "Finder": "macshell-finder", "Photos": "macshell-photos", "App Store": "macshell-appstore",
         "Clock": "macshell-clock", "AirDrop": "macshell-airdrop", "Reminders": "macshell-reminders",
-        "Preview": "macshell-preview", "Player": "macshell-player"
+        "Preview": "macshell-preview", "Player": "macshell-player", "macshell Settings": "macshell-settings"
     })
     function appOf(tl) {
         if (tl.appId !== "org.quickshell") return tl.appId;

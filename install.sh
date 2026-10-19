@@ -179,6 +179,8 @@ do_shell() {
     printf '[Default Applications]\ninode/directory=macshell-finder.desktop\n' > "$HOME/.config/macshell-mimeapps.list"
     # AirDrop's icon is Apple's own symbol: downloaded and set on a macOS tile, not shipped in this repo
     python3 -I "$REPO/session/scripts/macshell-airdrop-icon.py" || warn "AirDrop icon: using the theme's LocalSend icon"
+    # the Player's icon is Apple's QuickTime Player icon, downloaded the same way
+    python3 -I "$REPO/session/scripts/macshell-player-icon.py" || warn "Player icon: using the theme's video icon"
     command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
     note "$QS/MacShell"
 }

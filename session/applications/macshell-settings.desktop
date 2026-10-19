@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=System Settings
+Comment=Change how MacShell looks and works
+Exec=qs -c MacShell ipc call settings open
+Icon=systemsettings
+Categories=Settings;System;
+Keywords=preferences;settings;control;system;
+StartupNotify=false
