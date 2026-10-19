@@ -75,6 +75,25 @@ Item {
             }
         }
     }
+    // chromatic fringe: real glass splits light at its edge — a hint of red on one side, blue on the other
+    Rectangle {
+        visible: k.liquid && k.lens > 0.01
+        opacity: k.lens * 0.5
+        x: -0.7; y: 0; width: parent.width; height: parent.height
+        radius: height / 2
+        color: "transparent"
+        border.width: 1.2
+        border.color: Qt.rgba(1, 0.25, 0.3, 0.6)
+    }
+    Rectangle {
+        visible: k.liquid && k.lens > 0.01
+        opacity: k.lens * 0.5
+        x: 0.7; y: 0; width: parent.width; height: parent.height
+        radius: height / 2
+        color: "transparent"
+        border.width: 1.2
+        border.color: Qt.rgba(0.3, 0.55, 1, 0.6)
+    }
     // a fine rim, like the edge of a glass pill catching the light
     Rectangle {
         visible: k.lens > 0.01
