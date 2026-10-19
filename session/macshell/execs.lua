@@ -1,0 +1,13 @@
+hl.on("hyprland.start", function ()
+    local s = "$HOME/.config/hypr-macshell/scripts/"
+    hl.exec_cmd("dbus-update-activation-environment --all")
+    hl.exec_cmd("sleep 1 && dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP")
+    hl.exec_cmd("gnome-keyring-daemon --start --components=secrets")
+    hl.exec_cmd(s .. "start_geoclue_agent.sh")
+    hl.exec_cmd(s .. "macshell-wallpaper.sh")
+    -- keeps the shell running and falls back to the last config that worked (see the script)
+    hl.exec_cmd(s .. "macshell-run.sh")
+    hl.exec_cmd("hypridle -c $HOME/.config/hypr-macshell/hypridle.conf")
+    hl.exec_cmd("easyeffects --hide-window --service-mode")
+    hl.exec_cmd("hyprctl setcursor Bibata-Modern-Classic 24")
+end)

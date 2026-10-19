@@ -1,55 +1,26 @@
--- This file sources other files in `hyprland` and `custom` folders
--- You wanna add your stuff in files in `custom`
-
--- Internal stuff --
-require("hyprland.lib")
-require("hyprland.services")
-
--- Environment variables --
-require("hyprland.env")
-if is_file_exists(HOME .. "/.config/hypr-macshell/custom/env.lua") then
-    require("custom.env")
+-- MacShell session: a standalone Hyprland config. Nothing here comes from another shell's dotfiles.
+--   macshell/*.lua   the session (env, look, input, rules, keys, autostart)
+--   custom/*.lua     your own additions; read after the session files, so they win
+--   ~/.config/macshell/{windows,keybinds}.lua   written by MacShell's Settings, read last
+HOME = os.getenv("HOME")
+local function exists(p) local f = io.open(p, "r"); if f then f:close(); return true end; return false end
+local function custom(name)
+    if exists(HOME .. "/.config/hypr-macshell/custom/" .. name .. ".lua") then require("custom." .. name) end
 end
 
--- Default configurations --
-require("hyprland.execs")
-require("hyprland.general")
-require("hyprland.rules")
-require("hyprland.colors")
-require("hyprland.keybinds")
+require("macshell.env");      custom("env")
+require("macshell.look");     custom("general")
+require("macshell.input")
+require("macshell.rules");    custom("rules")
+require("macshell.keybinds"); custom("keybinds")
+require("macshell.execs");    custom("execs")
 
--- Custom configurations --
-if is_file_exists(HOME .. "/.config/hypr-macshell/custom/execs.lua") then
-    require("custom.execs")
-end
-if is_file_exists(HOME .. "/.config/hypr-macshell/custom/general.lua") then
-    require("custom.general")
-end
-if is_file_exists(HOME .. "/.config/hypr-macshell/custom/rules.lua") then
-    require("custom.rules")
-end
-if is_file_exists(HOME .. "/.config/hypr-macshell/custom/keybinds.lua") then
-    require("custom.keybinds")
+-- displays are shared with the main session (stretchres owns these files).
+-- dofile, not require: a rewritten stretchres.lua must be read again on reload
+for _, f in ipairs({ "workspaces.lua", "monitors.lua", "stretchres.lua" }) do
+    if exists(HOME .. "/.config/hypr/" .. f) then dofile(HOME .. "/.config/hypr/" .. f) end
 end
 
--- nwg-displays support --
--- shared with the main session (stretchres owns these) --
-if is_file_exists(HOME .. "/.config/hypr/workspaces.lua") then
-    dofile(HOME .. "/.config/hypr/workspaces.lua")
-end
-if is_file_exists(HOME .. "/.config/hypr/monitors.lua") then
-    dofile(HOME .. "/.config/hypr/monitors.lua")
-end
-
--- stretchres state: must come after monitors.lua so its rules win --
--- dofile, not require: require caches, so a rewritten stretchres.lua
--- would be ignored on reload and the stale mode re-applied
-if is_file_exists(HOME .. "/.config/hypr/stretchres.lua") then
-    dofile(HOME .. "/.config/hypr/stretchres.lua")
-end
-
--- Shell overrides --
-require("hyprland.shellOverrides.main")
-
--- MacShell (replaces ii in this session) --
-require("macshell")
+-- Settings → Desktop & Dock → "Open windows floating", and Settings → Keyboard Shortcuts
+pcall(dofile, HOME .. "/.config/macshell/windows.lua")
+pcall(dofile, HOME .. "/.config/macshell/keybinds.lua")

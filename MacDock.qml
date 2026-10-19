@@ -35,6 +35,8 @@ Scope {
 
     // shared helpers from shell.qml (window geometry poller, wallpaper lookup)
     property var hub: null
+    // close through the shell, so its window captures are released first (see shell.qml → hideWindow)
+    function hideWin(w) { if (root.hub && root.hub.hideWindow) root.hub.hideWindow(w); else w.visible = false; }
     property bool dockEnabled: true      // false = no Dock at all (settings window stays available)
     readonly property var bar: hub ? hub.bar : null
     property string userName: Quickshell.env("USER") || ""
@@ -385,31 +387,10 @@ Scope {
     }
 
     // macOS toggle switch
-    component SSwitch: Item {
-        id: sw
+    component SSwitch: LiquidSwitch {
         required property var t
-        property bool checked: false
-        signal toggled(bool value)
-        width: 38; height: 22
-        Rectangle {
-            anchors.fill: parent
-            radius: 11
-            color: sw.checked ? sw.t.accent : sw.t.switchOff
-            Behavior on color { ColorAnimation { duration: 160 } }
-        }
-        Rectangle {
-            x: sw.checked ? 18 : 2
-            y: 2
-            width: 18; height: 18; radius: 9
-            color: "white"
-            border.width: 1
-            border.color: Qt.rgba(0, 0, 0, 0.10)
-            Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
-        }
-        MouseArea {
-            anchors.fill: parent
-            onClicked: sw.toggled(!sw.checked)
-        }
+        accent: t.accent; offColor: t.switchOff; dark: root.darkMode
+        material: root.bar ? root.bar.material : "liquid"
     }
 
     // macOS slider (thin track, accent fill, white round knob)
@@ -423,43 +404,20 @@ Scope {
         property string leftLabel: ""
         property string rightLabel: ""
         signal moved(real v)
-        readonly property real pos: to > from ? Math.max(0, Math.min(1, (value - from) / (to - from))) : 0
         width: 230
-        height: leftLabel !== "" || rightLabel !== "" ? 40 : 22
+        height: leftLabel !== "" || rightLabel !== "" ? 40 : 24
         opacity: enabled ? 1 : 0.4
-
-        Rectangle {
-            id: track
-            y: 11 - 2
+        LiquidSlider {
             width: parent.width
-            height: 4
-            radius: 2
-            color: s.t.track
-        }
-        Rectangle {
-            y: track.y
-            width: knob.x + knob.width / 2
-            height: 4
-            radius: 2
-            color: s.t.accent
-        }
-        Rectangle {   // knob shadow
-            x: knob.x - 1; y: knob.y + 1
-            width: 22; height: 22; radius: 11
-            color: Qt.rgba(0, 0, 0, 0.14)
-        }
-        Rectangle {
-            id: knob
-            x: s.pos * (s.width - 20)
-            y: 1
-            width: 20; height: 20; radius: 10
-            color: "white"
-            border.width: 1
-            border.color: Qt.rgba(0, 0, 0, 0.16)
+            value: s.to > s.from ? (s.value - s.from) / (s.to - s.from) : 0
+            stepSize: s.stepSize > 0 && s.to > s.from ? s.stepSize / (s.to - s.from) : 0
+            accent: s.t.accent; trackColor: s.t.track; dark: root.darkMode
+            material: root.bar ? root.bar.material : "liquid"
+            onMoved: v => s.moved(Math.round((s.from + v * (s.to - s.from)) * 1000) / 1000)
         }
         Text {
             visible: s.leftLabel !== ""
-            y: 25
+            y: 26
             text: s.leftLabel
             color: s.t.text2
             font.family: s.t.fam
@@ -467,25 +425,12 @@ Scope {
         }
         Text {
             visible: s.rightLabel !== ""
-            y: 25
+            y: 26
             x: s.width - implicitWidth
             text: s.rightLabel
             color: s.t.text2
             font.family: s.t.fam
             font.pixelSize: 11
-        }
-        MouseArea {
-            anchors.fill: parent
-            preventStealing: true
-            function setFrom(mx) {
-                var p = Math.max(0, Math.min(1, (mx - 10) / (s.width - 20)));
-                var v = s.from + p * (s.to - s.from);
-                if (s.stepSize > 0) v = Math.round(v / s.stepSize) * s.stepSize;
-                v = Math.round(v * 1000) / 1000;
-                s.moved(v);
-            }
-            onPressed: mouse => setFrom(mouse.x)
-            onPositionChanged: mouse => { if (pressed) setFrom(mouse.x); }
         }
     }
 
@@ -709,6 +654,8 @@ Scope {
     // ─────────────────────────── THE WINDOW ───────────────────────────
     Window {
         id: prefsWindow
+        // Super + Q, Super + W, the Dock's Quit: same careful close as the traffic light
+        onClosing: close => { close.accepted = false; root.hideWin(prefsWindow); }
         title: "macshell Settings"
         width: 820
         height: 600
@@ -811,7 +758,7 @@ Scope {
         }
         onCurChanged: flick.contentY = 0
 
-        Shortcut { sequences: ["Escape", "Ctrl+W"]; onActivated: prefsWindow.visible = false }
+        Shortcut { sequences: ["Escape", "Ctrl+W"]; onActivated: root.hideWin(prefsWindow) }
 
         // ── palette ──
         QtObject {
@@ -1023,7 +970,7 @@ Scope {
                         anchors.fill: parent
                         hoverEnabled: true
                         onClicked: mouse => {
-                            if (mouse.x < 22) prefsWindow.visible = false;
+                            if (mouse.x < 22) root.hideWin(prefsWindow);
                             else if (mouse.x < 44) { if (root.hub && root.hub.minimizeWindow) root.hub.minimizeWindow(prefsWindow.title); else prefsWindow.showMinimized(); }
                             else if (mouse.x < 58) {
                                 if (prefsWindow.visibility === Window.FullScreen) prefsWindow.showNormal();
@@ -1352,137 +1299,35 @@ Scope {
                 }
                 SLabel {
                     t: pal
-                    text: "If you turn both off, reopen this window with:  qs -c macbar ipc call settings open"
+                    text: "If you turn both off, Super + , (comma) opens this window again."
                 }
 
-                SLabel { t: pal; header: true; text: "Desktop Widgets" }
-                SCard {
-                    t: pal
-                    SRow {
-                        t: pal
-                        title: "Show items on the desktop"
-                        subtitle: "Files, folders and apps in ~/Desktop. Drag to move, double-click to open, drop one onto another to make a folder."
-                        SSwitch { t: pal; checked: root.desktopIcons; onToggled: v => root.desktopIcons = v }
-                    }
-                    SRow {
-                        t: pal
-                        title: "Show widgets on the desktop"
-                        subtitle: "Clock, Calendar, Weather, Batteries, Music, Notes, Photos, Reminders and Stocks. Right-click a widget to change its size or style."
-                        SSwitch { t: pal; checked: root.hub && root.hub.widgets ? root.hub.widgets.enabled : true; onToggled: v => { if (root.hub && root.hub.widgets) root.hub.widgets.enabled = v; } }
-                    }
-                    SRow {
-                        t: pal
-                        title: "Widget style"
-                        subtitle: "Liquid Glass refracts the wallpaper, Frosted blurs it, Tinted uses the accent colour, Opaque is a solid card"
-                        SSegmented {
-                            t: pal
-                            model: ["Glass", "Frosted", "Tinted", "Opaque"]
-                            segWidth: 70
-                            current: { var st = root.hub && root.hub.widgets ? root.hub.widgets.style : "glass"; return ["glass", "frosted", "tinted", "opaque"].indexOf(st); }
-                            onPicked: i => { if (root.hub && root.hub.widgets) root.hub.widgets.style = ["glass", "frosted", "tinted", "opaque"][i]; if (root.bar) root.bar.materialTouched(); }
-                        }
-                    }
-                    SRow {
-                        t: pal
-                        title: "Liquid Glass effect"
-                        subtitle: "How strongly the widgets bend the wallpaper at their edges"
-                        SSlider {
-                            t: pal
-                            leftLabel: "Subtle"; rightLabel: "Strong"
-                            value: root.hub && root.hub.widgets ? root.hub.widgets.glassAmt : 0.5
-                            onMoved: v => { if (root.hub && root.hub.widgets) root.hub.widgets.glassAmt = v; }
-                        }
-                    }
-                    SRow {
-                        t: pal
-                        title: "Blur"
-                        subtitle: "How much the wallpaper behind the widgets is blurred"
-                        SSlider {
-                            t: pal
-                            leftLabel: "Clear"; rightLabel: "Blurred"
-                            value: root.hub && root.hub.widgets ? root.hub.widgets.blurAmt : 0.5
-                            onMoved: v => { if (root.hub && root.hub.widgets) root.hub.widgets.blurAmt = v; }
-                        }
-                    }
-                    SRow {
-                        t: pal
-                        title: "Music widget takes the album's colour"
-                        subtitle: "While something plays, the card is tinted to match the cover (and the colour flows into the next song's)"
-                        SSwitch { t: pal; checked: root.hub && root.hub.widgets ? root.hub.widgets.musicTintEnabled : true; onToggled: v => { if (root.hub && root.hub.widgets) root.hub.widgets.musicTintEnabled = v; } }
-                    }
-                    SRow {
-                        t: pal
-                        title: "Arrange widgets"
-                        subtitle: "Drag a widget to move it. Right-click one to edit: drag its corner to resize, \u2212 to remove."
-                        SButton { t: pal; text: "Edit on Desktop"; onClicked: { if (root.hub && root.hub.widgets) root.hub.widgets.editing = true; prefsWindow.visible = false; } }
-                    }
-                }
-
-                SLabel { t: pal; header: true; text: "Add a Widget" }
+                SLabel { t: pal; header: true; text: "More" }
                 SCard {
                     t: pal
                     Repeater {
-                        model: root.hub && root.hub.widgets ? root.hub.widgets.types : []
-                        delegate: SRow {
+                        model: [{ id: "about", n: "About", d: "This shell, its configuration folder, and restarting or resetting it" },
+                                { id: "update", n: "Software Update", d: "Get the latest MacShell" },
+                                { id: "users", n: "Users & Groups", d: "Your name and picture" },
+                                { id: "shortcuts", n: "Keyboard Shortcuts", d: "Every shortcut, editable" }]
+                        delegate: Item {
+                            id: navRow
                             required property var modelData
-                            t: pal
-                            title: modelData.name
-                            subtitle: modelData.hint
-                            Row {
-                                spacing: 6
-                                Repeater {
-                                    model: modelData.sizes
-                                    delegate: SButton {
-                                        required property string modelData
-                                        t: pal
-                                        text: ({ s: "Small", m: "Medium", l: "Large" })[modelData]
-                                        onClicked: {
-                                            var w = root.hub.widgets;
-                                            w.add(parent.parent.parent.modelData.type, modelData, w.mainScreen);
-                                        }
-                                    }
-                                }
+                            width: parent ? parent.width : 0
+                            height: navSRow.height
+                            SRow {
+                                id: navSRow
+                                t: pal
+                                title: navRow.modelData.n
+                                subtitle: navRow.modelData.d
+                                Text { text: "\u203A"; color: pal.text3; font.family: pal.fam; font.pixelSize: 20 }
+                            }
+                            Rectangle { visible: navRow.y > 0.5; x: 14; width: parent.width - 14; height: 1; color: pal.sep }
+                            MouseArea {
+                                anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                onClicked: { for (var i = 0; i < prefsWindow.panes.length; i++) if (prefsWindow.panes[i].id === navRow.modelData.id) { prefsWindow.go(i); break; } }
                             }
                         }
-                    }
-                }
-
-                SLabel { t: pal; header: true; text: "Sound" }
-                SCard {
-                    t: pal
-                    SRow {
-                        t: pal
-                        title: "Play user interface sound effects"
-                        subtitle: "Volume pop, notifications, screenshots, charger, emptying the Trash and the lock screen"
-                        SSwitch { t: pal; checked: root.bar ? root.bar.uiSounds : true; onToggled: v => { if (root.bar) root.bar.uiSounds = v; } }
-                    }
-                }
-
-                SLabel { t: pal; header: true; text: "Lock Screen" }
-                SCard {
-                    t: pal
-                    SRow {
-                        t: pal
-                        title: "Album background when the cover is enlarged"
-                        subtitle: "Tap the album cover on the lock screen: the background turns into a blurred version of the artwork"
-                        SSwitch { t: pal; checked: root.bar ? root.bar.lockArtBackground : true; onToggled: v => { if (root.bar) root.bar.lockArtBackground = v; } }
-                    }
-                }
-
-                SLabel { t: pal; header: true; text: "Game Mode" }
-                SCard {
-                    t: pal
-                    SRow {
-                        t: pal
-                        title: "Game Mode"
-                        subtitle: "Turns off blur, shadows, animations and Liquid Glass, pauses an animated wallpaper and uses the performance power profile. Everything comes back when it turns off."
-                        SSwitch { t: pal; checked: root.bar ? root.bar.gamingMode : false; onToggled: v => { if (root.bar) root.bar.gamingMode = v; } }
-                    }
-                    SRow {
-                        t: pal
-                        title: "Turn on automatically for fullscreen games"
-                        subtitle: root.bar && root.bar.gamingAutoActive ? "On now: a game is fullscreen" : "Steam, Sober (Roblox), Minecraft, Lutris, Heroic and Windows games"
-                        SSwitch { t: pal; checked: root.bar ? root.bar.gamingAuto : true; onToggled: v => { if (root.bar) root.bar.gamingAuto = v; } }
                     }
                 }
             }
@@ -1608,7 +1453,7 @@ Scope {
                     SRow {
                         t: pal
                         title: "Bar background"
-                        subtitle: "A separate layer (macbarbg) so Hyprland can blur it. Needs: layerrule = blur, macbarbg"
+                        subtitle: "A translucent strip behind the menu bar that blurs the wallpaper under it"
                         SSlider {
                             t: pal
                             from: 0; to: 0.6; stepSize: 0.01
@@ -1740,6 +1585,7 @@ Scope {
                     }
                 }
 
+                SLabel { t: pal; header: true; text: "Clipboard" }
                 SCard {
                     t: pal
                     SRow {
@@ -2242,13 +2088,13 @@ Scope {
                     SRow {
                         t: pal
                         title: "Minimise windows using"
-                        subtitle: root.minimizeEffect === "genie" ? "The window pours into the Dock like the macOS genie, and back out again"
-                                : (root.minimizeEffect === "fade" ? "A quick fade (0.35 s) toward the Dock"
+                        subtitle: root.minimizeEffect === "genie" ? "Magic Lamp: the window pours into the Dock, and back out again"
+                                : (root.minimizeEffect === "fade" ? "An elegant fade (0.35 s) into the Dock"
                                                                    : "No animation: the window just goes")
                         SSegmented {
                             t: pal
-                            model: ["Genie", "Fade", "Instant"]
-                            segWidth: 70
+                            model: ["Magic Lamp", "Fade", "Instant"]
+                            segWidth: 84
                             current: root.minimizeEffect === "fade" ? 1 : (root.minimizeEffect === "instant" ? 2 : 0)
                             onPicked: i => root.minimizeEffect = ["genie", "fade", "instant"][i]
                         }
@@ -2453,7 +2299,7 @@ Scope {
                                 onClicked: {
                                     if (modelData.inUse) return;
                                     if (modelData.saved || !modelData.secure) root.bar.connectWifi(modelData.ssid, "");
-                                    else { prefsWindow.visible = false; root.bar.wifiJoin ? root.bar.wifiJoin(modelData.ssid) : null; }
+                                    else { root.hideWin(prefsWindow); root.bar.wifiJoin(modelData.ssid); }
                                 }
                             }
                         }
@@ -2661,6 +2507,101 @@ Scope {
             Column {
                 spacing: 18
                 Loader { width: parent.width; sourceComponent: paneDock }
+                SLabel { t: pal; header: true; text: "Dock Behaviour" }
+                Loader { width: parent.width; sourceComponent: paneBehavior }
+
+                SLabel { t: pal; header: true; text: "Desktop & Widgets" }
+                SCard {
+                    t: pal
+                    SRow {
+                        t: pal
+                        title: "Show items on the desktop"
+                        subtitle: "Files, folders and apps in ~/Desktop. Drag to move, double-click to open, drop one onto another to make a folder."
+                        SSwitch { t: pal; checked: root.desktopIcons; onToggled: v => root.desktopIcons = v }
+                    }
+                    SRow {
+                        t: pal
+                        title: "Show widgets on the desktop"
+                        subtitle: "Clock, Calendar, Weather, Batteries, Music, Notes, Photos, Reminders and Stocks. Right-click a widget to change its size or style."
+                        SSwitch { t: pal; checked: root.hub && root.hub.widgets ? root.hub.widgets.enabled : true; onToggled: v => { if (root.hub && root.hub.widgets) root.hub.widgets.enabled = v; } }
+                    }
+                    SRow {
+                        t: pal
+                        title: "Widget style"
+                        subtitle: "Liquid Glass refracts the wallpaper, Frosted blurs it, Tinted uses the accent colour, Opaque is a solid card"
+                        SSegmented {
+                            t: pal
+                            model: ["Glass", "Frosted", "Tinted", "Opaque"]
+                            segWidth: 70
+                            current: { var st = root.hub && root.hub.widgets ? root.hub.widgets.style : "glass"; return ["glass", "frosted", "tinted", "opaque"].indexOf(st); }
+                            onPicked: i => { if (root.hub && root.hub.widgets) root.hub.widgets.style = ["glass", "frosted", "tinted", "opaque"][i]; if (root.bar) root.bar.materialTouched(); }
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        title: "Liquid Glass effect"
+                        subtitle: "How strongly the widgets bend the wallpaper at their edges"
+                        SSlider {
+                            t: pal
+                            leftLabel: "Subtle"; rightLabel: "Strong"
+                            value: root.hub && root.hub.widgets ? root.hub.widgets.glassAmt : 0.5
+                            onMoved: v => { if (root.hub && root.hub.widgets) root.hub.widgets.glassAmt = v; }
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        title: "Blur"
+                        subtitle: "How much the wallpaper behind the widgets is blurred"
+                        SSlider {
+                            t: pal
+                            leftLabel: "Clear"; rightLabel: "Blurred"
+                            value: root.hub && root.hub.widgets ? root.hub.widgets.blurAmt : 0.5
+                            onMoved: v => { if (root.hub && root.hub.widgets) root.hub.widgets.blurAmt = v; }
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        title: "Music widget takes the album's colour"
+                        subtitle: "While something plays, the card is tinted to match the cover (and the colour flows into the next song's)"
+                        SSwitch { t: pal; checked: root.hub && root.hub.widgets ? root.hub.widgets.musicTintEnabled : true; onToggled: v => { if (root.hub && root.hub.widgets) root.hub.widgets.musicTintEnabled = v; } }
+                    }
+                    SRow {
+                        t: pal
+                        title: "Arrange widgets"
+                        subtitle: "Drag a widget to move it. Right-click one to edit: drag its corner to resize, \u2212 to remove."
+                        SButton { t: pal; text: "Edit on Desktop"; onClicked: { if (root.hub && root.hub.widgets) root.hub.widgets.editing = true; root.hideWin(prefsWindow); } }
+                    }
+                }
+
+                SLabel { t: pal; header: true; text: "Add a Widget" }
+                SCard {
+                    t: pal
+                    Repeater {
+                        model: root.hub && root.hub.widgets ? root.hub.widgets.types : []
+                        delegate: SRow {
+                            required property var modelData
+                            t: pal
+                            title: modelData.name
+                            subtitle: modelData.hint
+                            Row {
+                                spacing: 6
+                                Repeater {
+                                    model: modelData.sizes
+                                    delegate: SButton {
+                                        required property string modelData
+                                        t: pal
+                                        text: ({ s: "Small", m: "Medium", l: "Large" })[modelData]
+                                        onClicked: {
+                                            var w = root.hub.widgets;
+                                            w.add(parent.parent.parent.modelData.type, modelData, w.mainScreen);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 SLabel { t: pal; header: true; text: "Windows" }
                 SCard {
                     t: pal
@@ -2700,8 +2641,6 @@ Scope {
                         }
                     }
                 }
-                SLabel { t: pal; header: true; text: "Behavior" }
-                Loader { width: parent.width; sourceComponent: paneBehavior }
             }
         }
 
@@ -3245,17 +3184,22 @@ Scope {
                 }
                 function write() {
                     var mac = "qs -c MacShell ipc call ";
-                    var lines = ["-- written by MacShell (Settings → Keyboard Shortcuts)"];
+                    // Hyprland fires EVERY binding made for a key, so the session's default for a shortcut is dropped
+                    // first (and the key it moves to cleared), or one key press would run it twice
+                    var lines = ["-- written by MacShell (Settings → Keyboard Shortcuts)",
+                                 "local function free(k) for _ = 1, 4 do hl.unbind(k) end end"];
                     for (var i = 0; i < scPane.defs.length; i++) {
                         var d = scPane.defs[i], k = scPane.keyOf(d.id);
+                        lines.push('free("' + d.def + '")');
                         if (k === "") continue;
+                        if (k !== d.def) lines.push('free("' + k + '")');
                         var action = d.dsp ? d.dsp : 'hl.dsp.exec_cmd("' + mac + d.cmd + '")';
                         lines.push('hl.bind("' + k + '", ' + action + ', { description = "MacShell: ' + d.name + '" })');
                     }
                     // shortcuts you moved or switched off in the Hyprland list
                     var hm = root.hyprBinds || ({});
                     for (var h in hm) {
-                        lines.push('hl.unbind("' + h + '")');
+                        lines.push('free("' + h + '")');
                         var v = hm[h];
                         if (v && v.combo && v.action) lines.push('hl.bind("' + v.combo + '", ' + v.action + ', { description = "' + (v.desc || "Hyprland") + '" })');
                     }
@@ -3708,7 +3652,7 @@ Scope {
                             Quickshell.execDetached(["sh", "-c", "MACLOCK_PREVIEW=1 MACLOCK_CLOCK=\"$1\" timeout 6 qs -c MacLock >/dev/null 2>&1", "sh", cfg]);
                         }
                     }
-                    SButton { t: pal; text: "Lock Screen Now"; onClicked: { prefsWindow.visible = false; Quickshell.execDetached(["loginctl", "lock-session"]); } }
+                    SButton { t: pal; text: "Lock Screen Now"; onClicked: { root.hideWin(prefsWindow); Quickshell.execDetached(["loginctl", "lock-session"]); } }
                 }
             }
         }
@@ -4164,7 +4108,7 @@ Scope {
                             t: pal
                             text: "Restart"
                             onClicked: {
-                                prefsWindow.visible = false;
+                                root.hideWin(prefsWindow);
                                 // the autostart loop brings it straight back; -x -f never matched the real command line
                                 Quickshell.execDetached(["sh", "-c", "sleep 0.3; pkill -x qs || pkill -f 'qs -c MacShell'"]);
                             }
@@ -4695,7 +4639,7 @@ Scope {
         var m = [];
         if (item.kind === "folder") {
             m.push({ kind: "item", label: "Open in Finder", run: function () { root.activate(item, false); } });
-            m.push({ kind: "item", label: "Open in File Manager", run: function () { Quickshell.execDetached(["sh", "-c", "xdg-open \"$1\"", "sh", item.path]); } });
+            m.push({ kind: "item", label: "Open in Finder", run: function () { if (root.hub && root.hub.openFolder) root.hub.openFolder(item.path); else Quickshell.execDetached(["xdg-open", item.path]); } });
             m.push({ kind: "sep" });
             m.push({ kind: "item", label: "Remove from Dock", run: function () { root.unpinFolder(item.path); } });
             return m;
@@ -4912,11 +4856,9 @@ Scope {
         onExited: (code, status) => root.glassState = (code === 0 ? "ready" : "failed")
     }
 
-    // wallpaper the glass refracts. Sources, in order: wallpaperPath override, Noctalia's settings.toml
-    // ([wallpaper.monitors.<name>] → [wallpaper.last] → [wallpaper.default]), then awww/swww/hyprpaper.
+    // wallpaper the glass refracts: MacShell's own (wallpaperPath), else whatever awww / swww / hyprpaper shows
     readonly property var wallpaperMap: hub ? hub.wallpaperMap : ({})
     Binding { target: root.hub; property: "dockWantsWallpaper"; value: root.liquidActive }
-    onWallpaperMapChanged: console.log("[macdock-glass] wallpaper sources:", JSON.stringify(wallpaperMap))
     function wallpaperFor(screenName) {
         var p = wallpaperPath !== "" ? wallpaperPath
               : (wallpaperMap["wallpaper.monitors." + screenName] || wallpaperMap["wallpaper.last"]
@@ -5425,7 +5367,7 @@ Scope {
                         Image {
                             anchors.fill: parent
                             visible: status === Image.Ready
-                            onStatusChanged: console.log("[macdock-glass] wallpaper image status:", status, "(1 = ready, 2 = loading, 3 = error)", source)
+                            onStatusChanged: if (status === Image.Error) console.log("[macdock-glass] wallpaper could not be loaded:", source)
                             source: root.fileUrl(root.wallpaperFor(win.modelData.name))
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
@@ -5623,8 +5565,7 @@ Scope {
                                 height: dock.height + 2 * padPx
                                 fragmentShader: root.glassShaderUrl
                                 onStatusChanged: {
-                                    console.log("[macdock-glass] shader status:", status, "(0 = compiled, 1 = uncompiled, 2 = error)", log);
-                                    if (status === ShaderEffect.Error) root.glassState = "failed";
+                                    if (status === ShaderEffect.Error) { console.log("[macdock-glass] shader failed:", log); root.glassState = "failed"; }
                                 }
 
                                 property variant src: dg.bn > 1.0 ? bblur2 : bblur
@@ -6069,7 +6010,7 @@ Scope {
                                     var it = fanItem.modelData;
                                     ui.stackItem = null;
                                     if (it.isDir) { if (root.hub && root.hub.finder) root.hub.finder.open(it.path); }
-                                    else if (root.hub && root.hub.preview && it.isImage) root.hub.preview.open(it.path);
+                                    else if (root.hub && root.hub.openPath) root.hub.openPath(it.path);
                                     else Quickshell.execDetached(["xdg-open", it.path]);
                                 }
                             }
@@ -6089,21 +6030,27 @@ Scope {
                 Rectangle {
                     id: menu
                     z: 60
-                    visible: opacity > 0
-                    opacity: ui.menuOpen ? 1 : 0
-                    scale: ui.menuOpen ? 1 : 0.96
-                    transformOrigin: Item.Bottom
-                    Behavior on opacity { NumberAnimation { duration: 110 } }
-                    Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                    // grows up out of the Dock, stretching into shape as it comes into focus; closing runs it back
+                    property real popT: ui.menuOpen ? 1 : 0
+                    Behavior on popT { NumberAnimation { duration: ui.menuOpen ? 440 : 220; easing.type: ui.menuOpen ? Easing.OutQuint : Easing.OutCubic } }
+                    visible: popT > 0.002
+                    opacity: Math.min(1, popT * 1.7)
+                    transform: [
+                        Scale { origin.x: menu.width / 2; origin.y: menu.height; xScale: 0.9 + 0.1 * menu.popT; yScale: 0.74 + 0.26 * menu.popT },
+                        Translate { y: 10 * (1 - menu.popT) }
+                    ]
+                    layer.enabled: popT < 0.995
+                    layer.effect: MultiEffect { blurEnabled: true; blurMax: 28; blur: 1 - menu.popT; autoPaddingEnabled: true }
 
                     width: 230
                     height: menuCol.height + 10
                     x: Math.max(8, Math.min(ui.width - width - 8, ui.menuCx - width / 2))
                     y: ui.height - root.margin - root.bgHeight - root.iconSize * (root.effMag - 1) - 14 - height
                     radius: 10
-                    color: Qt.rgba(0.14, 0.14, 0.15, 0.62)
+                    color: root.darkMode ? Qt.rgba(0.14, 0.14, 0.15, 0.62) : Qt.rgba(0.97, 0.97, 0.98, 0.78)
+                    Behavior on color { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
                     border.width: 1
-                    border.color: Qt.rgba(1, 1, 1, 0.16)
+                    border.color: root.darkMode ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.12)
 
                     Column {
                         id: menuCol
@@ -6129,7 +6076,7 @@ Scope {
                                     x: 6
                                     width: parent.width - 12
                                     height: 1
-                                    color: Qt.rgba(1, 1, 1, 0.14)
+                                    color: root.darkMode ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
                                 }
                                 Rectangle {
                                     visible: !mi.isSep && !mi.off && mia.containsMouse
@@ -6144,7 +6091,8 @@ Scope {
                                     width: parent.width - 20
                                     elide: Text.ElideRight
                                     text: mi.isSep ? "" : (mi.armedNow ? "Click again to confirm" : mi.modelData.label)
-                                    color: mi.off ? Qt.rgba(1, 1, 1, 0.4) : "white"
+                                    color: mia.containsMouse && !mi.off ? "white"
+                                         : (root.darkMode ? (mi.off ? Qt.rgba(1, 1, 1, 0.4) : "white") : (mi.off ? Qt.rgba(0, 0, 0, 0.35) : "#1d1d1f"))
                                     font.pixelSize: 13
                                     font.family: root.fontFamily
                                 }

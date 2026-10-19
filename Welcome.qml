@@ -81,7 +81,7 @@ Scope {
 
     Timer {
         id: helloTimer
-        interval: 1700; repeat: true; running: root.shown && root.step === 0
+        interval: 2600; repeat: true; running: root.shown && root.step === 0
         onTriggered: {
             root.helloIdx++;
             if (root.helloIdx >= root.hellos.length) { root.helloIdx = 0; root.step = 1; }
@@ -261,13 +261,17 @@ Scope {
                     anchors.centerIn: parent
                     text: root.hellos[Math.min(root.helloIdx, root.hellos.length - 1)]
                     font.family: root.fam
-                    font.pixelSize: Math.round(w.height * 0.13)
-                    font.weight: Font.DemiBold
-                    duration: 1000
+                    font.pixelSize: Math.round(w.height * 0.17)
+                    font.weight: Font.Bold
+                    duration: 1300
                     backdrop: backdrop
                     frame: w.contentItem
-                    intensity: 0.32
-                    refract: Math.round(w.height * 0.012)
+                    // thick, clear glass: each stroke rounds off over most of its width, so the whole letter bends the
+                    // scene like a lens instead of only catching light at its rim
+                    intensity: 0.05
+                    rimSoft: Math.round(w.height * 0.009)
+                    bevel: 7
+                    refract: Math.round(w.height * 0.03)
                 }
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter

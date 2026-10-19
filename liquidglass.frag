@@ -123,8 +123,14 @@ void main()
     }
 
     // ── distance to edge + outward edge direction ──
+    // The direction comes from a rounder copy of the shape (corner radius at least the bezel's width): with the real
+    // radius, a bezel wider than the corner switched from "left edge" to "top edge" along a hard diagonal, and the
+    // refraction showed that seam as a mitred picture-frame corner.
     float t = max(-sd, 0.0);
-    vec2 d2 = abs(q) - (hs - r);
+    float bzN = max(bezel, 1.0) * 1.45;
+    float rN = min(max(r, bzN), min(hs.x, hs.y));
+    vec2 d2 = abs(q) - (hs - rN);
+    float tS = max(-roundBox(q, hs, rN), 0.0);     // distance to that rounder edge: smooth contours deep inside
     vec2 sg = vec2(q.x >= 0.0 ? 1.0 : -1.0, q.y >= 0.0 ? 1.0 : -1.0);
     vec2 m  = max(d2, 0.0);
     vec2 g  = (length(m) > 1e-4) ? normalize(m) * sg
@@ -132,7 +138,7 @@ void main()
 
     // ── convex squircle bezel → surface normal ──
     float bz   = max(bezel, 1.0) * 1.45;           // wider bezel: the glass reads thicker
-    float u    = clamp(t / bz, 0.0, 1.0);
+    float u    = clamp(tS / bz, 0.0, 1.0);
     float om   = 1.0 - u;
     float om4  = om * om * om * om;
     float slope = (om * om * om) / pow(max(1.0 - om4, 1e-3), 0.75);
@@ -145,7 +151,7 @@ void main()
 
     // the whole slab acts as a gentle vertical lens; blur is crisper right at the curved rim
     vec2 ps = vec2(p.x, (p.y - pad - hs.y) * (1.0 - magnify * 1.5) + pad + hs.y);
-    float rad = blurPx * mix(0.45, 1.0, smoothstep(0.0, bz, t));
+    float rad = blurPx * mix(0.45, 1.0, smoothstep(0.0, bz, tS));
 
     vec3 col = blurredDisp(ps, disp, dispersion * 0.6, rad);
 
@@ -160,7 +166,7 @@ void main()
     float ty = clamp((q.y + hs.y) / glassSize.y, 0.0, 1.0);
     col += (1.0 - ty) * mix(0.040, 0.030, dark);
     col *= 1.0 - 0.12 * exp(-t / 6.0) * clamp(g.y, 0.0, 1.0);
-    col *= 1.0 - 0.10 * exp(-t / (bz * 0.45));          // thick glass absorbs light toward the edge (heavier feel)
+    col *= 1.0 - 0.10 * exp(-tS / (bz * 0.45));          // thick glass absorbs light toward the edge (heavier feel)
 
     // ── specular rim, light from the top-left ──
     vec2  L      = normalize(vec2(-0.55, -0.83));
@@ -173,7 +179,7 @@ void main()
     col += edgeHi * vec3(0.96, 0.98, 1.0);
 
     // meniscus: a soft second highlight inside the rim, like surface tension pulling the liquid together
-    float mx  = (t - bz * 0.5) / (bz * 0.2 + 1.0);
+    float mx  = (tS - bz * 0.5) / (bz * 0.2 + 1.0);
     float men = exp(-mx * mx);
     col += men * 0.07 * (0.35 + spec) * rim * vec3(0.96, 0.98, 1.0);
 

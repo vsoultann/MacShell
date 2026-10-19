@@ -298,7 +298,7 @@ Scope {
     }
     function openFile(p) {
         // pictures go to Preview, folders to Finder, anything else to whatever handles it
-        if (hub && hub.preview && /\.(png|jpe?g|webp|gif|bmp|avif|tiff?)$/i.test(p)) { hub.preview.open(p); return; }
+        if (hub && hub.openPath) { hub.openPath(p); return; }
         Quickshell.execDetached(["xdg-open", p]);
     }
     // the Reminders editor writes the same markdown you would type by hand
@@ -1640,21 +1640,18 @@ Scope {
                             Text { width: parent.width; elide: Text.ElideRight; text: (arow.modelData.label || "Alarm") + (arow.modelData.days.length ? ", " + ca.ck.repeatText(arow.modelData.days) : ""); color: ca.fg2; font.family: root.fam; font.pixelSize: 11 }
                         }
                         // on / off
-                        Rectangle {
+                        LiquidSwitch {
                             id: asw
                             anchors.right: parent.right
                             anchors.verticalCenter: ca.size === "s" ? undefined : parent.verticalCenter
                             anchors.bottom: ca.size === "s" ? parent.bottom : undefined
-                            width: 36; height: 21; radius: 10.5
-                            color: arow.modelData.on ? (ctx && ctx.mono ? ca.fg : "#30D158") : Qt.rgba(0.5, 0.5, 0.5, 0.35)
-                            Behavior on color { ColorAnimation { duration: 200 } }
-                            Rectangle {
-                                width: 17; height: 17; radius: 8.5; y: 2
-                                x: arow.modelData.on ? parent.width - width - 2 : 2
-                                Behavior on x { NumberAnimation { duration: 260; easing.type: Easing.OutQuint } }
-                                color: "white"
-                            }
-                            MouseArea { anchors.fill: parent; anchors.margins: -6; enabled: !root.editing; cursorShape: Qt.PointingHandCursor; onClicked: if (ca.ck) ca.ck.setAlarmOn(arow.modelData.id, !arow.modelData.on) }
+                            width: 36; height: 21
+                            enabled: !root.editing
+                            checked: arow.modelData.on
+                            accent: ctx && ctx.mono ? ca.fg : "#30D158"
+                            offColor: Qt.rgba(0.5, 0.5, 0.5, 0.35)
+                            material: root.bar ? root.bar.material : "liquid"
+                            onToggled: v => { if (ca.ck) ca.ck.setAlarmOn(arow.modelData.id, v); }
                         }
                     }
                 }

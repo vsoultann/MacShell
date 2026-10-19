@@ -11,6 +11,8 @@ import Quickshell.Io
 Scope {
     id: root
     property var hub: null
+    // close through the shell, so its window captures are released first (see shell.qml → hideWindow)
+    function hideWin(w) { if (root.hub && root.hub.hideWindow) root.hub.hideWindow(w); else w.visible = false; }
     readonly property var dock: hub ? hub.dock : null
     readonly property var bar: hub ? hub.bar : null
     readonly property var wid: hub ? hub.widgets : null
@@ -48,6 +50,8 @@ Scope {
 
     Window {
         id: win
+        // Super + Q, Super + W, the Dock's Quit: same careful close as the traffic light
+        onClosing: close => { close.accepted = false; root.hideWin(win); }
         title: "Reminders"
         width: 720; height: 480
         minimumWidth: 520; minimumHeight: 320
@@ -128,7 +132,7 @@ Scope {
                         id: tlMa
                         anchors.fill: parent; anchors.margins: -3; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                         onClicked: mouse => {
-                            if (mouse.x < 25) win.visible = false;
+                            if (mouse.x < 25) root.hideWin(win);
                             else if (mouse.x < 47) root.hub && root.hub.minimizeWindow ? root.hub.minimizeWindow(win.title) : win.showMinimized();
                             else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen();
                         }
@@ -401,7 +405,7 @@ Scope {
             }
 
             Keys.onPressed: event => {
-                if (event.key === Qt.Key_Escape) { win.visible = false; event.accepted = true; }
+                if (event.key === Qt.Key_Escape) { root.hideWin(win); event.accepted = true; }
                 else if (event.key === Qt.Key_N && (event.modifiers & Qt.ControlModifier)) { list.adding = true; newInput.forceActiveFocus(); event.accepted = true; }
             }
             focus: true

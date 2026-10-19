@@ -41,7 +41,7 @@
 //   hl.bind("CTRL + ALT + W", hl.dsp.exec_cmd("qs -c macbar ipc call wallpapers toggle"))
 //   (hyprlang:  bind = CTRL ALT, W, exec, qs -c macbar ipc call wallpapers toggle)
 // Folder: ~/Pictures/Wallpapers by default (change it inside the picker, or "wallpaperDir" in settings.json).
-// Star a wallpaper to pin it to the top. Applied through Noctalia / awww / swww / hyprpaper, or your own "wallpaperCmd" ({} = image path).
+// Star a wallpaper to pin it to the top. Applied through awww / swww / hyprpaper, or your own "wallpaperCmd" ({} = image path).
 // Clipboard history + Emoji live inside Spotlight (the clipboard and smiley buttons next to the search field):
 //   needs wl-clipboard + cliphist (this shell starts the `wl-paste --watch cliphist store` watchers itself, unless you already run them).
 //   bind = SUPER, V, exec, qs -c macbar ipc call spotlight clipboard       # Clipboard history (replace any default SUPER+V bind)
@@ -361,7 +361,7 @@ Scope {
     property bool weekStartsMonday: false
     property string terminal: "kitty"
     property string launcher: ""              // "" = built-in Spotlight; set a command (rofi, fuzzel, ...) to use an external launcher instead
-    property string filesCmd: "xdg-open \"$HOME\""
+    property string filesCmd: "qs -c MacShell ipc call finder open || xdg-open \"$HOME\""
     property string clipboardCmd: "cliphist list | (fuzzel --dmenu || wofi --dmenu || rofi -dmenu) | cliphist decode | wl-copy"
     property var appUsage: ({})               // launch counts, feeds the "Suggestions" row in Spotlight
     property bool clipHistory: true           // keep a clipboard history for Spotlight → Clipboard (needs wl-clipboard + cliphist)
@@ -1099,8 +1099,7 @@ Scope {
                     height: g.height + 2 * lg.p
                     fragmentShader: g.shaderUrl
                     onStatusChanged: {
-                        console.log("[macbar-glass] shader status:", status, "(0 = compiled, 1 = uncompiled, 2 = error)", log);
-                        if (status === ShaderEffect.Error) g.shaderError();
+                        if (status === ShaderEffect.Error) { console.log("[macbar-glass] shader failed:", log); g.shaderError(); }
                     }
                     property variant src: lg.bn > 1.0 ? bblur2 : bblur
                     property real padPx: lg.p
@@ -1343,10 +1342,38 @@ Scope {
         property string rightKind: "sun"
         property real leftLevel: 1
         property real rightLevel: 3
+        property var gx: null               // glass context: when set, the knob turns into Liquid Glass while it is held
+        property real glassMul: 1.0         // refraction boost for the knob (the macOS-style panel runs its glass very softly)
         signal moved(real v)
         height: 28
+        property bool tileHover: false        // the pointer is anywhere over the tile that holds this slider
+        readonly property bool hovering: sma.containsMouse || sma.pressed || tileHover
+        // knob animation state: hover pops a rounded square in, holding it springs it bigger and turns it to glass
+        property real hoverT: hovering ? 1 : 0
+        Behavior on hoverT { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 2.2 } }
+        property real pressT: sma.pressed ? 1 : 0
+        Behavior on pressT { NumberAnimation { duration: sma.pressed ? 420 : 300; easing.type: Easing.OutBack; easing.overshoot: 3.0 } }
         readonly property real trackX: 28
         readonly property real trackW: Math.max(1, s.width - 28 - 26)
+        // jiggle: the knob stretches, leans and wobbles when the value moves; how hard depends on how fast it moves.
+        // `vel` is the smoothed speed (px/ms); `jig` chases a target set from it through a spring, so it overshoots and rings
+        // out after the movement stops (the target goes back to 0 shortly after the last change).
+        property real vel: 0
+        property real jig: 0
+        property real lastV: value
+        property real lastT: 0
+        Behavior on jig { SpringAnimation { spring: 3.4; damping: 0.2; epsilon: 0.004 } }
+        onValueChanged: {
+            var now = Date.now();
+            if (lastT > 0) {
+                var dt = Math.max(1, now - lastT);
+                vel = vel * 0.45 + ((value - lastV) * trackW / dt) * 0.55;
+                jig = Math.max(-1.5, Math.min(1.5, vel * 0.6));
+            }
+            lastV = value; lastT = now;
+            jigIdle.restart();
+        }
+        Timer { id: jigIdle; interval: 70; onTriggered: { s.vel = 0; s.jig = 0; } }
         Glyph {
             x: 4; anchors.verticalCenter: parent.verticalCenter
             width: 16; height: 16
@@ -1371,8 +1398,73 @@ Scope {
             kind: s.rightKind; level: s.rightLevel
             color: s.t.fg2
         }
+        // the knob: a rounded square on hover; held, it grows with a little spring and becomes Liquid Glass
+        Item {
+            id: knob
+            readonly property real kw: 21 + 6 * s.pressT
+            readonly property real kh: 14 + 3 * s.pressT
+            width: Math.max(1, kw); height: Math.max(1, kh)
+            x: s.trackX + Math.max(0, Math.min(1, s.value)) * s.trackW - width / 2 - s.jig * 3     // trails a little behind when moving
+            anchors.verticalCenter: parent.verticalCenter
+            visible: s.hoverT > 0.01
+            opacity: Math.min(1, s.hoverT * 1.6)
+            scale: 0.5 + 0.5 * s.hoverT
+            rotation: s.jig * 7
+            transform: Scale {      // squash and stretch along the movement: longer and flatter the faster it goes
+                origin.x: knob.width / 2; origin.y: knob.height / 2
+                xScale: 1 + 0.32 * Math.min(1.5, Math.abs(s.jig))
+                yScale: 1 - 0.16 * Math.min(1.5, Math.abs(s.jig))
+            }
+            readonly property real rad: Math.max(2, Math.min(height / 2, 8 + 3 * s.pressT))
+            // solid white-ish square (fades out while the glass takes over)
+            Rectangle {
+                anchors.fill: parent
+                radius: knob.rad
+                color: s.t.fg
+                opacity: s.gx ? Math.max(0, 1 - s.pressT * 1.4) : 1
+            }
+            Loader {
+                anchors.fill: parent
+                active: s.gx !== null && s.pressT > 0.02
+                opacity: Math.min(1, s.pressT * 1.6)
+                sourceComponent: Item {
+                    GGlass { anchors.fill: parent; gx: s.gx; cornerR: knob.rad; thickness: 16; strengthMul: s.glassMul * 0.85; shadowAmt: 0.5 }
+                    // the slider bar seen through the glass: the part of the track that lies under the knob
+                    Item {
+                        anchors.fill: parent
+                        clip: true
+                        Rectangle {
+                            x: s.trackX - knob.x; width: s.trackW; height: 4; radius: 2
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: Qt.rgba(s.t.fg.r, s.t.fg.g, s.t.fg.b, 0.35)
+                        }
+                        Rectangle {
+                            x: s.trackX - knob.x
+                            width: Math.max(0, Math.min(1, s.value)) * s.trackW
+                            height: 4; radius: 2
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: Qt.rgba(s.t.fg.r, s.t.fg.g, s.t.fg.b, 0.9)
+                        }
+                    }
+                    // edge: the same border as the Control Center buttons (thin, brighter shade of the background, fading out at the top-right and bottom-left corners, a bit translucent)
+                    Rectangle { z: 2; anchors.fill: parent; radius: knob.rad; color: "transparent"; border.width: 0.8; border.color: Qt.rgba(1, 1, 1, s.gx.dark ? 0.32 : 0.6) }
+                    // glassy sheen: a soft specular highlight along the top, fading out towards the middle
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: knob.rad
+                        gradient: Gradient {
+                            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, s.t.dark ? 0.12 : 0.2) }
+                            GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.02) }
+                            GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, s.t.dark ? 0.04 : 0.08) }
+                        }
+                    }
+                }
+            }
+        }
         MouseArea {
+            id: sma
             anchors.fill: parent
+            hoverEnabled: true
             preventStealing: true
             function setFrom(mx) { s.moved(Math.max(0, Math.min(1, (mx - s.trackX) / s.trackW))); }
             onPressed: mouse => setFrom(mouse.x)
@@ -1569,18 +1661,9 @@ Scope {
         border.color: t.cardBorder
         Column { id: pcol; width: parent.width }
     }
-    component PSwitch: Item {
-        id: sw
+    component PSwitch: LiquidSwitch {
         required property var t
-        property bool checked: false
-        signal toggled(bool value)
-        width: 38; height: 22
-        Rectangle { anchors.fill: parent; radius: 11; color: sw.checked ? sw.t.accent : sw.t.switchOff }
-        Rectangle {
-            x: sw.checked ? 18 : 2; y: 2; width: 18; height: 18; radius: 9; color: "white"
-            Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-        }
-        MouseArea { anchors.fill: parent; onClicked: sw.toggled(!sw.checked) }
+        accent: t.accent; offColor: t.switchOff; dark: root.effDark; material: root.material
     }
     component PSlider: Item {
         id: ps
@@ -1589,23 +1672,12 @@ Scope {
         property real to: 1
         property real value: 0
         signal moved(real v)
-        width: 190; height: 22
-        readonly property real pos: to > from ? Math.max(0, Math.min(1, (value - from) / (to - from))) : 0
-        Rectangle { y: 9; width: parent.width; height: 4; radius: 2; color: ps.t.track }
-        Rectangle { y: 9; width: ps.pos * (ps.width - 20) + 10; height: 4; radius: 2; color: ps.t.accent }
-        Rectangle {
-            x: ps.pos * (ps.width - 20); y: 1; width: 20; height: 20; radius: 10; color: "white"
-            border.width: 1; border.color: Qt.rgba(0, 0, 0, 0.16)
-        }
-        MouseArea {
-            anchors.fill: parent
-            preventStealing: true
-            function setFrom(mx) {
-                var p = Math.max(0, Math.min(1, (mx - 10) / (ps.width - 20)));
-                ps.moved(Math.round((ps.from + p * (ps.to - ps.from)) * 100) / 100);
-            }
-            onPressed: mouse => setFrom(mouse.x)
-            onPositionChanged: mouse => { if (pressed) setFrom(mouse.x); }
+        width: 190; height: 24
+        LiquidSlider {
+            width: parent.width
+            value: ps.to > ps.from ? (ps.value - ps.from) / (ps.to - ps.from) : 0
+            accent: ps.t.accent; trackColor: ps.t.track; dark: root.effDark; material: root.material
+            onMoved: v => ps.moved(Math.round((ps.from + v * (ps.to - ps.from)) * 100) / 100)
         }
     }
     component PSeg: Item {
@@ -1741,7 +1813,9 @@ Scope {
     readonly property var micSource: Pipewire.defaultAudioSource
     PwObjectTracker { objects: [root.micSource] }
     readonly property bool micMuted: (micSource && micSource.audio) ? micSource.audio.muted : true
-    function toggleMicMute() { if (micSource && micSource.audio) micSource.audio.muted = !micSource.audio.muted; }
+    function toggleMicMute() { osdQuiet("volume", 600); if (micSource && micSource.audio) micSource.audio.muted = !micSource.audio.muted; }
+    // the mic-mute key (or Alt + mute) shows the HUD with the microphone, crossed out while muted
+    onMicMutedChanged: showOsd("mic", micMuted ? 0 : micVolume)
     readonly property real volLevel: muted || volume <= 0.001 ? 0 : (volume < 0.34 ? 1 : (volume < 0.67 ? 2 : 3))
     readonly property real micVolume: (micSource && micSource.audio) ? micSource.audio.volume : 0
     function setMicVolume(v) { if (micSource && micSource.audio) { micSource.audio.muted = false; micSource.audio.volume = Math.max(0, Math.min(1, v)); } }
@@ -2368,6 +2442,11 @@ Scope {
     function spotOpen(mode) { if (!spotlightEnabled) return; spotWant = mode; spotRequest++; }
     // qs -c MacShell ipc call controlcenter toggle | open | close   (works with the menu bar switched off too)
     signal ccRequest(bool open)
+    function closeCC() { ccRequest(false); }
+    // Settings → Wi-Fi → Join…: the Wi-Fi menu opens with that network's password field
+    signal wifiJoinRequest(string ssid)
+    function wifiJoin(ssid) { wifiJoinRequest(ssid); }
+    function notify(title, body) { Quickshell.execDetached(["notify-send", "-a", "MacShell", String(title), String(body || "")]); }
     IpcHandler {
         target: "controlcenter"
         function toggle(): void { root.ccRequest(true); }
@@ -2809,7 +2888,7 @@ Scope {
         return out;
     }
     function fileItems(q) {
-        var out=[]; for(var i=0;i<fileHits.length&&out.length<5;i++){var path=fileHits[i];out.push({title:path.substring(path.lastIndexOf("/")+1)||path,sub:path,glyph:"folder",run:(function(p){return function(){Quickshell.execDetached(["xdg-open",p]);};})(path)});} return out;
+        var out=[]; for(var i=0;i<fileHits.length&&out.length<5;i++){var path=fileHits[i];out.push({title:path.substring(path.lastIndexOf("/")+1)||path,sub:path,glyph:"folder",run:(function(p){return function(){if(hub&&hub.openPath)hub.openPath(p);else Quickshell.execDetached(["xdg-open",p]);};})(path)});} return out;
     }
     function homeItems(q) {
         var out = [], s = (q || "").trim().toLowerCase();
@@ -2830,9 +2909,10 @@ Scope {
     function menuModelFor(name) {
         var m = [], i;
         if (name === "apple") {
-            m.push(mi("About This Linux", "", function () { sh(terminal + " -e sh -c 'fastfetch || neofetch; echo; read -p \"Press Enter\" _'"); }));
+            m.push(mi("About This Computer", "", function () { root.openSettings("about"); }));
             m.push(msep());
-            m.push(mi("System Settings\u2026", "", function () { root.openSettings(); }));
+            m.push(mi("System Settings\u2026", "", function () { root.openSettings("general"); }));
+            m.push(mi("App Store\u2026", "", function () { if (hub && hub.appstore) hub.appstore.open(); }));
             m.push(msep());
             m.push(mi("Lock Screen", "", function () { sh("loginctl lock-session"); }));
             m.push(mi("Sleep", "", function () { sh("systemctl suspend"); }));
@@ -3392,7 +3472,7 @@ Scope {
         onExited: (code, status) => root.glassState = (code === 0 ? "ready" : "failed")
     }
 
-    // wallpaper the glass refracts (override → Noctalia settings.toml → awww/swww/hyprpaper)
+    // wallpaper the glass refracts (MacShell's own → whatever awww / swww / hyprpaper shows)
     readonly property var wallpaperMap: hub ? hub.wallpaperMap : ({})
     Binding { target: root.hub; property: "barWantsWallpaper"; value: root.wantBackdrop }
     function wallpaperFor(screenName) {
@@ -3757,8 +3837,6 @@ Scope {
         var cmd = (root.wallpaperCmd || "").trim();
         var script = cmd !== "" ? cmd.split("{}").join('"$1"') : [
             'p="$1"',
-            // Noctalia (its settings.toml is where the glass wallpaper is read from): `noctalia msg wallpaper-set <path>`
-            'if command -v noctalia >/dev/null 2>&1 && noctalia msg wallpaper-set "$p" >/dev/null 2>&1; then echo "applied with: noctalia"; exit 0; fi',
             // awww needs its daemon; start it if it is installed but not running yet
             'if command -v awww >/dev/null 2>&1; then',
             '  if ! awww query >/dev/null 2>&1; then',
@@ -3766,15 +3844,14 @@ Scope {
             '    for i in 1 2 3 4 5 6 7 8 9 10; do awww query >/dev/null 2>&1 && break; sleep 0.3; done',
             '  fi',
             '  if awww img "$p" --transition-type fade --transition-duration 0.7; then echo "applied with: awww"; exit 0; fi',
-            'fi',            'if command -v swww >/dev/null 2>&1 && swww query >/dev/null 2>&1 && swww img "$p" --transition-type fade --transition-duration 0.7; then echo "applied with: swww"; exit 0; fi',
+            'fi',
+            'if command -v swww >/dev/null 2>&1 && swww query >/dev/null 2>&1 && swww img "$p" --transition-type fade --transition-duration 0.7; then echo "applied with: swww"; exit 0; fi',
             'if pgrep -x hyprpaper >/dev/null 2>&1; then',
             '  if hyprctl hyprpaper wallpaper ",$p" >/dev/null 2>&1 || { hyprctl hyprpaper preload "$p" >/dev/null 2>&1; hyprctl hyprpaper wallpaper ",$p" >/dev/null 2>&1; }; then echo "applied with: hyprpaper"; exit 0; fi',
             'fi',
-            // older Noctalia (QML): qs -c noctalia-shell ipc call wallpaper set <path> <monitor>
-            'if pgrep -f noctalia-shell >/dev/null 2>&1 && qs -c noctalia-shell ipc call wallpaper set "$p" "" >/dev/null 2>&1; then echo "applied with: noctalia-shell (qs ipc)"; exit 0; fi',
             'if pgrep -x swaybg >/dev/null 2>&1; then pkill -x swaybg; setsid swaybg -i "$p" -m fill >/dev/null 2>&1 & echo "applied with: swaybg"; exit 0; fi',
-            'echo "no wallpaper daemon accepted the image (tried noctalia, awww, swww, hyprpaper, noctalia-shell, swaybg)" >&2',
-            'echo "running: $(ps -eo comm= | grep -E "^(noctalia|noctalia-shell|awww-daemon|swww-daemon|hyprpaper|swaybg|wpaperd)$" | sort -u | tr "\\n" " ")" >&2',
+            'echo "no wallpaper daemon accepted the image (tried awww, swww, hyprpaper, swaybg)" >&2',
+            'echo "running: $(ps -eo comm= | grep -E "^(awww-daemon|swww-daemon|hyprpaper|swaybg|wpaperd)$" | sort -u | tr "\\n" " ")" >&2',
             'notify-send "Wallpaper" "Could not set it: no supported wallpaper daemon found. Set wallpaperCmd in settings.json." 2>/dev/null',
             'exit 1'
         ].join("\n");
@@ -3940,7 +4017,6 @@ Scope {
             lua += "hl.dispatch(hl.dsp.focus({ window = \"" + sel + "\" })); ";
             // and bring it to the front: a floating window buried under another one used to stay buried
             lua += "hl.dispatch(hl.dsp.window.bring_to_top({ window = \"" + sel + "\" }))";
-            console.log("[switcher] hyprctl eval '" + lua + "'");
             Quickshell.execDetached(["hyprctl", "eval", lua]);
         }
     }
@@ -3970,7 +4046,6 @@ Scope {
             if (w && w.id > 0) ws = w.id;
             else if (hit.lastIpcObject && hit.lastIpcObject.workspace && hit.lastIpcObject.workspace.id > 0) ws = hit.lastIpcObject.workspace.id;
         }
-        console.log("[switcher] app=" + a.appId + " matched=" + (hit ? "yes" : "no") + " addr=" + addr + " ws=" + ws);
         if (!hit && !a.appId) { try { a.win.activate(); } catch (e2) {} return; }
         root.swPending = { addr: addr, ws: ws, cls: (a.cls || a.appId || "").replace(/[\\"']/g, "") };
         swFocusTimer.restart();
@@ -4058,6 +4133,12 @@ Scope {
                     function onCcRequest(open) {
                         if (!ui.toastScreen || !root.ccEnabled) return;
                         ui.pop = (open && ui.pop !== "cc") ? "cc" : "";
+                    }
+                    function onWifiJoinRequest(ssid) {
+                        if (!ui.toastScreen) return;
+                        if (ui.pop !== "wifi") ui.openPop("wifi", wifiBtn.mapToItem(ui, 0, 0).x);
+                        ui.wifiPrompt = ssid;
+                        root.scanWifi();
                     }
                 }
                 readonly property bool toastsShown: toastScreen && notifToasts.count > 0
@@ -4600,6 +4681,7 @@ Scope {
                         x: 18; anchors.verticalCenter: parent.verticalCenter
                         width: 28; height: 28
                         readonly property bool bright: root.osdKind === "brightness"
+                        readonly property bool mic: root.osdKind === "mic"
                         property real kick: 0
                         property real spin: 0
                         scale: 1 + kick * 0.16
@@ -4629,12 +4711,23 @@ Scope {
                             Behavior on opacity { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
                             Behavior on scale { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.6 } }
                         }
+                        Glyph {
+                            anchors.fill: parent
+                            kind: "mic"
+                            flag: root.micMuted
+                            color: "white"
+                            opacity: osdIcon.mic ? 1 : 0
+                            scale: osdIcon.mic ? 1 : 0.55
+                            visible: opacity > 0.01
+                            Behavior on opacity { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
+                            Behavior on scale { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.6 } }
+                        }
                         Item {
                             id: osdSpk
                             anchors.fill: parent
                             readonly property real v: root.osdValue
-                            opacity: osdIcon.bright ? 0 : 1
-                            scale: osdIcon.bright ? 0.55 : 1
+                            opacity: osdIcon.bright || osdIcon.mic ? 0 : 1
+                            scale: osdIcon.bright || osdIcon.mic ? 0.55 : 1
                             visible: opacity > 0.01
                             Behavior on opacity { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
                             Behavior on scale { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.6 } }
@@ -5100,12 +5193,20 @@ Scope {
                     height: Math.min(volCol.height + 28, ui.height - root.barHeight - 40)
                     x: Math.max(6, Math.min(ui.width - width * root.barPopupScale - 8, ui.menuX - width / 2))
                     y: root.barHeight + 6
-                    opacity: ui.pop === "vol" ? 1 : 0
-                    visible: opacity > 0
-                    scale: root.barPopupScale * (ui.pop === "vol" ? 1 : 0.96)
+                    // opening: it grows out of the menu bar, stretching into shape as it comes into focus; closing runs it back, faster
+                    readonly property bool popShown: ui.pop === "vol"
+                    property real popT: popShown ? 1 : 0
+                    Behavior on popT { NumberAnimation { duration: volPop.popShown ? 460 : 230; easing.type: volPop.popShown ? Easing.OutQuint : Easing.OutCubic } }
+                    opacity: Math.min(1, popT * 1.7)
+                    visible: popT > 0.002
+                    scale: root.barPopupScale
                     transformOrigin: Item.Top
-                    Behavior on opacity { NumberAnimation { duration: 110 } }
-                    Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                    transform: [
+                        Scale { origin.x: volPop.width / 2; origin.y: 0; xScale: 0.9 + 0.1 * volPop.popT; yScale: 0.74 + 0.26 * volPop.popT },
+                        Translate { y: -10 * (1 - volPop.popT) }
+                    ]
+                    layer.enabled: popT < 0.995
+                    layer.effect: MultiEffect { blurEnabled: true; blurMax: 28; blur: 1 - volPop.popT; autoPaddingEnabled: true }
                     LGlass {
                         anchors.fill: parent
                         backdrop: ui.glassSrc
@@ -5123,6 +5224,41 @@ Scope {
                         blur: root.glassBlur
                         debug: root.glassDebug
                         onShaderError: root.glassState = "failed"
+                    }
+                    // the sliders' knobs turn to Liquid Glass while held (upstream's CCSlider): they sample this backdrop
+                    ShaderEffectSource {
+                        id: volSrc
+                        sourceItem: volPop.visible ? ui.glassSrc : null
+                        live: volPop.visible
+                        visible: false
+                        sourceRect: Qt.rect(volPop.x - 64, volPop.y - 64, volPop.width + 128, volPop.height + 128)
+                    }
+                    MultiEffect {
+                        id: volBlurFx
+                        source: volSrc
+                        width: volSrc.sourceRect.width; height: volSrc.sourceRect.height
+                        blurEnabled: true; blurMax: 64
+                        blur: Math.min(1.0, volg.blur * 1.4 / 64.0)
+                        autoPaddingEnabled: false
+                        visible: false
+                    }
+                    ShaderEffectSource { id: volBlur; sourceItem: volPop.visible ? volBlurFx : null; live: true; visible: false }
+                    GlassCtx {
+                        id: volg
+                        src: volBlur
+                        srcRect: volSrc.sourceRect
+                        frame: ui
+                        liquid: root.liquidActive
+                        blurred: !root.liquidActive && root.wantBackdrop
+                        shaderUrl: root.glassShaderUrl
+                        dark: root.effDark
+                        tint: root.glassOpacity
+                        strength: root.glassLiquid
+                        rim: root.glassRim
+                        grain: root.glassGrain
+                        blur: root.glassBlur
+                        debug: root.glassDebug
+                        onFailed: root.glassState = "failed"
                     }
                     MouseArea { anchors.fill: parent }      // clicks inside don't close the popover
                     Flickable {
@@ -5145,7 +5281,7 @@ Scope {
                             Item {
                                 width: parent.width; height: 32
                                 CCSlider {
-                                    t: pal
+                                    t: pal; gx: volg
                                     anchors.verticalCenter: parent.verticalCenter
                                     width: parent.width
                                     value: root.muted ? 0 : root.volume
@@ -5183,7 +5319,7 @@ Scope {
                                         font.family: pal.fam; font.pixelSize: 12
                                     }
                                     CCSlider {
-                                        t: pal; x: 0; y: 20; width: parent.width
+                                        t: pal; gx: volg; x: 0; y: 20; width: parent.width
                                         value: modelData.volume
                                         leftKind: "speaker"; leftLevel: modelData.volume < 0.34 ? 1 : (modelData.volume < 0.67 ? 2 : 3)
                                         rightKind: "speaker"; rightLevel: 3
@@ -5211,7 +5347,7 @@ Scope {
                             Item {
                                 width: parent.width; height: 32
                                 CCSlider {
-                                    t: pal
+                                    t: pal; gx: volg
                                     anchors.verticalCenter: parent.verticalCenter
                                     width: parent.width
                                     value: root.micMuted ? 0 : root.micVolume
@@ -5245,12 +5381,20 @@ Scope {
                     height: kbCol.height + 16
                     x: Math.max(6, Math.min(ui.width - width * root.barPopupScale - 8, ui.menuX - width / 2))
                     y: root.barHeight + 6
-                    opacity: ui.pop === "kb" ? 1 : 0
-                    visible: opacity > 0
-                    scale: root.barPopupScale * (ui.pop === "kb" ? 1 : 0.96)
+                    // opening: it grows out of the menu bar, stretching into shape as it comes into focus; closing runs it back, faster
+                    readonly property bool popShown: ui.pop === "kb"
+                    property real popT: popShown ? 1 : 0
+                    Behavior on popT { NumberAnimation { duration: kbPop.popShown ? 460 : 230; easing.type: kbPop.popShown ? Easing.OutQuint : Easing.OutCubic } }
+                    opacity: Math.min(1, popT * 1.7)
+                    visible: popT > 0.002
+                    scale: root.barPopupScale
                     transformOrigin: Item.Top
-                    Behavior on opacity { NumberAnimation { duration: 110 } }
-                    Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                    transform: [
+                        Scale { origin.x: kbPop.width / 2; origin.y: 0; xScale: 0.9 + 0.1 * kbPop.popT; yScale: 0.74 + 0.26 * kbPop.popT },
+                        Translate { y: -10 * (1 - kbPop.popT) }
+                    ]
+                    layer.enabled: popT < 0.995
+                    layer.effect: MultiEffect { blurEnabled: true; blurMax: 28; blur: 1 - kbPop.popT; autoPaddingEnabled: true }
                     LGlass {
                         anchors.fill: parent
                         backdrop: ui.glassSrc
@@ -5533,17 +5677,11 @@ Scope {
                             color: pal.fg
                             font.family: pal.fam; font.pixelSize: 13
                         }
-                        Rectangle {
+                        PSwitch {
+                            t: pal
                             anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter
-                            width: 38; height: 22; radius: 11
-                            color: root.notifDnd ? pal.accent : pal.switchOff
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Rectangle {
-                                y: 2; width: 18; height: 18; radius: 9; color: "white"
-                                x: root.notifDnd ? 18 : 2
-                                Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                            }
-                            MouseArea { anchors.fill: parent; onClicked: root.notifDnd = !root.notifDnd }
+                            checked: root.notifDnd
+                            onToggled: v => root.notifDnd = v
                         }
                     }
                     Text {
@@ -5682,12 +5820,20 @@ Scope {
                     height: menuCol.height + 14
                     x: Math.max(6, Math.min(ui.width - width * root.barPopupScale - 6, ui.menuX - 4))
                     y: root.barHeight + 3
-                    opacity: ui.isMenu ? 1 : 0
-                    visible: opacity > 0
-                    scale: root.barPopupScale * (ui.isMenu ? 1 : 0.97)
+                    // opening: it grows out of the menu bar, stretching into shape as it comes into focus; closing runs it back, faster
+                    readonly property bool popShown: ui.isMenu
+                    property real popT: popShown ? 1 : 0
+                    Behavior on popT { NumberAnimation { duration: menuPop.popShown ? 460 : 230; easing.type: menuPop.popShown ? Easing.OutQuint : Easing.OutCubic } }
+                    opacity: Math.min(1, popT * 1.7)
+                    visible: popT > 0.002
+                    scale: root.barPopupScale
                     transformOrigin: Item.TopLeft
-                    Behavior on opacity { NumberAnimation { duration: 90 } }
-                    Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                    transform: [
+                        Scale { origin.x: 0; origin.y: 0; xScale: 0.9 + 0.1 * menuPop.popT; yScale: 0.74 + 0.26 * menuPop.popT },
+                        Translate { y: -10 * (1 - menuPop.popT) }
+                    ]
+                    layer.enabled: popT < 0.995
+                    layer.effect: MultiEffect { blurEnabled: true; blurMax: 28; blur: 1 - menuPop.popT; autoPaddingEnabled: true }
                     // moving from one menu to the next: the panel slides and reshapes while the items blur out and
                     // the new ones come into focus — all at once, rather than snapping
                     Behavior on x { enabled: ui.isMenu; NumberAnimation { duration: 320; easing.type: Easing.OutQuint } }
@@ -5828,12 +5974,20 @@ Scope {
                     height: Math.min(trayCol.height + 14, root.popRoom - 20)
                     x: Math.max(6, Math.min(ui.width - width * root.barPopupScale - 6, ui.menuX - 4))
                     y: root.barHeight + 3
-                    opacity: shown ? 1 : 0
-                    visible: opacity > 0
-                    scale: root.barPopupScale * (shown ? 1 : 0.97)
+                    // opening: it grows out of the menu bar, stretching into shape as it comes into focus; closing runs it back, faster
+                    readonly property bool popShown: shown
+                    property real popT: popShown ? 1 : 0
+                    Behavior on popT { NumberAnimation { duration: trayPop.popShown ? 460 : 230; easing.type: trayPop.popShown ? Easing.OutQuint : Easing.OutCubic } }
+                    opacity: Math.min(1, popT * 1.7)
+                    visible: popT > 0.002
+                    scale: root.barPopupScale
                     transformOrigin: Item.TopLeft
-                    Behavior on opacity { NumberAnimation { duration: 90 } }
-                    Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                    transform: [
+                        Scale { origin.x: 0; origin.y: 0; xScale: 0.9 + 0.1 * trayPop.popT; yScale: 0.74 + 0.26 * trayPop.popT },
+                        Translate { y: -10 * (1 - trayPop.popT) }
+                    ]
+                    layer.enabled: popT < 0.995
+                    layer.effect: MultiEffect { blurEnabled: true; blurMax: 28; blur: 1 - trayPop.popT; autoPaddingEnabled: true }
 
                     QsMenuOpener { id: trayOpener; menu: trayPop.cur }
 
@@ -5996,12 +6150,20 @@ Scope {
                     height: wifiCol.height + 24
                     x: Math.max(6, Math.min(ui.width - width * root.barPopupScale - 8, ui.menuX + 14 - width / 2))
                     y: root.barHeight + 6
-                    opacity: ui.pop === "wifi" ? 1 : 0
-                    visible: opacity > 0
-                    scale: root.barPopupScale * (ui.pop === "wifi" ? 1 : 0.96)
+                    // opening: it grows out of the menu bar, stretching into shape as it comes into focus; closing runs it back, faster
+                    readonly property bool popShown: ui.pop === "wifi"
+                    property real popT: popShown ? 1 : 0
+                    Behavior on popT { NumberAnimation { duration: wifiPop.popShown ? 460 : 230; easing.type: wifiPop.popShown ? Easing.OutQuint : Easing.OutCubic } }
+                    opacity: Math.min(1, popT * 1.7)
+                    visible: popT > 0.002
+                    scale: root.barPopupScale
                     transformOrigin: Item.Top
-                    Behavior on opacity { NumberAnimation { duration: 110 } }
-                    Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                    transform: [
+                        Scale { origin.x: wifiPop.width / 2; origin.y: 0; xScale: 0.9 + 0.1 * wifiPop.popT; yScale: 0.74 + 0.26 * wifiPop.popT },
+                        Translate { y: -10 * (1 - wifiPop.popT) }
+                    ]
+                    layer.enabled: popT < 0.995
+                    layer.effect: MultiEffect { blurEnabled: true; blurMax: 28; blur: 1 - wifiPop.popT; autoPaddingEnabled: true }
 
                     LGlass {
                         anchors.fill: parent
@@ -6056,7 +6218,7 @@ Scope {
                                     required property var modelData
                                     width: parent.width; height: 30
                                     Rectangle { anchors.fill:parent; radius:8; color:connMa.containsMouse?pal.hover:"transparent" }
-                                    Glyph { x:8; anchors.verticalCenter:parent.verticalCenter; width:14; height:14; kind:modelData.type==="vpn"?"lock":"wifi"; color:pal.fg }
+                                    Glyph { x:8; anchors.verticalCenter:parent.verticalCenter; width:14; height:14; kind:modelData.type==="vpn"?"lock":(modelData.type==="wifi"?"wifi":"ethernet"); color:pal.fg }
                                     Text { x:30; anchors.verticalCenter:parent.verticalCenter; width:parent.width-42; elide:Text.ElideRight; text:modelData.name+(modelData.active?" · Connected":""); color:pal.fg; font.family:pal.fam; font.pixelSize:12 }
                                     MouseArea { id:connMa; anchors.fill:parent; hoverEnabled:true; onClicked:root.toggleConnection(modelData) }
                                 }
@@ -6285,12 +6447,20 @@ Scope {
                     height: calCol.height + 28
                     x: Math.max(6, ui.width - width - 8)
                     y: root.barHeight + 6
-                    opacity: ui.pop === "cal" ? 1 : 0
-                    visible: opacity > 0
-                    scale: root.barPopupScale * (ui.pop === "cal" ? 1 : 0.96)
+                    // opening: it grows out of the menu bar, stretching into shape as it comes into focus; closing runs it back, faster
+                    readonly property bool popShown: ui.pop === "cal"
+                    property real popT: popShown ? 1 : 0
+                    Behavior on popT { NumberAnimation { duration: cal.popShown ? 460 : 230; easing.type: cal.popShown ? Easing.OutQuint : Easing.OutCubic } }
+                    opacity: Math.min(1, popT * 1.7)
+                    visible: popT > 0.002
+                    scale: root.barPopupScale
                     transformOrigin: Item.TopRight
-                    Behavior on opacity { NumberAnimation { duration: 110 } }
-                    Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                    transform: [
+                        Scale { origin.x: cal.width; origin.y: 0; xScale: 0.9 + 0.1 * cal.popT; yScale: 0.74 + 0.26 * cal.popT },
+                        Translate { y: -10 * (1 - cal.popT) }
+                    ]
+                    layer.enabled: popT < 0.995
+                    layer.effect: MultiEffect { blurEnabled: true; blurMax: 28; blur: 1 - cal.popT; autoPaddingEnabled: true }
 
                     LGlass {
                         anchors.fill: parent
@@ -6749,7 +6919,7 @@ Scope {
                                 spacing: 6
                                 Text { text: "Keyboard Brightness"; color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
                                 CCSlider {
-                                    t: pal
+                                    t: pal; gx: ccg; glassMul: root.ccStyle === "macos" ? 3 : 1
                                     width: parent.width
                                     enabled: root.keyLightMax > 0
                                     opacity: root.keyLightMax > 0 ? 1 : 0.4
@@ -6880,7 +7050,7 @@ Scope {
                                 color: pal.fg; font.family: pal.fam; font.pixelSize: 12; font.weight: Font.DemiBold
                             }
                             CCSlider {
-                                t: pal
+                                t: pal; gx: ccg; glassMul: root.ccStyle === "macos" ? 3 : 1
                                 x: 12; y: 28
                                 width: parent.width - 24
                                 value: root.brightness
@@ -6901,7 +7071,7 @@ Scope {
                                 color: pal.fg; font.family: pal.fam; font.pixelSize: 12; font.weight: Font.DemiBold
                             }
                             CCSlider {
-                                t: pal
+                                t: pal; gx: ccg; glassMul: root.ccStyle === "macos" ? 3 : 1
                                 x: 12; y: 28
                                 width: parent.width - 24 - 36
                                 value: root.muted ? 0 : root.volume
@@ -8021,7 +8191,7 @@ Scope {
                                 onClicked: {
                                     if (modelData.id === "apps") ui.spSetMode(ui.spMode === "apps" ? "home" : "apps");
                                     else if (modelData.id === "actions") ui.spSetMode(ui.spMode === "actions" ? "home" : "actions");
-                                    else if (modelData.id === "files") { ui.pop = ""; root.sh("dolphin \"$HOME\""); }
+                                    else if (modelData.id === "files") { ui.pop = ""; if (hub && hub.openFolder) hub.openFolder(Quickshell.env("HOME")); else root.sh(root.filesCmd); }
                                     else if (modelData.id === "clip") ui.spSetMode(ui.spMode === "clip" ? "home" : "clip");
                                     else ui.spSetMode(ui.spMode === "emoji" ? "home" : "emoji");
                                 }

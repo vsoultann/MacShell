@@ -75,7 +75,7 @@ Scope {
     function openItem(it) {
         if (it.isApp) { Quickshell.execDetached(["sh", "-c", "gio launch \"$1\" 2>/dev/null || dex \"$1\" 2>/dev/null || xdg-open \"$1\"", "sh", it.path]); return; }
         if (it.isDir) { if (hub && hub.finder) hub.finder.open(it.path); else Quickshell.execDetached(["xdg-open", it.path]); return; }
-        if (it.kind === "Image" && hub && hub.preview) { hub.preview.open(it.path); return; }
+        if (hub && hub.openPath) { hub.openPath(it.path); return; }
         Quickshell.execDetached(["xdg-open", it.path]);
     }
     function newFolder() {
@@ -255,7 +255,7 @@ Scope {
                         else if (k === "trash" && it) a.trash(it.path);
                         else if (k === "newfolder") a.newFolder();
                         else if (k === "cleanup") { a.places = ({}); a.savePlaces(); }
-                        else if (k === "wallpaper" && a.dock) a.dock.openSettings("wallpaper");
+                        else if (k === "wallpaper" && a.dock) a.dock.openPrefs("wallpaper");
                     }
                     Rectangle {
                         anchors.fill: parent

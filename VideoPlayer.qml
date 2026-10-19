@@ -11,6 +11,8 @@ import Quickshell.Io
 Scope {
     id: root
     property var hub: null
+    // close through the shell, so its window captures are released first (see shell.qml → hideWindow)
+    function hideWin(w) { if (root.hub && root.hub.hideWindow) root.hub.hideWindow(w); else w.visible = false; }
     readonly property var dock: hub ? hub.dock : null
     readonly property string fam: dock ? dock.fontFamily : "Inter Variable"
     readonly property var bar: hub ? hub.bar : null
@@ -67,7 +69,7 @@ Scope {
             onStreamFinished: {
                 root.resolving = false;
                 var u = text.trim();
-                if (u === "") { win.visible = false; Quickshell.execDetached(["xdg-open", root.ytFallback]); return; }
+                if (u === "") { root.hideWin(win); Quickshell.execDetached(["xdg-open", root.ytFallback]); return; }
                 player.source = u;
                 player.play();
             }
@@ -78,7 +80,7 @@ Scope {
         id: player
         videoOutput: vout
         audioOutput: AudioOutput { id: aout; volume: 0.9 }
-        onErrorOccurred: (err, str) => { if (root.ytFallback !== "") { win.visible = false; Quickshell.execDetached(["xdg-open", root.ytFallback]); } }
+        onErrorOccurred: (err, str) => { if (root.ytFallback !== "") { root.hideWin(win); Quickshell.execDetached(["xdg-open", root.ytFallback]); } }
     }
 
     function toggle() { player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play(); }
@@ -90,6 +92,8 @@ Scope {
 
     Window {
         id: win
+        // Super + Q, Super + W, the Dock's Quit: same careful close as the traffic light
+        onClosing: close => { close.accepted = false; root.hideWin(win); }
         title: "Player"
         width: 900; height: 540
         minimumWidth: 420; minimumHeight: 260
@@ -180,7 +184,7 @@ Scope {
                         id: tlMa
                         anchors.fill: parent; anchors.margins: -3; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                         onClicked: mouse => {
-                            if (mouse.x < 25) win.visible = false;
+                            if (mouse.x < 25) root.hideWin(win);
                             else if (mouse.x < 47) root.hub && root.hub.minimizeWindow ? root.hub.minimizeWindow(win.title) : win.showMinimized();
                             else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen();
                         }
@@ -320,7 +324,7 @@ Scope {
 
             Keys.onPressed: event => {
                 if (event.key === Qt.Key_Space) player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play();
-                else if (event.key === Qt.Key_Escape) win.visibility === Window.FullScreen ? win.showNormal() : (win.visible = false);
+                else if (event.key === Qt.Key_Escape) win.visibility === Window.FullScreen ? win.showNormal() : root.hideWin(win);
                 else if (event.key === Qt.Key_Left) player.position = Math.max(0, player.position - 10000);
                 else if (event.key === Qt.Key_Right) player.position = Math.min(player.duration, player.position + 10000);
                 else return;

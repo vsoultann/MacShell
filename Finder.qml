@@ -10,10 +10,13 @@ import QtQuick.Effects
 import QtMultimedia
 import Quickshell
 import Quickshell.Io
+import Quickshell.Widgets
 
 Scope {
     id: root
     property var hub: null
+    // close through the shell, so its window captures are released first (see shell.qml → hideWindow)
+    function hideWin(w) { if (root.hub && root.hub.hideWindow) root.hub.hideWindow(w); else w.visible = false; }
     readonly property var dock: hub ? hub.dock : null
     readonly property var bar: hub ? hub.bar : null
     readonly property bool darkMode: dock ? dock.darkMode : true
@@ -259,10 +262,32 @@ Scope {
         Quickshell.execDetached(["sh", "-c", "d=$(dirname \"$1\"); [ -e \"$d/$2\" ] || mv -- \"$1\" \"$d/$2\"", "sh", path, n]);
         reloadLater.restart();
     }
+    // Open With: the apps registered for the file's type, as a menu next to the file
+    property string owPath: ""
+    property var owApps: []             // { id, name, icon }
     function openWith(path) {
-        // the desktop's own "Open With" chooser, whichever one is installed
-        Quickshell.execDetached(["sh", "-c",
-            "mimeopen -a \"$1\" 2>/dev/null || exo-open \"$1\" 2>/dev/null || xdg-open \"$1\"", "sh", path]);
+        owPath = path; owApps = [];
+        owProc.command = ["sh", "-c", "t=$(xdg-mime query filetype \"$1\" 2>/dev/null); [ -n \"$t\" ] && gio mime \"$t\" 2>/dev/null | sed -n 's/^\\t\\(.*\\)\\.desktop$/\\1/p' | awk '!s[$0]++'", "sh", path];
+        owProc.running = true;
+    }
+    Process {
+        id: owProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var out = [], ids = text.split("\n");
+                for (var i = 0; i < ids.length && out.length < 12; i++) {
+                    var id = ids[i].trim();
+                    if (id === "") continue;
+                    var e = DesktopEntries.byId(id);
+                    if (e && !e.noDisplay) out.push({ id: id, name: e.name, icon: e.icon });
+                }
+                root.owApps = out;
+            }
+        }
+    }
+    function launchWith(id, path) {
+        owPath = ""; owApps = [];
+        Quickshell.execDetached(["sh", "-c", "gtk-launch \"$1\" \"$2\" 2>/dev/null || gio launch \"$(find /usr/share/applications \"$HOME/.local/share/applications\" -name \"$1.desktop\" | head -n1)\" \"$2\"", "sh", id, path]);
     }
     // ── Get Info ──
     property var infoFor: null
@@ -305,12 +330,16 @@ Scope {
     property var chooseCb: null
     property string chooseVerb: ""
     readonly property bool choosing: chooseCb !== null
+    property bool chooseDirs: false     // picking a folder instead of files (Photos → Add Folder…)
     function chooseFiles(cb, verb, where) {
+        chooseDirs = false;
         chooseCb = cb;
         chooseVerb = verb || "Choose";
         selection = []; selected = "";
         open(where);
     }
+    // the selected folder, or the one you are in
+    function chooseFolder(cb, verb, where) { chooseFiles(cb, verb || "Choose", where); chooseDirs = true; }
     // ── Locations: USB sticks, SD cards and anything else you plug in ──
     property var drives: []            // { dev, name, size, mount, mounted }
     property string driveBusy: ""
@@ -388,12 +417,29 @@ Scope {
 
     function chooseDone(ok) {
         var cb = chooseCb, files = selection.slice();
-        chooseCb = null; chooseVerb = "";
-        if (ok && cb && files.length > 0) cb(files);
+        if (chooseDirs) {
+            var pick = dir;
+            for (var i = 0; i < entries.length; i++)
+                if (files.length === 1 && entries[i].path === files[0] && entries[i].isDir) pick = files[0];
+            files = [pick];
+        }
+        chooseCb = null; chooseVerb = ""; chooseDirs = false;
+        // the answer goes back only after this window is gone: the caller usually raises its own window, and asking for
+        // activation while this surface is being destroyed killed the Wayland connection (wl_display: invalid object)
+        if (ok && cb && files.length > 0) { chooseReply.cb = cb; chooseReply.files = files; chooseReply.restart(); }
+    }
+    Timer {
+        id: chooseReply
+        property var cb: null
+        property var files: []
+        interval: 250
+        onTriggered: { var c = cb; cb = null; if (c) c(files); }
     }
 
     Window {
         id: win
+        // Super + Q, Super + W, the Dock's Quit: same careful close as the traffic light
+        onClosing: close => { close.accepted = false; root.hideWin(win); }
         title: "Finder"
         width: 1020; height: 660
         minimumWidth: 720; minimumHeight: 460
@@ -402,7 +448,7 @@ Scope {
         flags: Qt.Window | Qt.FramelessWindowHint
         onVisibleChanged: {
             if (visible) root.scanDrives();
-            else { root.chooseCb = null; root.chooseVerb = ""; root.entries = []; root.selection = []; root.qlText = ""; Qt.callLater(gc); }
+            else { root.chooseCb = null; root.chooseVerb = ""; root.chooseDirs = false; root.entries = []; root.selection = []; root.qlText = ""; Qt.callLater(gc); }
         }
         // a stick you plug in shows up on its own
         Timer { interval: 3000; repeat: true; running: win.visible; onTriggered: root.scanDrives() }
@@ -478,7 +524,7 @@ Scope {
                     MouseArea {
                         id: tlMa; anchors.fill: parent; hoverEnabled: true
                         onClicked: mouse => {
-                            if (mouse.x < 22) win.visible = false;
+                            if (mouse.x < 22) root.hideWin(win);
                             else if (mouse.x < 44) root.hub && root.hub.minimizeWindow ? root.hub.minimizeWindow(win.title) : win.showMinimized();
                             else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen();
                         }
@@ -764,6 +810,7 @@ Scope {
                         }
                     }
                 }
+                LiquidScrollBar { flick: listFlick; anchors.right: listFlick.right; anchors.top: listFlick.top; anchors.bottom: listFlick.bottom; material: root.bar ? root.bar.material : "liquid"; dark: root.darkMode }
 
                 // ── icon view ──
                 Flickable {
@@ -848,6 +895,7 @@ Scope {
                         }
                     }
                 }
+                LiquidScrollBar { flick: iconFlick; anchors.right: iconFlick.right; anchors.top: iconFlick.top; anchors.bottom: iconFlick.bottom; material: root.bar ? root.bar.material : "liquid"; dark: root.darkMode }
 
 
                 // feathered edges: rows fade out under the toolbar and above the status bar instead of being sliced
@@ -918,7 +966,8 @@ Scope {
                         visible: root.choosing
                         opacity: root.choosing ? 1 : 0
                         Behavior on opacity { NumberAnimation { duration: 200 } }
-                        text: root.selection.length === 0 ? "Select the files to send"
+                        text: root.chooseDirs ? "Choose a folder, or open it and press " + root.chooseVerb
+                            : root.selection.length === 0 ? "Select the files to send"
                             : (root.selection.length === 1 ? "1 file selected" : root.selection.length + " files selected")
                         color: pal.text2; font.family: root.fam; font.pixelSize: 12
                     }
@@ -936,21 +985,21 @@ Scope {
                             scale: cancelMa.pressed ? 0.96 : 1
                             Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutQuint } }
                             Text { anchors.centerIn: parent; text: "Cancel"; color: pal.text; font.family: root.fam; font.pixelSize: 12 }
-                            MouseArea { id: cancelMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.chooseDone(false); win.visible = false; } }
+                            MouseArea { id: cancelMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.chooseDone(false); root.hideWin(win); } }
                         }
                         Rectangle {
                             width: Math.max(86, okText.implicitWidth + 28); height: 28; radius: 8
                             color: root.accent
-                            opacity: root.selection.length > 0 ? 1 : 0.45
+                            opacity: root.chooseDirs || root.selection.length > 0 ? 1 : 0.45
                             Behavior on opacity { NumberAnimation { duration: 160 } }
                             scale: okMa.pressed ? 0.96 : 1
                             Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutQuint } }
                             Text { id: okText; anchors.centerIn: parent; text: root.chooseVerb; color: "white"; font.family: root.fam; font.pixelSize: 12; font.weight: Font.DemiBold }
                             MouseArea {
                                 id: okMa; anchors.fill: parent; hoverEnabled: true
-                                enabled: root.selection.length > 0
+                                enabled: root.chooseDirs || root.selection.length > 0
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: { root.chooseDone(true); win.visible = false; }
+                                onClicked: { root.chooseDone(true); root.hideWin(win); }
                             }
                         }
                     }
@@ -1008,7 +1057,7 @@ Scope {
                                         if (!it) return;
                                         var sel = root.isSelected(it.path) && root.selection.length > 0 ? root.selection : [it.path];
                                         if (m === "Open") root.openEntry(it);
-                                        else if (m === "Open With\u2026") root.openWith(it.path);
+                                        else if (m === "Open With\u2026") { owMenu.x = ctx.x + 30; owMenu.y = ctx.y + 30; root.openWith(it.path); }
                                         else if (m === "Rename\u2026") renamer.begin(it);
                                         else if (m === "Duplicate") { for (var di = 0; di < sel.length; di++) root.duplicate(sel[di]); }
                                         else if (m === "Compress") root.compress(sel);
@@ -1024,7 +1073,7 @@ Scope {
                                         }
                                         else if (m === "Pin to Dock") root.pinFolder(it.path);
                                         else if (m === "Copy Path") Quickshell.execDetached(["sh", "-c", "printf '%s' \"$1\" | wl-copy", "sh", it.path]);
-                                        else if (m === "Move to Trash") root.trash(it.path);
+                                        else if (m === "Move to Trash") { for (var ti = 0; ti < sel.length; ti++) root.trash(sel[ti]); }
                                     }
                                 }
                             }
@@ -1059,11 +1108,52 @@ Scope {
                         }
                     }
                 }
+                // Open With… : the apps for this kind of file
+                Rectangle {
+                    id: owMenu
+                    visible: root.owPath !== ""
+                    z: 51
+                    width: 230; height: owCol.height + 10
+                    radius: 10
+                    color: pal.dark ? Qt.rgba(0.17, 0.17, 0.18, 0.98) : Qt.rgba(0.98, 0.98, 0.99, 0.99)
+                    border.width: 1; border.color: pal.sep
+                    layer.enabled: true
+                    layer.effect: MultiEffect { shadowEnabled: true; shadowBlur: 0.9; shadowOpacity: 0.4; shadowVerticalOffset: 6 }
+                    Column {
+                        id: owCol
+                        y: 5; width: parent.width
+                        Text {
+                            x: 14; height: 22; verticalAlignment: Text.AlignVCenter
+                            text: owProc.running ? "Looking for apps\u2026" : (root.owApps.length === 0 ? "No apps for this file" : "Open With")
+                            color: pal.text3; font.family: root.fam; font.pixelSize: 11; font.weight: Font.DemiBold
+                        }
+                        Repeater {
+                            model: root.owApps
+                            delegate: Item {
+                                required property var modelData
+                                width: owCol.width; height: 28
+                                Rectangle { visible: owMa.containsMouse; x: 5; width: parent.width - 10; height: 26; radius: 5; color: root.accent }
+                                IconImage {
+                                    x: 12; anchors.verticalCenter: parent.verticalCenter
+                                    implicitSize: 18
+                                    source: Quickshell.iconPath(parent.modelData.icon, "application-x-executable")
+                                }
+                                Text {
+                                    x: 38; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 48; elide: Text.ElideRight
+                                    text: parent.modelData.name
+                                    color: owMa.containsMouse ? "white" : pal.text
+                                    font.family: root.fam; font.pixelSize: 12
+                                }
+                                MouseArea { id: owMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.launchWith(parent.modelData.id, root.owPath) }
+                            }
+                        }
+                    }
+                }
                 MouseArea {
                     anchors.fill: parent
                     z: 40
-                    visible: ctx.item !== null
-                    onClicked: ctx.item = null
+                    visible: ctx.item !== null || root.owPath !== ""
+                    onClicked: { ctx.item = null; root.owPath = ""; }
                 }
 
                 // the keys a file manager is expected to answer to

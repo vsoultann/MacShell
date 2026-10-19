@@ -6,6 +6,7 @@ Item {
     property real value: 0.5
     property real minimum: 0
     property color accent: "#0A84FF"
+    property string material: "liquid"
     signal moved(real v)
     height: 30
     readonly property real trackX: 34
@@ -38,40 +39,12 @@ Item {
         }
     }
 
-    Rectangle {
-        x: ws.trackX; width: ws.trackW; height: 5; radius: 2.5
+    LiquidSlider {
+        x: ws.trackX - 10; width: ws.trackW + 20
         anchors.verticalCenter: parent.verticalCenter
-        color: Qt.rgba(1, 1, 1, 0.18)
-    }
-    Rectangle {
-        x: ws.trackX; width: ws.pos * ws.trackW; height: 5; radius: 2.5
-        anchors.verticalCenter: parent.verticalCenter
-        color: ws.accent
-        Behavior on width { enabled: !wsMa.pressed; NumberAnimation { duration: 160; easing.type: Easing.OutQuint } }
-    }
-    Rectangle {
-        x: ws.trackX + ws.pos * ws.trackW - 11 + 1; y: (ws.height - 22) / 2 + 1
-        width: 22; height: 22; radius: 11
-        color: Qt.rgba(0, 0, 0, 0.2)
-        Behavior on x { enabled: !wsMa.pressed; NumberAnimation { duration: 160; easing.type: Easing.OutQuint } }
-    }
-    Rectangle {
-        id: wsKnob
-        x: ws.trackX + ws.pos * ws.trackW - 11; y: (ws.height - 22) / 2
-        width: 22; height: 22; radius: 11
-        color: "white"
-        border.width: 1; border.color: Qt.rgba(0, 0, 0, 0.14)
-        scale: wsMa.pressed ? 1.12 : 1
-        Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutQuint } }
-        Behavior on x { enabled: !wsMa.pressed; NumberAnimation { duration: 160; easing.type: Easing.OutQuint } }
-    }
-    MouseArea {
-        id: wsMa
-        anchors.fill: parent
-        preventStealing: true
-        cursorShape: Qt.PointingHandCursor
-        function setFrom(mx) { ws.moved(Math.max(ws.minimum, Math.min(1, (mx - ws.trackX) / ws.trackW))); }
-        onPressed: mouse => setFrom(mouse.x)
-        onPositionChanged: mouse => { if (pressed) setFrom(mouse.x); }
+        value: ws.value; minimum: ws.minimum
+        accent: ws.accent; trackColor: Qt.rgba(1, 1, 1, 0.18); trackH: 5; knobSize: 22
+        material: ws.material
+        onMoved: v => ws.moved(v)
     }
 }

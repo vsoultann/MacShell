@@ -12,6 +12,8 @@ import Quickshell.Io
 Scope {
     id: root
     property var hub: null
+    // close through the shell, so its window captures are released first (see shell.qml → hideWindow)
+    function hideWin(w) { if (root.hub && root.hub.hideWindow) root.hub.hideWindow(w); else w.visible = false; }
     readonly property var dock: hub ? hub.dock : null
     readonly property var bar: hub ? hub.bar : null
     readonly property bool darkMode: dock ? dock.darkMode : true
@@ -219,6 +221,8 @@ Scope {
 
     Window {
         id: win
+        // Super + Q, Super + W, the Dock's Quit: same careful close as the traffic light
+        onClosing: close => { close.accepted = false; root.hideWin(win); }
         title: "AirDrop"
         width: 620; height: 500
         minimumWidth: 460; minimumHeight: 380
@@ -281,7 +285,7 @@ Scope {
                 }
                 MouseArea {
                     id: tlMa; anchors.fill: parent; hoverEnabled: true
-                    onClicked: mouse => { if (mouse.x < 22) win.visible = false; else if (mouse.x < 44) root.hub && root.hub.minimizeWindow ? root.hub.minimizeWindow(win.title) : win.showMinimized(); else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen(); }
+                    onClicked: mouse => { if (mouse.x < 22) root.hideWin(win); else if (mouse.x < 44) root.hub && root.hub.minimizeWindow ? root.hub.minimizeWindow(win.title) : win.showMinimized(); else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen(); }
                 }
             }
             Text {
@@ -305,7 +309,20 @@ Scope {
                 }
                 NumberAnimation { id: radarIn; target: radar; property: "intro"; from: 0; to: 1; duration: 650; easing.type: Easing.OutCubic }
 
-                // rings that ripple outwards one after another, like the real thing
+                // rings that ripple outwards one after another, like the real thing: each one fades in as it leaves the
+                // centre and fades out as it reaches the edge (never pops in or out), with a faint glow along its line
+                Item {
+                    id: rings
+                    anchors.fill: parent
+                    layer.enabled: win.visible
+                    layer.effect: MultiEffect {
+                        shadowEnabled: true
+                        shadowColor: root.darkMode ? "white" : root.accent
+                        shadowBlur: 0.55
+                        shadowOpacity: root.darkMode ? 0.55 : 0.4
+                        shadowHorizontalOffset: 0; shadowVerticalOffset: 0
+                        autoPaddingEnabled: true
+                    }
                 Repeater {
                     model: 3
                     delegate: Rectangle {
@@ -313,12 +330,13 @@ Scope {
                         required property int index
                         anchors.centerIn: parent
                         property real t: 0
+                        readonly property real fade: Math.min(1, t / 0.18) * Math.pow(1 - t, 1.3)
                         width: (0.35 + t * 0.75) * Math.min(radar.width, radar.height)
                         height: width
                         radius: width / 2
                         color: "transparent"
-                        border.width: 1
-                        border.color: Qt.rgba(pal.text.r, pal.text.g, pal.text.b, 0.10 * (1 - t))
+                        border.width: 1.2
+                        border.color: Qt.rgba(pal.text.r, pal.text.g, pal.text.b, 0.16 * fade)
                         SequentialAnimation {
                             running: win.visible
                             PauseAnimation { duration: ringD.index * 1200 }
@@ -328,6 +346,7 @@ Scope {
                             }
                         }
                     }
+                }
                 }
 
                 // nobody around yet

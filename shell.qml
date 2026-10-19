@@ -39,6 +39,47 @@ ShellRoot {
         property var finder: finderApp
         // one way to open a folder, and one way to put a window away — every part of the shell uses these
         function openFolder(path) { if (finderApp) finderApp.open(path); else Quickshell.execDetached(["xdg-open", path]); }
+        // any path: folders in Finder, pictures in Preview, videos in the Player, everything else in its own app
+        function openPath(path) {
+            var p = String(path || "").replace(/^file:\/\//, "");
+            if (p === "") return;
+            if (/\.(png|jpe?g|webp|gif|bmp|avif|tiff?|heic)$/i.test(p) && previewApp) { previewApp.open(p); return; }
+            if (/\.(mp4|mkv|webm|mov|avi|m4v)$/i.test(p) && videoPlayer) { videoPlayer.play(p, p.split("/").pop()); return; }
+            // a folder (or anything we can't tell) goes through the session's opener, which sends folders to Finder
+            Quickshell.execDetached(["sh", "-c", "if [ -d \"$1\" ]; then qs -c MacShell ipc call finder folder \"$1\"; else exec xdg-open \"$1\"; fi", "sh", p]);
+        }
+        // ── Closing one of the shell's own windows (Finder, Photos, Settings, …) ──
+        // The glass and the Dock previews capture every window, ours included. Destroying one of our windows while a
+        // capture frame of it was still in flight killed the whole Wayland connection ("wl_display: invalid object").
+        // So every close goes through here: the captures of that window are released first, the window hides a
+        // moment later, once nothing of it is in flight any more.
+        property var releasing: ({})          // address → true while a window of ours is on its way out
+        function hideWindow(w) {
+            if (!w || !w.visible) return;
+            var h = hyprWin(function (t) { return t.title === w.title && (t.lastIpcObject || {}).class === "org.quickshell"; });
+            if (!h) { w.visible = false; return; }
+            var a = String(h.address).replace(/^0x/, "");
+            var r = {}, c = {}, k;
+            for (k in releasing) r[k] = true;
+            for (k in closingWins) c[k] = true;
+            r[a] = true; c[a] = true;
+            releasing = r; closingWins = c;
+            tlTick++;
+            hideLater.wins = hideLater.wins.concat([w]);
+            hideLater.restart();
+            closingForget.restart();
+        }
+        Timer {
+            id: hideLater
+            property var wins: []
+            interval: 160
+            onTriggered: {
+                var l = wins; wins = [];
+                for (var i = 0; i < l.length; i++) l[i].visible = false;
+                releaseForget.restart();
+            }
+        }
+        Timer { id: releaseForget; interval: 3000; onTriggered: sharedHub.releasing = ({}) }
         // ── Minimise / restore, with the effect from Settings → Desktop & Dock (genie, fade or instant) ──
         // Every way of minimising goes through here, so they all animate the same way.
         property var minimizedAt: ({})     // address → { win, screen }: where it was, so restoring puts it back
@@ -269,6 +310,7 @@ ShellRoot {
         function tlFor(addr) {
             var a = String(addr).replace(/^0x/, "");
             var ts = Hyprland.toplevels.values;
+            if (releasing[a]) return null;
             for (var i = 0; i < ts.length; i++) {
                 if (ts[i].address !== a) continue;
                 var st = tlState, now = Date.now();
@@ -335,35 +377,15 @@ ShellRoot {
             onTriggered: sharedHub.ipcPoll()
         }
 
-        // wallpaper the glass refracts (Noctalia settings.toml -> awww/swww/hyprpaper)
+        // wallpaper the glass refracts when MacShell has none of its own set yet: whatever the wallpaper daemon shows
         Process {
             id: wpProc
             command: ["sh", "-c",
-                ""
-                + "out=\"\"\n"
-                + "st=\"${XDG_STATE_HOME:-$HOME/.local/state}/noctalia\"; ns=\"${NOCTALIA_STATE_HOME:-/nonexistent}\"\n"
-                + "for f in \"$ns/settings.toml\" \"$st/settings.toml\" \"$HOME/.config/noctalia/settings.toml\" \"$HOME/.config/noctalia/config.toml\"; do\n"
-                + "  [ -f \"$f\" ] || continue\n"
-                + "  out=\"$out$(awk '\n"
-                + "    /^[ \\t]*\\[\\[/ { sec = \"\"; next }\n"
-                + "    /^[ \\t]*\\[/ { sec = $0; gsub(/[\\[\\] \\t\"]/, \"\", sec); next }\n"
-                + "    sec ~ /^wallpaper\\.(default|last|monitors\\..+)$/ && /^[ \\t]*path[ \\t]*=/ {\n"
-                + "      v = $0; sub(/^[^=]*=[ \\t]*\"/, \"\", v); sub(/\".*$/, \"\", v); print sec \"\\t\" v\n"
-                + "    }' \"$f\")\n"
-                + "\"\n"
-                + "done\n"
-                + "if [ -z \"$(printf %s \"$out\" | tr -d ' \\t\\n')\" ]; then\n"
-                + "  p=$(swww query 2>/dev/null | sed -n 's/.*image: //p' | head -n1)\n"
-                + "  [ -z \"$p\" ] && p=$(awww query 2>/dev/null | sed -n 's/.*image: //p' | head -n1)\n"
-                + "  [ -z \"$p\" ] && p=$(hyprctl hyprpaper listactive 2>/dev/null | head -n1 | sed 's/.*= //')\n"
-                + "  if [ -z \"$p\" ]; then f=\"$HOME/.config/hypr/hyprpaper.conf\"\n"
-                + "    [ -f \"$f\" ] && p=$(grep -E '^[[:space:]]*(path|wallpaper)[[:space:]]*=' \"$f\" | head -n1 | sed -E 's/^[^=]*=[[:space:]]*//; s/^[^,\\/]*,//')\n"
-                + "  fi\n"
-                + "  p=$(printf %s \"$p\" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')\n"
-                + "  [ -n \"$p\" ] && out=\"wallpaper.default$(printf '\\t')$p\"\n"
-                + "fi\n"
-                + "printf '%s' \"$out\"\n"
-            ]
+                "p=$(awww query 2>/dev/null | sed -n 's/.*image: //p' | head -n1); "
+                + "[ -z \"$p\" ] && p=$(swww query 2>/dev/null | sed -n 's/.*image: //p' | head -n1); "
+                + "[ -z \"$p\" ] && p=$(hyprctl hyprpaper listactive 2>/dev/null | head -n1 | sed 's/.*= //'); "
+                + "p=$(printf %s \"$p\" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'); "
+                + "[ -n \"$p\" ] && printf 'wallpaper.default\\t%s' \"$p\""]
             stdout: StdioCollector {
                 onStreamFinished: {
                     var m = {}, lines = text.split("\n");

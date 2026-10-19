@@ -12,6 +12,8 @@ import Quickshell.Io
 Scope {
     id: root
     property var hub: null
+    // close through the shell, so its window captures are released first (see shell.qml → hideWindow)
+    function hideWin(w) { if (root.hub && root.hub.hideWindow) root.hub.hideWindow(w); else w.visible = false; }
     readonly property var dock: hub ? hub.dock : null
     readonly property var bar: hub ? hub.bar : null
     readonly property bool darkMode: dock ? dock.darkMode : true
@@ -77,11 +79,13 @@ Scope {
         var next = Math.min(index, siblings.length - 2);
         var keep = siblings.filter(function (s) { return s.path !== root.path; });
         siblings = keep;
-        if (keep.length === 0) win.visible = false; else show(Math.max(0, next));
+        if (keep.length === 0) root.hideWin(win); else show(Math.max(0, next));
     }
 
     Window {
         id: win
+        // Super + Q, Super + W, the Dock's Quit: same careful close as the traffic light
+        onClosing: close => { close.accepted = false; root.hideWin(win); }
         title: "Preview"
         width: 960; height: 660
         minimumWidth: 520; minimumHeight: 360
@@ -159,7 +163,7 @@ Scope {
                     }
                     MouseArea {
                         id: tlMa; anchors.fill: parent; hoverEnabled: true
-                        onClicked: mouse => { if (mouse.x < 22) win.visible = false; else if (mouse.x < 44) root.hub && root.hub.minimizeWindow ? root.hub.minimizeWindow(win.title) : win.showMinimized(); else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen(); }
+                        onClicked: mouse => { if (mouse.x < 22) root.hideWin(win); else if (mouse.x < 44) root.hub && root.hub.minimizeWindow ? root.hub.minimizeWindow(win.title) : win.showMinimized(); else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen(); }
                     }
                 }
                 MorphText {
@@ -367,7 +371,7 @@ Scope {
             Keys.onPressed: event => {
                 if (event.key === Qt.Key_Right || event.key === Qt.Key_Down) root.show(root.index + 1);
                 else if (event.key === Qt.Key_Left || event.key === Qt.Key_Up) root.show(root.index - 1);
-                else if (event.key === Qt.Key_Escape) win.visible = false;
+                else if (event.key === Qt.Key_Escape) root.hideWin(win);
                 else if (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal) { root.fit = false; root.zoom = Math.min(8, root.zoom * 1.25); }
                 else if (event.key === Qt.Key_Minus) { root.fit = false; root.zoom = Math.max(0.1, root.zoom / 1.25); }
                 else if (event.key === Qt.Key_0) { root.fit = true; root.zoom = 1; }

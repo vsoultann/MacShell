@@ -2,8 +2,9 @@
 Type=Application
 Name=Finder
 Comment=Browse your files
-Exec=qs -c MacShell ipc call finder open
+Exec=@HOME@/.config/hypr-macshell/scripts/macshell-finder.sh %u
 Icon=system-file-manager
 Categories=System;FileTools;FileManager;
+MimeType=inode/directory;
 Keywords=files;folder;browse;manager;
 StartupNotify=false

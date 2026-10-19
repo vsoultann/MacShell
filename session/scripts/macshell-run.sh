@@ -9,6 +9,8 @@ CFG="${MACSHELL_CONFIG:-MacShell}"
 QS_DIR="$HOME/.config/quickshell"
 GOOD="$CFG.lastgood"
 export QSG_USE_SIMPLE_ANIMATION_DRIVER=1 MALLOC_ARENA_MAX=2
+# stderr of the last runs (Qt / Wayland fatal errors never reach the shell's own log)
+LOGDIR="${XDG_CACHE_HOME:-$HOME/.cache}/macshell"; mkdir -p "$LOGDIR"
 
 fails=0
 while :; do
@@ -31,7 +33,9 @@ while :; do
           fi ) &
     fi
 
-    qs -c "$name"
+    [ -f "$LOGDIR/qs-stderr.log" ] && mv -f "$LOGDIR/qs-stderr.log" "$LOGDIR/qs-stderr.prev.log"
+    qs -c "$name" 2>"$LOGDIR/qs-stderr.log"
+    echo "exit status $? after $(( $(date +%s) - start ))s" >>"$LOGDIR/qs-stderr.log"
     lived=$(( $(date +%s) - start ))
     if [ "$lived" -lt 15 ]; then fails=$((fails + 1)); else fails=0; fi
     # after the fallback has been running, try the real one again next time

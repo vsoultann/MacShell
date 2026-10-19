@@ -14,6 +14,8 @@ import Quickshell.Hyprland
 Scope {
     id: root
     property var hub: null
+    // close through the shell, so its window captures are released first (see shell.qml → hideWindow)
+    function hideWin(w) { if (root.hub && root.hub.hideWindow) root.hub.hideWindow(w); else w.visible = false; }
     readonly property var dock: hub ? hub.dock : null
     readonly property var bar: hub ? hub.bar : null
     readonly property bool darkMode: dock ? dock.darkMode : true
@@ -209,7 +211,7 @@ Scope {
                 root.setBusy(ap.appid, "");
                 root.refresh();
                 if (ap.what !== "remove") root.refreshUpdates();
-                if (code !== 0 && root.bar) root.bar.notify ? root.bar.notify("App Store", "Couldn't " + ap.what + " " + ap.appid) : 0;
+                if (code !== 0 && root.bar) root.bar.notify("App Store", "Couldn't " + ap.what + " " + ap.appid);
                 ap.destroy();
             }
         }
@@ -226,6 +228,8 @@ Scope {
     // ═════════════ WINDOW ═════════════
     Window {
         id: win
+        // Super + Q, Super + W, the Dock's Quit: same careful close as the traffic light
+        onClosing: close => { close.accepted = false; root.hideWin(win); }
         title: "App Store"
         width: 1080; height: 720
         minimumWidth: 820; minimumHeight: 560
@@ -312,7 +316,7 @@ Scope {
                     MouseArea {
                         id: tlMa; anchors.fill: parent; hoverEnabled: true
                         onClicked: mouse => {
-                            if (mouse.x < 22) win.visible = false;
+                            if (mouse.x < 22) root.hideWin(win);
                             else if (mouse.x < 44) root.hub && root.hub.minimizeWindow ? root.hub.minimizeWindow(win.title) : win.showMinimized();
                             else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen();
                         }
@@ -486,6 +490,7 @@ Scope {
                         transform: Translate { y: (1 - pageLoader.opacity) * 10 }
                     }
                 }
+                LiquidScrollBar { flick: pageFlick; anchors.right: pageFlick.right; anchors.top: pageFlick.top; anchors.bottom: pageFlick.bottom; material: root.bar ? root.bar.material : "liquid"; dark: root.darkMode }
 
                 // the page fades out under the toolbar and at the bottom edge instead of being cut
                 Rectangle {

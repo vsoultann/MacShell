@@ -16,6 +16,8 @@ import Quickshell.Hyprland
 Scope {
     id: root
     property var hub: null
+    // close through the shell, so its window captures are released first (see shell.qml → hideWindow)
+    function hideWin(w) { if (root.hub && root.hub.hideWindow) root.hub.hideWindow(w); else w.visible = false; }
     readonly property var dock: hub ? hub.dock : null
     readonly property var bar: hub ? hub.bar : null
     readonly property bool darkMode: dock ? dock.darkMode : true
@@ -336,6 +338,8 @@ Scope {
     // ═════════════ THE WINDOW ═════════════
     Window {
         id: win
+        // Super + Q, Super + W, the Dock's Quit: same careful close as the traffic light
+        onClosing: close => { close.accepted = false; root.hideWin(win); }
         title: "Clock"
         width: 780; height: 540
         minimumWidth: 640; minimumHeight: 460
@@ -421,7 +425,7 @@ Scope {
                     MouseArea {
                         id: tlMa; anchors.fill: parent; hoverEnabled: true
                         onClicked: mouse => {
-                            if (mouse.x < 22) win.visible = false;
+                            if (mouse.x < 22) root.hideWin(win);
                             else if (mouse.x < 44) root.hub && root.hub.minimizeWindow ? root.hub.minimizeWindow(win.title) : win.showMinimized();
                             else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen();
                         }
@@ -972,22 +976,13 @@ Scope {
     // ═════════════ small parts ═════════════
     function range(n, padded) { var a = []; for (var i = 0; i < n; i++) a.push(padded ? pad(i) : String(i)); return a; }
 
-    component CSwitch: Rectangle {
-        id: csw
+    component CSwitch: LiquidSwitch {
         property bool on: false
-        signal toggled(bool v)
-        width: 38; height: 22; radius: 11
-        color: on ? "#30D158" : (root.darkMode ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.14))
-        Behavior on color { ColorAnimation { duration: 200 } }
-        Rectangle {
-            width: 18; height: 18; radius: 9; y: 2
-            x: csw.on ? csw.width - width - 2 : 2
-            Behavior on x { NumberAnimation { duration: 260; easing.type: Easing.OutQuint } }
-            color: "white"
-            layer.enabled: true
-            layer.effect: MultiEffect { shadowEnabled: true; shadowBlur: 0.3; shadowOpacity: 0.3; shadowVerticalOffset: 1 }
-        }
-        MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor; onClicked: csw.toggled(!csw.on) }
+        checked: on
+        accent: "#30D158"
+        offColor: root.darkMode ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.14)
+        dark: root.darkMode
+        material: root.hub && root.hub.bar ? root.hub.bar.material : "liquid"
     }
     component RoundBtn: Item {
         id: rb

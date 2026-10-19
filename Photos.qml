@@ -13,6 +13,8 @@ import Quickshell.Io
 Scope {
     id: root
     property var hub: null
+    // close through the shell, so its window captures are released first (see shell.qml → hideWindow)
+    function hideWin(w) { if (root.hub && root.hub.hideWindow) root.hub.hideWindow(w); else w.visible = false; }
     readonly property var dock: hub ? hub.dock : null
     readonly property var bar: hub ? hub.bar : null
     readonly property bool darkMode: dock ? dock.darkMode : true
@@ -21,7 +23,8 @@ Scope {
     Behavior on accent { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
     readonly property string home: Quickshell.env("HOME")
 
-    property string libraryDir: home + "/Pictures"
+    // the folders the library is made of (Folders in the sidebar → Add Folder…); saved in ~/.config/macshell/photos.json
+    property var sources: [home + "/Pictures"]
     property var photos: []                 // { path, name, dir, mtime }
     property var albums: []                 // { name, dir, count }
     property string album: ""               // "" = the whole library
@@ -34,6 +37,7 @@ Scope {
         var a = [];
         for (var i = 0; i < photos.length; i++) {
             if (album === "fav") { if (favs.indexOf(photos[i].path) >= 0) a.push(photos[i]); }
+            else if (album.indexOf("src:") === 0) { if ((photos[i].dir + "/").indexOf(album.substring(4) + "/") === 0) a.push(photos[i]); }
             else if (album === "" || photos[i].dir === album) a.push(photos[i]);
         }
         return a;
@@ -56,9 +60,9 @@ Scope {
         scanProc.command = ["sh", "-c",
             // hidden files and folders are pruned in find itself: the old grep tried to match a tab with \\t,
             // which plain grep reads as the letter t, so AppleDouble stubs (._NAME.jpg) were still listed
-            "find \"$1\" -name '.*' -prune -o -type f \\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' "
+            "find \"$@\" -name '.*' -prune -o -type f \\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' "
             + "-o -iname '*.gif' -o -iname '*.bmp' -o -iname '*.tif' -o -iname '*.tiff' -o -iname '*.avif' -o -iname '*.heic' \\) "
-            + "-printf '%T@\\t%h\\t%f\\n' 2>/dev/null | grep -v '/__MACOSX/' | sort -rn | head -4000", "sh", root.libraryDir];
+            + "-printf '%T@\\t%h\\t%f\\n' 2>/dev/null | grep -v '/__MACOSX/' | sort -rn | head -4000", "sh"].concat(root.sources);
         scanProc.running = true;
     }
     Process {
@@ -75,7 +79,7 @@ Scope {
                 }
                 root.photos = out;
                 var al = [];
-                for (var d in dirs) if (d !== root.libraryDir) al.push({ name: d.split("/").pop(), dir: d, count: dirs[d] });
+                for (var d in dirs) if (root.sources.indexOf(d) < 0) al.push({ name: d.split("/").pop(), dir: d, count: dirs[d] });
                 al.sort(function (x, y) { return y.count - x.count; });
                 root.albums = al;
                 root.scanning = false;
@@ -95,14 +99,49 @@ Scope {
         Quickshell.execDetached(["sh", "-c", "mkdir -p \"$HOME/.config/macshell\" && printf '%s' \"$1\" > \"$HOME/.config/macshell/photo-favourites.json\"", "sh", JSON.stringify(f)]);
     }
 
+    FileView {
+        path: root.home + "/.config/macshell/photos.json"
+        printErrors: false
+        onLoaded: {
+            try { var o = JSON.parse(text()); if (o.sources && o.sources.length) root.sources = o.sources; } catch (e) {}
+        }
+    }
+    function saveSources() {
+        Quickshell.execDetached(["sh", "-c", "mkdir -p \"$HOME/.config/macshell\" && printf '%s' \"$1\" > \"$HOME/.config/macshell/photos.json\"",
+                                 "sh", JSON.stringify({ sources: sources })]);
+    }
+    function addSource(dir) {
+        dir = String(dir || "").replace(/\/+$/, "");
+        if (dir === "" || sources.indexOf(dir) >= 0) return;
+        // a folder inside one already in the library adds nothing
+        for (var i = 0; i < sources.length; i++) if ((dir + "/").indexOf(sources[i] + "/") === 0) { album = "src:" + sources[i]; return; }
+        sources = sources.filter(function (s) { return (s + "/").indexOf(dir + "/") !== 0; }).concat([dir]);
+        saveSources();
+        album = "src:" + dir;
+        photos = []; scan();
+    }
+    function removeSource(dir) {
+        if (sources.length <= 1) return;
+        sources = sources.filter(function (s) { return s !== dir; });
+        saveSources();
+        if (album.indexOf(dir) >= 0) album = "";
+        photos = []; scan();
+    }
+    function pickSource() {
+        if (hub && hub.finder && hub.finder.chooseFolder)
+            hub.finder.chooseFolder(function (l) { root.addSource(l[0]); win.raise(); }, "Add to Photos", home);
+    }
+
     function open(dir) {
-        if (dir !== undefined && dir !== "") { libraryDir = dir; album = ""; photos = []; }
+        if (dir !== undefined && dir !== "") addSource(dir);
         win.visible = true; win.raise(); win.requestActivate();
         if (photos.length === 0) scan();
     }
 
     Window {
         id: win
+        // Super + Q, Super + W, the Dock's Quit: same careful close as the traffic light
+        onClosing: close => { close.accepted = false; root.hideWin(win); }
         title: "Photos"
         width: 1100; height: 740
         minimumWidth: 760; minimumHeight: 520
@@ -182,7 +221,7 @@ Scope {
                     MouseArea {
                         id: tlMa; anchors.fill: parent; hoverEnabled: true
                         onClicked: mouse => {
-                            if (mouse.x < 22) win.visible = false;
+                            if (mouse.x < 22) root.hideWin(win);
                             else if (mouse.x < 44) root.hub && root.hub.minimizeWindow ? root.hub.minimizeWindow(win.title) : win.showMinimized();
                             else win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen();
                         }
@@ -208,6 +247,44 @@ Scope {
                                 Text { x: 32; anchors.verticalCenter: parent.verticalCenter; text: navRow.modelData.n; color: pal.text; font.family: root.fam; font.pixelSize: 13; font.weight: navRow.sel ? Font.DemiBold : Font.Normal }
                                 MouseArea { id: nMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.album = navRow.modelData.id; root.viewing = -1; } }
                             }
+                        }
+                        Item { width: 1; height: 12 }
+                        Text { x: 10; text: "Folders"; color: pal.text3; font.family: root.fam; font.pixelSize: 11; font.weight: Font.DemiBold }
+                        Item { width: 1; height: 4 }
+                        Repeater {
+                            model: root.sources
+                            delegate: Rectangle {
+                                id: srcRow
+                                required property var modelData
+                                readonly property bool sel: root.album === "src:" + modelData
+                                width: parent.width; height: 28; radius: 6
+                                color: sel ? pal.selRow : (sMa.containsMouse ? pal.pill : "transparent")
+                                Behavior on color { ColorAnimation { duration: 140 } }
+                                PhGlyph { x: 9; anchors.verticalCenter: parent.verticalCenter; width: 15; height: 15; kind: "folder"; color: srcRow.sel ? root.accent : pal.text2 }
+                                Text {
+                                    x: 32; anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width - 60; elide: Text.ElideMiddle
+                                    text: srcRow.modelData.replace(root.home, "~"); color: pal.text; font.family: root.fam; font.pixelSize: 12
+                                }
+                                MouseArea { id: sMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { root.album = "src:" + srcRow.modelData; root.viewing = -1; } }
+                                // remove (the library always keeps at least one folder)
+                                PhGlyph {
+                                    anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
+                                    width: 12; height: 12; kind: "close"; color: xMa.containsMouse ? pal.text : pal.text3
+                                    visible: root.sources.length > 1
+                                    opacity: sMa.containsMouse || xMa.containsMouse ? 1 : 0
+                                    Behavior on opacity { NumberAnimation { duration: 140 } }
+                                    MouseArea { id: xMa; anchors.fill: parent; anchors.margins: -5; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.removeSource(srcRow.modelData) }
+                                }
+                            }
+                        }
+                        Rectangle {
+                            width: parent.width; height: 28; radius: 6
+                            color: addMa.containsMouse ? pal.pill : "transparent"
+                            Behavior on color { ColorAnimation { duration: 140 } }
+                            Text { x: 32; anchors.verticalCenter: parent.verticalCenter; text: "Add Folder\u2026"; color: root.accent; font.family: root.fam; font.pixelSize: 12 }
+                            Text { x: 11; anchors.verticalCenter: parent.verticalCenter; text: "+"; color: root.accent; font.family: root.fam; font.pixelSize: 16; font.weight: Font.Medium }
+                            MouseArea { id: addMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.pickSource() }
                         }
                         Item { width: 1; height: 12 }
                         Text { x: 10; text: "Albums"; color: pal.text3; font.family: root.fam; font.pixelSize: 11; font.weight: Font.DemiBold }
@@ -358,10 +435,11 @@ Scope {
                     Text {
                         visible: !root.scanning && root.shown.length === 0
                         anchors.centerIn: parent
-                        text: root.album === "fav" ? "No favourites yet — right-click a photo to add one." : "No photos in " + root.libraryDir
+                        text: root.album === "fav" ? "No favourites yet — right-click a photo to add one." : "No photos in " + (root.album.indexOf("src:") === 0 ? root.album.substring(4) : root.sources.join(", "))
                         color: pal.text3; font.family: root.fam; font.pixelSize: 13
                     }
                 }
+                LiquidScrollBar { flick: grid; anchors.right: grid.right; anchors.top: grid.top; anchors.bottom: grid.bottom; material: root.bar ? root.bar.material : "liquid"; dark: root.darkMode }
 
                 // the grid fades out under the toolbar and at the bottom edge
                 Rectangle {

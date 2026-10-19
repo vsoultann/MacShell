@@ -90,6 +90,17 @@ same time, as long as both sit on one channel. `./install.sh hotspot` installs t
 then sharing runs the hotspot on its own interface and takes the channel you are already on — your connection stays
 up, the network list stays real. Adapters that can't do both still work the old way, and Settings says which you get.
 
+**Its own session, laptop-ready** — the "Hyprland (MacShell)" login runs a standalone Hyprland config
+(`~/.config/hypr-macshell/hyprland.lua` + `macshell/*.lua`), not another shell's dotfiles. The volume, mute, mic-mute,
+brightness and media keys work out of the box (also on the lock screen) and show the Liquid Glass HUD. Folders open
+in MacShell's Finder everywhere — the Dock, the desktop, Spotlight, the Control Center, and `xdg-open` from other apps.
+Your `custom/*.lua` overrides carry over when you update.
+
+**Liquid Glass controls** — every switch and slider is one shared component: holding the knob turns it into a glass
+lens (the Control Center and Sound sliders use the original MacShell CCSlider with its real Liquid Glass), and App
+Store, Finder and Photos have an overlay scroller that widens into glass. They follow Settings → Appearance (Liquid
+Glass, Frosted, Blur, Opaque).
+
 **Try it without disturbing the one you run** — `./install.sh sandbox` installs a second, complete copy under its
 own name: its own shell folder, session config, settings and login entry. Nothing is shared with the MacShell you
 already have, so you can test a version and then just delete it. Name it with
@@ -163,8 +174,8 @@ drops. No setting to remember: it watches the load average and uses hysteresis s
 ## Credits
 
 - [0-ss/Macshell](https://github.com/0-ss/Macshell) — the original MacShell (menu bar, Dock, Liquid Glass shader). All credit for the base goes there.
-- The session config started from [end-4/dots-hyprland](https://github.com/end-4/dots-hyprland) (GPL-3.0).
-- [MacTahoe icon theme](https://github.com/vinceliuice/MacTahoe-icon-theme) by vinceliuice (GPL-3.0) — `assets/music-app.svg` comes from it.
+- Early versions of the session config started from [end-4/dots-hyprland](https://github.com/end-4/dots-hyprland) (GPL-3.0); it is its own standalone config now.
+- [MacTahoe icon theme](https://github.com/vinceliuice/MacTahoe-icon-theme) by vinceliuice (GPL-3.0).
 - [Roboto Flex](https://github.com/googlefonts/roboto-flex) (OFL) and [Inter](https://rsms.me/inter/) (OFL), downloaded by the installer.
 - Lyrics: [LRCLIB](https://lrclib.net) and NetEase Cloud Music. Weather: [Open-Meteo](https://open-meteo.com).
 - Apple's wallpapers belong to Apple and are not included — `--wallpapers` downloads them.

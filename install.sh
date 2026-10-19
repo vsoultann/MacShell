@@ -160,6 +160,9 @@ do_shell() {
     # MacShell's own apps (Clock) in the app launcher / Spotlight / Dock
     mkdir -p "$HOME/.local/share/applications"
     cp "$REPO"/session/applications/*.desktop "$HOME/.local/share/applications/" 2>/dev/null || true
+    sed -i "s|@HOME@|$HOME|g" "$HOME"/.local/share/applications/macshell-*.desktop 2>/dev/null || true
+    # folders open in our Finder; in the MacShell session only (XDG_CURRENT_DESKTOP=MacShell:Hyprland reads this list first)
+    printf '[Default Applications]\ninode/directory=macshell-finder.desktop\n' > "$HOME/.config/macshell-mimeapps.list"
     # AirDrop's icon is Apple's own symbol: downloaded and set on a macOS tile, not shipped in this repo
     python3 -I "$REPO/session/scripts/macshell-airdrop-icon.py" || warn "AirDrop icon: using the theme's LocalSend icon"
     command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
@@ -217,21 +220,12 @@ do_config() {
     # your custom/ overrides are never overwritten
     rsync -a --exclude 'custom/' "$REPO/session"/ "$SESS"/
     [ -d "$SESS/custom" ] || cp -r "$REPO/session/custom" "$SESS/custom"
-    # our own helpers inside custom/ are always refreshed (they are ours, not your overrides)
-    mkdir -p "$SESS/custom/scripts"
-    rsync -a "$REPO/session/custom/scripts"/ "$SESS/custom/scripts"/
-    # ii's shell binds fall back to a fuzzel menu when `qs -c $qsConfig ipc call TEST_ALIVE` fails, which fired a
-    # second menu on top of ours for SUPER + V and friends. Pointing qsConfig at MacShell makes that probe succeed.
-    if ! grep -q 'qsConfig' "$SESS/custom/variables.lua" 2>/dev/null; then
-        printf '%s\n' 'hl.env("qsConfig", "MacShell")' >> "$SESS/custom/variables.lua"
-    fi
-    # SUPER + E opens MacShell's Finder unless you already pointed fileManager somewhere else
-    if ! grep -q '^fileManager' "$SESS/custom/variables.lua" 2>/dev/null; then
-        printf '%s\n' '-- MacShell: SUPER + E opens our Finder, not Dolphin.' \
-                       'fileManager = "~/.config/hypr-macshell/custom/scripts/open-finder.sh"' >> "$SESS/custom/variables.lua"
-    fi
+    # the session used to be built on another shell's dotfiles (hyprland/, macshell.lua, custom/variables.lua);
+    # it is standalone now (hyprland.lua + macshell/), so the old pieces go
+    rm -rf "$SESS/hyprland" "$SESS/macshell.lua" "$SESS/custom/scripts/open-finder.sh"
+    [ -f "$SESS/custom/variables.lua" ] && grep -q 'qsConfig' "$SESS/custom/variables.lua" && rm -f "$SESS/custom/variables.lua"
     find "$SESS" -type f \( -name '*.conf' -o -name '*.lua' -o -name '*.sh' \) -exec sed -i "s|@HOME@|$HOME|g" {} +
-    chmod +x "$SESS"/scripts/*.sh "$SESS"/hyprland/scripts/*.sh "$SESS"/custom/scripts/*.sh 2>/dev/null || true
+    chmod +x "$SESS"/scripts/*.sh 2>/dev/null || true
     note "$SESS"
 }
 
@@ -306,10 +300,11 @@ do_sandbox() {
     find "$sess" -type f \( -name '*.lua' -o -name '*.conf' -o -name '*.sh' -o -name '*.desktop' \) -exec sed -i \
         -e "s|@HOME@|$HOME|g" \
         -e "s|hypr-macshell|hypr-macshell-$name|g" \
+        -e "s|/\.config/macshell/|/.config/macshell-$name/|g" \
         -e "s|qs -c MacShell|qs -c $camel|g" \
         -e "s|quickshell/MacShell|quickshell/$camel|g" \
         -e "s|-c MacLock|-c $camel/MacLock|g" {} +
-    chmod +x "$sess"/scripts/*.sh "$sess"/hyprland/scripts/*.sh "$sess"/custom/scripts/*.sh 2>/dev/null || true
+    chmod +x "$sess"/scripts/*.sh 2>/dev/null || true
 
     mkdir -p "$share"
     cp "$REPO/install.sh" "$share/install.sh" 2>/dev/null || true
@@ -427,6 +422,15 @@ do_wallpapers() {
     local d="$HOME/Pictures/Wallpapers"; mkdir -p "$d"
     curl -fsSL -A 'Mozilla/5.0' -o "$d/macos-27-GoldenGate-Dark.png"  https://9to5mac.com/wp-content/uploads/sites/6/2026/06/Gold-Gate-wallpaper-dark.png || warn "dark version failed"
     curl -fsSL -A 'Mozilla/5.0' -o "$d/macos-27-GoldenGate-Light.png" https://9to5mac.com/wp-content/uploads/sites/6/2026/06/Gold-Gate-wallpaper.png || warn "light version failed"
+    # Mac Hello greets you over one of Apple's aerials (a nature scene): a 40 s clip cut straight from Apple's server
+    local a="$d/Apple Aerials"; mkdir -p "$a"
+    if [ ! -s "$a/Greenland Icebergs.mp4" ] && have ffmpeg; then
+        say "Downloading an Apple aerial for Mac Hello (Greenland Icebergs, ~30 MB)"
+        ffmpeg -loglevel error -y -tls_verify 0 -ss 40 -t 40 \
+            -i "https://sylvan.apple.com/Videos/comp_GL_G002_C002_PSNK_v03_SDR_PS_20180925_SDR_2K_AVC.mov" \
+            -an -vf "scale=1920:-2" -c:v libx264 -preset veryfast -crf 24 "$a/Greenland Icebergs.mp4" \
+            || { rm -f "$a/Greenland Icebergs.mp4"; warn "couldn't fetch the aerial: Mac Hello uses the Golden Gate picture"; }
+    fi
     note "Apple's wallpapers are Apple's: they're downloaded from the web, not shipped in this repo."
     mkdir -p "$HOME/.config/macbar"
     [ -s "$HOME/.config/macbar/settings.json" ] || printf '{ "wallpaperPath": "%s" }\n' "$d/macos-27-GoldenGate-Dark.png" > "$HOME/.config/macbar/settings.json"
@@ -441,7 +445,7 @@ do_sounds() {
 # ── uninstall: everything, or just some features ──
 un_shell()    { pkill -f 'qs -c MacShell' 2>/dev/null || true; rm -rf "$QS/MacShell" "$SHARE"; rm -f "$HOME/.local/share/applications/macshell-clock.desktop"; note "removed the shell"; }
 un_lock()     { rm -rf "$QS/MacLock"; note "removed the lock screen"; }
-un_config()   { rm -rf "$SESS/hyprland" "$SESS/scripts"; note "removed the session config (kept $SESS/custom)"; }
+un_config()   { rm -rf "$SESS/macshell" "$SESS/hyprland" "$SESS/scripts" "$SESS/hyprland.lua"; note "removed the session config (kept $SESS/custom)"; }
 un_session()  { ask "Remove the login session (sudo)?" && sudo rm -f /usr/share/wayland-sessions/hyprland-macshell.desktop /usr/local/bin/start-hyprland-macshell; }
 un_existing() {
     rm -f "$HOME/.config/hypr/macshell.conf" "$HOME/.config/hypr/macshell.lua"

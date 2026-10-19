@@ -17,6 +17,8 @@ Item {
     property real intensity: 0.22       // 0 clear … 1 milky
     property real refract: 12           // how far the backdrop is bent at the edge, px
     property real margin: 70            // room around the letters for the morph and the refraction
+    property real rimSoft: -1           // px over which a stroke rounds off (-1: thin rim, the lock clock's look; larger: thick lens-like glass)
+    property real bevel: 4.5
     readonly property bool failed: glass.status === ShaderEffect.Error
 
     implicitWidth: label.implicitWidth
@@ -52,8 +54,8 @@ Item {
         height: maskTex.sourceRect.height
         source: maskTex
         blurEnabled: true
-        blurMax: 16
-        blur: Math.max(0.15, Math.min(0.6, gt.font.pixelSize * 0.03 / 16))
+        blurMax: 32
+        blur: gt.rimSoft > 0 ? Math.min(1, gt.rimSoft / 32) : Math.max(0.075, Math.min(0.3, gt.font.pixelSize * 0.015 / 16))
         autoPaddingEnabled: false
         visible: false
     }
@@ -100,7 +102,7 @@ Item {
         property real mode: 1
         property real intensity: gt.intensity
         property real refract: gt.refract
-        property real bevel: 4.5
+        property real bevel: gt.bevel
         property color tint: "white"
         property vector2d lightDir: Qt.vector2d(-0.45, -0.89)
         onStatusChanged: if (status === ShaderEffect.Error) console.log("[machello] glass text shader:", log)
