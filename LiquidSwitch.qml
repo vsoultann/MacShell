@@ -1,7 +1,7 @@
 // LiquidSwitch — the on/off switch used everywhere in the shell, after the iOS 26 / macOS Tahoe switch:
-//   press  → the knob swells past the track into a clear glass lens (the track shows through it, magnified)
-//   toggle → it travels across as glass, stretching along the way with a touch of motion blur
-//   land   → it shrinks back into the solid white knob with a small spring
+//   one tap is one motion: the knob swells into a clear glass lens as it leaves, crosses as glass (stretching a
+//   little, the track colour following it) and is the solid white knob again as it lands
+//   holding it keeps it glass, and it can be dragged across
 // The knob can also be dragged across. Frosted / Blur turn the lens frosted, Opaque keeps it solid (it still moves).
 import QtQuick
 import QtQuick.Effects
@@ -17,22 +17,15 @@ Item {
     width: 38; height: 22
     opacity: enabled ? 1 : 0.4
 
-    // how glassy / swollen the knob is: up quickly on press, down with a spring once it has landed
-    property real glass: 0
-    Behavior on glass {
-        NumberAnimation {
-            duration: sw.glass < 0.5 ? 200 : 340
-            easing.type: sw.glass < 0.5 ? Easing.OutCubic : Easing.OutBack
-            easing.overshoot: 1.6
-        }
-    }
-    // where along the track it is (0 off … 1 on)
+    // ONE motion, like the iOS 26 switch: a single value (along) moves the knob, and everything else follows it —
+    // the knob turns to glass and swells as it leaves, is most glassy half way, and is solid again as it lands;
+    // the stretch and the track colour ride on the same curve. Holding it (press / drag) keeps it glass.
     property real along: checked ? 1 : 0
-    Behavior on along { enabled: !ma.dragging; NumberAnimation { duration: 420; easing.type: Easing.InOutCubic } }
-    // 0 at either end, 1 half way: drives the stretch and the motion blur while it travels
+    Behavior on along { enabled: !ma.dragging; NumberAnimation { duration: 520; easing.type: Easing.OutCubic } }
     readonly property real travel: Math.sin(Math.PI * Math.max(0, Math.min(1, along)))
-    onAlongChanged: if (!ma.pressed) settle.restart()
-    Timer { id: settle; interval: 90; onTriggered: if (!ma.pressed) sw.glass = 0 }
+    property real held: 0
+    Behavior on held { NumberAnimation { duration: ma.pressed ? 180 : 260; easing.type: Easing.OutCubic } }
+    readonly property real glass: Math.max(held, travel)
 
     Rectangle {
         anchors.fill: parent
@@ -63,8 +56,8 @@ Item {
         y: (sw.height - height) / 2
         transform: Scale {
             origin.x: knob.width / 2; origin.y: knob.height / 2
-            xScale: 1 + 0.22 * sw.travel
-            yScale: 1 - 0.12 * sw.travel
+            xScale: 1 + 0.16 * sw.travel
+            yScale: 1 - 0.08 * sw.travel
         }
         layer.enabled: sw.travel > 0.08 && sw.material !== "opaque"
         layer.effect: MultiEffect { blurEnabled: true; blurMax: 6; blur: 0.35 * sw.travel; autoPaddingEnabled: true }
@@ -77,7 +70,7 @@ Item {
         property bool dragging: false
         property real pressX: 0
         property real dragX: 0
-        onPressed: mouse => { pressX = mouse.x; dragging = false; settle.stop(); sw.glass = 1; }
+        onPressed: mouse => { pressX = mouse.x; dragging = false; sw.held = 1; }
         onPositionChanged: mouse => {
             if (!dragging && Math.abs(mouse.x - pressX) > 4) dragging = true;
             dragX = mouse.x - 4;
@@ -88,8 +81,8 @@ Item {
             dragging = false;
             if (v !== sw.checked) sw.toggled(v);
             sw.along = Qt.binding(function () { return sw.checked ? 1 : 0; });
-            settle.restart();
+            sw.held = 0;
         }
-        onCanceled: { dragging = false; settle.restart(); }
+        onCanceled: { dragging = false; sw.held = 0; }
     }
 }
