@@ -24,9 +24,26 @@ THEMES = {"macOS": {"#00FF00": "#000000", "#0000FF": "#FFFFFF"},
 SIZES = [24, 32, 40, 48, 56, 64, 72, 80, 96, 112, 128]
 CANVAS = 256
 
-# the macOS pointer's shadow: soft, a little below, never sideways (the source's is 30 %, offset to the left)
-SHADOW = ('<feOffset dx="0" dy="6"/><feGaussianBlur stdDeviation="8"/>'
-          '<feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.42 0"/>')
+# the macOS pointer's shadow: soft and diffuse, a little below, never sideways (the source's is offset to the left)
+SHADOW = ('<feOffset dx="0" dy="5"/><feGaussianBlur stdDeviation="10"/>'
+          '<feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.36 0"/>')
+
+
+def soften(svg):
+    """rounded corners everywhere: round joins on the outlines, and a thin rounded edge of the same colour on
+    every filled shape, so tips and corners are softly rounded like the macOS pointer instead of mitred points"""
+    def stroke_path(m):
+        tag = m.group(0)
+        if "stroke-linejoin" in tag:
+            return tag
+        if "stroke=" in tag:
+            add = "" if "stroke-linecap" in tag else ' stroke-linecap="round"'
+            return tag.replace("<path", '<path stroke-linejoin="round"' + add, 1)
+        fill = re.search(r'fill="(#[0-9A-Fa-f]{6})"', tag)
+        if fill:
+            return tag.replace("<path", '<path stroke="%s" stroke-width="5" stroke-linejoin="round"' % fill.group(1), 1)
+        return tag
+    return re.sub(r"<path\b[^>]*>", stroke_path, svg)
 
 
 def svg_for(path, colours):
@@ -36,8 +53,9 @@ def svg_for(path, colours):
         svg = re.sub(re.escape(a), b, svg, flags=re.I)
     svg = re.sub(r'(<filter[^>]*?)\bx="[^"]*"\s+y="[^"]*"\s+width="[^"]*"\s+height="[^"]*"',
                  r'\1x="0" y="0" width="%d" height="%d"' % (CANVAS, CANVAS), svg)
-    return re.sub(r'<feOffset[^>]*/>\s*<feGaussianBlur[^>]*/>\s*<feColorMatrix type="matrix" values="[^"]*"/>',
-                  SHADOW, svg, count=1)
+    svg = re.sub(r'<feOffset[^>]*/>\s*<feGaussianBlur[^>]*/>\s*<feColorMatrix type="matrix" values="[^"]*"/>',
+                 SHADOW, svg, count=1)
+    return soften(svg)
 
 
 def rgba(svg_text, size, tmp):

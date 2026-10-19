@@ -761,7 +761,8 @@ Scope {
             } else if (k === "sun") {
                 // the rays shrink to stubs as the level drops, the way the macOS brightness key glyph does
                 var lv = frac >= 0 ? Math.max(0, Math.min(1, frac)) : Math.max(0, Math.min(1, level / 3));
-                var r = 2.6 + lv * 0.9, a = r + 1.1, b = a + 0.35 + lv * 3.2;
+                // a clear gap between the circle and its rays (stroke width and round caps included)
+                var r = 2.5 + lv * 0.8, a = r + 2.3, b = a + 0.4 + lv * 2.6;
                 circ(9, 9, r); ctx.stroke();
                 for (i2 = 0; i2 < 8; i2++) {
                     var ang = i2 * PI / 4;
@@ -1774,9 +1775,11 @@ Scope {
     readonly property string appName: {
         if (activeAppId === "") return "Desktop";
         // MacShell's own windows (all "org.quickshell")
-        if (activeAppId === "org.quickshell") return (activeTl.title === "Clock" || activeTl.title === "App Store" || activeTl.title === "Photos") ? activeTl.title
-                                                     : (activeTl.title === "macshell Settings" ? "System Settings" : "MacShell");
-        var e = lookup(activeAppId);
+        // MacShell's own windows, and apps standing in for them (Swift / Cider as Apple Music): the Dock's names
+        var d = hub ? hub.dock : null;
+        var id = d ? (activeAppId === "org.quickshell" ? (d.ownApps[activeTl.title] || "") : (d.appAliases[activeAppId.toLowerCase()] || activeAppId)) : activeAppId;
+        if (id === "") return "MacShell";
+        var e = lookup(id);
         return e ? e.name : activeAppId;
     }
     // Hyprland's view of the focused window (floating / fullscreen / pinned / pid ...), refreshed when a menu opens

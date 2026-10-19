@@ -113,12 +113,10 @@ Scope {
                             border.width: 1; border.color: Qt.rgba(0, 0, 0, 0.14)
                             scale: lMa.pressed ? 0.86 : 1
                             Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutQuint } }
-                            Text {
-                                anchors.centerIn: parent
-                                visible: hover.hovered || root.alwaysSymbols
-                                text: light.modelData.g
-                                font.pixelSize: 10; font.bold: true
-                                color: Qt.rgba(0, 0, 0, 0.55)
+                            TLGlyph {
+                                anchors.fill: parent
+                                kind: parent.modelData.g
+                                Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
                             }
                             MouseArea {
                                 id: lMa

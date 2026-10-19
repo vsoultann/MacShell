@@ -106,16 +106,46 @@ do_deps() {
         printf '    %s\n' "${PKGS[@]}"
         return 0
     fi
-    local repo=() aur=()
+    # Nothing you already have is replaced or upgraded behind your back:
+    #   * anything already installed, or provided by another package, is left alone (pacman -T)
+    #   * Quickshell is skipped when any qs is installed (noctalia-qs, quickshell-git, a private build)
+    #   * a package that conflicts with one you have (tlp vs power-profiles-daemon, …) is skipped, not swapped in
+    #   * if installing would upgrade packages you already have (a partial upgrade: how Arch systems break),
+    #     nothing is installed and you are asked to update the system first
+    local want=() repo=() aur=() skipped=() p c
     for p in "${PKGS[@]}"; do
-        if pacman -Si "$p" >/dev/null 2>&1; then repo+=("$p"); else aur+=("$p"); fi
+        pacman -T "$p" >/dev/null 2>&1 && continue
+        [ "$p" = quickshell ] && have qs && { skipped+=("quickshell (you already have qs)"); continue; }
+        want+=("$p")
     done
-    [ ${#repo[@]} -gt 0 ] && sudo pacman -S --needed --noconfirm "${repo[@]}"
+    [ ${#want[@]} -eq 0 ] && { note "everything is already installed"; return 0; }
+    for p in "${want[@]}"; do
+        if pacman -Si "$p" >/dev/null 2>&1; then
+            for c in $(pacman -Si "$p" 2>/dev/null | sed -n 's/^Conflicts With *: *//p' | tr -s ' ' '\n' | sed 's/[<>=].*//' | grep -v '^None$'); do
+                if pacman -Qq "$c" >/dev/null 2>&1; then skipped+=("$p (conflicts with your $c)"); continue 2; fi
+            done
+            repo+=("$p")
+        else
+            aur+=("$p")
+        fi
+    done
+    if [ ${#repo[@]} -gt 0 ]; then
+        # what pacman would touch: anything already installed in that list would be upgraded
+        local upgrades
+        upgrades=$(pacman -Sp --print-format '%n' "${repo[@]}" 2>/dev/null | while read -r n; do pacman -Qq "$n" >/dev/null 2>&1 && echo "$n"; done | tr '\n' ' ')
+        if [ -n "$upgrades" ]; then
+            warn "Installing these would also upgrade packages you already have ($upgrades) without updating the rest of"
+            warn "your system, which can break it. Update first (sudo pacman -Syu), then run ./install.sh --deps again."
+            return 0
+        fi
+        sudo pacman -S --needed --noconfirm "${repo[@]}" || warn "pacman didn't install everything; nothing was removed"
+    fi
     if [ ${#aur[@]} -gt 0 ]; then
         local helper=""; have paru && helper=paru; [ -z "$helper" ] && have yay && helper=yay
-        if [ -n "$helper" ]; then "$helper" -S --needed --noconfirm "${aur[@]}"
+        if [ -n "$helper" ]; then "$helper" -S --needed "${aur[@]}" || warn "$helper didn't install: ${aur[*]}"
         else warn "These come from the AUR; install paru or yay, then: ${aur[*]}"; fi
     fi
+    [ ${#skipped[@]} -gt 0 ] && { note "left alone:"; printf '      %s\n' "${skipped[@]}"; }
     # a Quickshell built against an older Qt crashes; the repo package is rebuilt with Qt
     if have qs && qs --version 2>&1 | grep -q 'built against'; then warn "Quickshell was built against an older Qt — reinstall it (sudo pacman -S quickshell)"; fi
 }

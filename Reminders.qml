@@ -117,13 +117,11 @@ Scope {
                                 color: ((root.bar && root.bar.tlColorOnHover) ? tlMa.containsMouse : (win.active || tlMa.containsMouse)) ? modelData.c : pal.lightOff
                                 border.width: 1; border.color: Qt.rgba(0, 0, 0, 0.14)
                                 Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: parent.modelData.g
-                                    font.pixelSize: 11; font.bold: true
-                                    color: Qt.rgba(0, 0, 0, 0.55)
+                                TLGlyph {
+                                    anchors.fill: parent
+                                    kind: parent.modelData.g
                                     opacity: (tlMa.containsMouse || (root.bar && root.bar.tlAlwaysSymbols)) ? 1 : 0
-                                    Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                                    Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
                                 }
                             }
                         }

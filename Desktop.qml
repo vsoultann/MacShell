@@ -166,7 +166,13 @@ Scope {
                             onStatusChanged: if (status === Image.Error) source = Quickshell.iconPath("application-x-executable", true)
                             // Settings → Icons → Tinted, for app icons (pictures and folders keep their colours)
                             layer.enabled: icon.modelData.isApp === true && root.dock !== null && root.dock.iconsTinted
-                            layer.effect: MultiEffect { colorization: 0.9; colorizationColor: root.dock ? root.dock.iconTintColor : "white" }
+                            layer.effect: MultiEffect {
+                                colorization: root.dock ? root.dock.iconColorize : 0
+                                colorizationColor: root.dock ? root.dock.iconColorizeColor : "white"
+                                brightness: root.dock ? root.dock.iconBright : 0
+                                saturation: root.dock ? root.dock.iconSat : 0
+                                opacity: root.dock ? root.dock.iconAlpha : 1
+                            }
                         }
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter

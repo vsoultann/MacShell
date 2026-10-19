@@ -238,7 +238,7 @@ Scope {
     property real minimizeSecs: 0.42
     // Settings → Mouse → Pointer: Apple's macOS cursors (black "macOS" or "macOS-White") and their size
     property string cursorTheme: "macOS"
-    property int cursorSize: 32               // 32 ≈ the macOS pointer's size on a normal-density screen
+    property int cursorSize: 24
     function applyCursor() {
         Quickshell.execDetached([Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-cursor.sh", cursorTheme, String(cursorSize)]);
     }
@@ -249,8 +249,16 @@ Scope {
     property string iconStyle: "default"
     property string iconTint: ""
     readonly property bool tintAllowed: bar ? (bar.material === "liquid" || bar.material === "frosted") : true
-    readonly property bool iconsTinted: iconStyle === "tinted" && tintAllowed
+    // Settings → Icons → Icon style, like macOS Tahoe: Default, Dark, Clear (frosted white glass) or Tinted (one
+    // colour). Clear and Tinted are glass looks: with Blur / Opaque they fall back to Default.
+    readonly property string iconLook: (iconStyle === "clear" || iconStyle === "tinted") && !tintAllowed ? "default" : iconStyle
+    readonly property bool iconsTinted: iconLook !== "default"
     readonly property color iconTintColor: iconTint !== "" ? iconTint : accent
+    readonly property real iconColorize: iconLook === "tinted" ? 0.9 : (iconLook === "clear" ? 0.95 : 0)
+    readonly property color iconColorizeColor: iconLook === "clear" ? "#FFFFFF" : iconTintColor
+    readonly property real iconBright: iconLook === "dark" ? -0.3 : (iconLook === "clear" ? 0.1 : 0)
+    readonly property real iconSat: iconLook === "dark" ? -0.3 : 0
+    readonly property real iconAlpha: iconLook === "clear" ? 0.82 : 1
     property var uiByScreen: ({})          // each screen's Dock, so the minimise effect knows where to aim
     // Where a window should pour into: its own preview cell in the Dock if it has one, otherwise its app's icon.
     // Returned in global (layout) coordinates, or null when the Dock isn't on that screen.
@@ -1383,8 +1391,11 @@ Scope {
                                         anchors.fill: pvImg
                                         source: pvImg
                                         shadowEnabled: true; shadowColor: "black"; shadowOpacity: 0.3; shadowBlur: 0.5; shadowVerticalOffset: 2
-                                        colorization: root.iconsTinted ? 0.9 : 0.0
-                                        colorizationColor: root.iconTintColor
+                                        colorization: root.iconColorize
+                                        colorizationColor: root.iconColorizeColor
+                                        brightness: root.iconBright
+                                        saturation: root.iconSat
+                                        opacity: root.iconAlpha
                                         Behavior on colorization { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
                                     }
                                 }
@@ -1397,21 +1408,19 @@ Scope {
                     SRow {
                         t: pal
                         title: "Icon style"
-                        subtitle: root.tintAllowed ? "Tinted shows every app icon in one colour, like macOS Tahoe"
-                                                   : "Tinted needs the Frosted or Liquid Glass material (Appearance \u2192 Material)"
+                        subtitle: root.tintAllowed ? "Like macOS Tahoe: Dark icons, Clear (frosted glass) or Tinted in one colour"
+                                                   : "Clear and Tinted need the Frosted or Liquid Glass material (Appearance \u2192 Material)"
                         SSegmented {
                             t: pal
-                            enabled: root.tintAllowed
-                            opacity: enabled ? 1 : 0.45
-                            model: ["Default", "Tinted"]
-                            segWidth: 84
-                            current: root.iconStyle === "tinted" ? 1 : 0
-                            onPicked: i => root.iconStyle = ["default", "tinted"][i]
+                            model: ["Default", "Dark", "Clear", "Tinted"]
+                            segWidth: 66
+                            current: Math.max(0, ["default", "dark", "clear", "tinted"].indexOf(root.iconStyle))
+                            onPicked: i => root.iconStyle = ["default", "dark", "clear", "tinted"][i]
                         }
                     }
                     SRow {
                         t: pal
-                        visible: root.iconsTinted
+                        visible: root.iconLook === "tinted"
                         title: "Tint colour"
                         Row {
                             spacing: 8
@@ -1431,21 +1440,6 @@ Scope {
                                     MouseArea { id: tMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.iconTint = parent.modelData }
                                 }
                             }
-                        }
-                    }
-                }
-                SCard {
-                    t: pal
-                    SRow {
-                        t: pal
-                        title: "Icon set"
-                        subtitle: "App icons everywhere: follow the appearance, or pin them to the light or dark set"
-                        SSegmented {
-                            t: pal
-                            model: ["Auto", "Light", "Dark"]
-                            segWidth: 72
-                            current: ["auto", "light", "dark"].indexOf(root.iconMode)
-                            onPicked: i => root.setIconMode(["auto", "light", "dark"][i])
                         }
                     }
                 }
@@ -3886,7 +3880,7 @@ Scope {
                     t: pal
                     SRow {
                         t: pal; title: "Pointer"
-                        subtitle: "Apple's macOS pointer, drawn sharp at any size with its soft shadow"
+                        subtitle: "Apple's macOS pointer: softly rounded, with a gentle shadow"
                         SSegmented {
                             t: pal
                             model: ["Black", "White"]
@@ -3901,8 +3895,8 @@ Scope {
                             t: pal
                             model: ["Normal", "Large", "Larger"]
                             segWidth: 72
-                            current: root.cursorSize >= 56 ? 2 : (root.cursorSize >= 40 ? 1 : 0)
-                            onPicked: i => root.cursorSize = [32, 40, 56][i]
+                            current: root.cursorSize >= 48 ? 2 : (root.cursorSize >= 32 ? 1 : 0)
+                            onPicked: i => root.cursorSize = [24, 32, 48][i]
                         }
                     }
                 }
@@ -4729,8 +4723,11 @@ Scope {
         "Clock": "macshell-clock", "AirDrop": "macshell-airdrop", "Reminders": "macshell-reminders",
         "Preview": "macshell-preview", "Player": "macshell-player", "macshell Settings": "macshell-settings"
     })
+    // apps that stand in for one of MacShell's: their windows join that app's Dock icon and take its name
+    // (Apple Music is Cider when it is installed, otherwise Swift)
+    readonly property var appAliases: ({ "swift": "macshell-applemusic", "swiftapp": "macshell-applemusic", "sh.cider.cider": "macshell-applemusic", "cider": "macshell-applemusic" })
     function appOf(tl) {
-        if (tl.appId !== "org.quickshell") return tl.appId;
+        if (tl.appId !== "org.quickshell") return appAliases[String(tl.appId).toLowerCase()] || tl.appId;
         var a = ownApps[tl.title];
         return a ? a : tl.appId;
     }
@@ -5934,11 +5931,14 @@ Scope {
                                     shadowOpacity: 0.32
                                     shadowBlur: 0.55
                                     shadowVerticalOffset: 3
-                                    // Settings → Icons → Tinted: every icon in one colour, keeping its shading
-                                    colorization: root.iconsTinted ? 0.9 : 0.0
-                                    colorizationColor: root.iconTintColor
+                                    // Settings → Icons → Icon style (Dark / Clear / Tinted), keeping each icon's shading
+                                    colorization: root.iconColorize
+                                    colorizationColor: root.iconColorizeColor
+                                    saturation: root.iconSat
+                                    opacity: root.iconAlpha
                                     Behavior on colorization { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
-                                    brightness: ma.pressed ? -0.3 : 0.0
+                                    Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+                                    brightness: (ma.pressed ? -0.3 : 0.0) + root.iconBright
                                 }
 
                                 // ── window thumbnail (same box as the icon, so magnification just works) ──
