@@ -4113,7 +4113,8 @@ Scope {
         PanelWindow {
             id: barBgWin
             screen: perScreen.modelData
-            visible: root.effBarBg > 0.001
+            // only while the menu bar is shown: switched off, the wallpaper shows all the way to the top
+            visible: root.barEnabled && root.effBarBg > 0.001
             anchors { left: true; right: true; top: true }
             implicitHeight: root.barHeight
             color: "transparent"

@@ -40,6 +40,8 @@ hl.workspace_rule({ workspace = "special:special", gaps_out = 30 })
 
 -- ── Layers ──
 hl.layer_rule({ match = { namespace = ".*" }, xray = true })
+-- the menu bar strip and the Dock blur what is really behind them, live: windows too, not only the wallpaper
+hl.layer_rule({ match = { namespace = "^(macbarbg|macdock)$" }, xray = false })
 -- MacShell animates its own surfaces
 hl.layer_rule({ match = { namespace = "^(macspot|macbar|macbarbg|macdock|macshot|macwidgets|macwelcome|macshell-minimize|macdock-drag)$" }, no_anim = true })
 hl.layer_rule({ match = { namespace = "^macdock$" }, blur = true, ignore_alpha = 0.2 })
