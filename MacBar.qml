@@ -126,7 +126,7 @@ Scope {
             if (dock) dock.dockStyle = "blur";
             if (wid) { wid.style = "frosted"; wid.blurAmt = 0.45; }
         } else if (m === "opaque") {
-            barStyle = "blur"; glassOpacity = 0.96; glassBlur = 0; glassLiquid = 0.0; barBgOpacity = 0.98;
+            barStyle = "blur"; glassOpacity = 1.0; glassBlur = 0; glassLiquid = 0.0; barBgOpacity = 1.0;
             switcherStyle = "opaque"; notifBlur = 0;
             if (dock) dock.dockStyle = "blur";
             if (wid) { wid.style = "opaque"; }
@@ -154,6 +154,28 @@ Scope {
     readonly property real barWidgetScale: Math.max(0.8, Math.min(1.55, barHeight / 28))
     readonly property real barPopupScale: Math.max(0.9, Math.min(1.25, 1 + (barHeight - 28) / 88))
     property real glassOpacity: 0.42
+    // Opaque, and Game Mode: nothing anywhere is see-through — the shell's surfaces are solid and every window is
+    // drawn at full opacity without blur (macshell-solid.sh); leaving it puts your window opacity / blur back
+    readonly property bool solidAll: material === "opaque" || gaming
+    readonly property real effGlassOpacity: solidAll ? 1.0 : glassOpacity
+    readonly property real effBarBg: solidAll ? 1.0 : barBgOpacity
+    property bool solidApplied: false
+    function applySolid() {
+        if (!settingsReady || solidAll === solidApplied) return;
+        solidApplied = solidAll;
+        Quickshell.execDetached([Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-solid.sh", solidAll ? "on" : "off"]);
+    }
+    onSolidAllChanged: solidDelay.restart()
+    // after Game Mode turns off it restores blur; if Opaque is still chosen, windows go solid again right after
+    Timer { id: solidDelay; interval: 400; onTriggered: root.applySolid() }
+    // a Hyprland config reload (Settings → Keyboard Shortcuts saves one) puts the window opacity back: solid again
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            if (event.name === "configreloaded" && root.solidAll)
+                Quickshell.execDetached([Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-solid.sh", "on"]);
+        }
+    }
     property string barStyle: "liquid"        // "liquid" = Apple Liquid Glass popovers, "blur" = flat translucent
     property real glassRim: 0.45
     property real glassGrain: 0.015
@@ -1035,7 +1057,9 @@ Scope {
             anchors.fill: parent
             radius: g.cornerR
             // lighter than it was: the tint hid the blur under it
-            color: g.dark ? Qt.rgba(0.12, 0.12, 0.13, 0.16 + g.tint * 0.62) : Qt.rgba(1, 1, 1, 0.18 + g.tint * 0.55)
+            // full tint (Opaque / Game Mode) is a solid card
+            color: g.tint >= 0.99 ? (g.dark ? Qt.rgb(0.12, 0.12, 0.13) : Qt.rgb(0.97, 0.97, 0.98))
+                 : (g.dark ? Qt.rgba(0.12, 0.12, 0.13, 0.16 + g.tint * 0.62) : Qt.rgba(1, 1, 1, 0.18 + g.tint * 0.55))
             border.width: 1
             border.color: g.dark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.55)
         }
@@ -2533,7 +2557,7 @@ Scope {
         if (clipHistory && barEnabled && settingsReady) clipProbe.running = true;
         else { clipWatchText.running = false; clipWatchImg.running = false; }
     }
-    onSettingsReadyChanged: { clipStart(); emojiEnsure(); }
+    onSettingsReadyChanged: { clipStart(); emojiEnsure(); solidDelay.restart(); }
     onClipHistoryChanged: clipStart()
     Process {
         id: clipProbe
@@ -3339,7 +3363,8 @@ Scope {
     // ═════════════ GAME MODE ═════════════
     readonly property string gamingScript: Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-gaming.sh"
     property bool gamingApplied: false
-    onGamingChanged: gamingApply.restart()
+    // after Game Mode turns off it restores blur; if Opaque is still chosen, windows go solid again right after
+    onGamingChanged: { gamingApply.restart(); if (!gaming && material === "opaque") { solidApplied = false; solidDelay.interval = 900; solidDelay.restart(); } }
     Timer {
         id: gamingApply
         interval: 150
@@ -3459,7 +3484,7 @@ Scope {
     readonly property bool liquidActive: barStyle === "liquid" && glassState === "ready" && !gaming
     // Blur and Frosted need the same backdrop (wallpaper + live windows) that Liquid Glass refracts — without it
     // there is nothing to blur. Opaque needs none.
-    readonly property bool wantBackdrop: liquidActive || (!gaming && material !== "opaque" && glassBlur > 0.5)
+    readonly property bool wantBackdrop: liquidActive || (!solidAll && glassBlur > 0.5)
     readonly property string glassShaderSrc: decodeURIComponent(Qt.resolvedUrl("liquidglass.frag").toString().replace("file://", ""))
     readonly property string glassShaderOut: configDir + "/liquidglass.frag.qsb"
     readonly property url glassShaderUrl: "file://" + glassShaderOut
@@ -4088,7 +4113,7 @@ Scope {
         PanelWindow {
             id: barBgWin
             screen: perScreen.modelData
-            visible: root.barBgOpacity > 0.001
+            visible: root.effBarBg > 0.001
             anchors { left: true; right: true; top: true }
             implicitHeight: root.barHeight
             color: "transparent"
@@ -4103,7 +4128,7 @@ Scope {
 
             Rectangle {
                 anchors.fill: parent
-                color: root.darkMode ? Qt.rgba(0.10, 0.10, 0.11, root.barBgOpacity) : Qt.rgba(1, 1, 1, root.barBgOpacity)
+                color: root.darkMode ? Qt.rgba(0.10, 0.10, 0.11, root.effBarBg) : Qt.rgba(1, 1, 1, root.effBarBg)
             }
         }
 
@@ -4637,7 +4662,7 @@ Scope {
                     dark: root.effDark
                     bx: 0; by: 0
                     cornerR: 0
-                    tint: root.glassOpacity * 0.6
+                    tint: root.solidAll ? 1.0 : root.glassOpacity * 0.6
                     thickness: 16
                     strength: 0.9 * root.glassLiquid
                     rim: root.glassRim
@@ -4679,7 +4704,7 @@ Scope {
                         dark: root.effDark
                         bx: levelOsd.x; by: levelOsd.y
                         cornerR: height / 2
-                        tint: root.glassOpacity
+                        tint: root.effGlassOpacity
                         tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 22
                         strength: 0.8 * root.glassLiquid
@@ -5233,7 +5258,7 @@ Scope {
                         dark: root.effDark
                         bx: volPop.x; by: volPop.y
                         cornerR: 26
-                        tint: root.glassOpacity
+                        tint: root.effGlassOpacity
                         tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 22
                         strength: 0.7 * root.glassLiquid
@@ -5270,7 +5295,7 @@ Scope {
                         blurred: !root.liquidActive && root.wantBackdrop
                         shaderUrl: root.glassShaderUrl
                         dark: root.effDark
-                        tint: root.glassOpacity
+                        tint: root.effGlassOpacity
                         strength: root.glassLiquid
                         rim: root.glassRim
                         grain: root.glassGrain
@@ -5421,7 +5446,7 @@ Scope {
                         dark: root.effDark
                         bx: kbPop.x; by: kbPop.y
                         cornerR: 22
-                        tint: root.glassOpacity
+                        tint: root.effGlassOpacity
                         tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 22
                         strength: 0.7 * root.glassLiquid
@@ -5572,7 +5597,7 @@ Scope {
                                     dark: root.effDark
                                     bx: toastArea.x + toast.x + tslab.x; by: toastArea.y + toast.y
                                     cornerR: Math.min(24 + (1 - toast.tc) * 40, height / 2)
-                                    tint: root.glassOpacity
+                                    tint: root.effGlassOpacity
                                     tintHue: root.tintAccent ? root.accent : "transparent"
                                     thickness: 22
                                     strength: 0.7 * root.glassLiquid
@@ -5648,7 +5673,7 @@ Scope {
                         dark: root.effDark
                         bx: notifPop.x; by: notifPop.y
                         cornerR: 26
-                        tint: root.glassOpacity
+                        tint: root.effGlassOpacity
                         tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 26
                         strength: 0.8 * root.glassLiquid
@@ -5879,7 +5904,7 @@ Scope {
                         dark: root.effDark
                         bx: menuPop.x; by: menuPop.y
                         cornerR: 14
-                        tint: root.glassOpacity
+                        tint: root.effGlassOpacity
                         tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 22
                         strength: 0.55 * root.glassLiquid
@@ -6017,7 +6042,7 @@ Scope {
                         dark: root.effDark
                         bx: trayPop.x; by: trayPop.y
                         cornerR: 14
-                        tint: root.glassOpacity
+                        tint: root.effGlassOpacity
                         tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 22
                         strength: 0.55 * root.glassLiquid
@@ -6191,7 +6216,7 @@ Scope {
                         dark: root.effDark
                         bx: wifiPop.x; by: wifiPop.y
                         cornerR: 22
-                        tint: root.glassOpacity
+                        tint: root.effGlassOpacity
                         tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 24
                         strength: 0.7 * root.glassLiquid
@@ -6488,7 +6513,7 @@ Scope {
                         dark: root.effDark
                         bx: cal.x; by: cal.y
                         cornerR: 24
-                        tint: root.glassOpacity
+                        tint: root.effGlassOpacity
                         tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 26
                         strength: 0.8 * root.glassLiquid
@@ -6663,7 +6688,7 @@ Scope {
                         shaderUrl: root.glassShaderUrl
                         dark: root.effDark
                         // macOS style: the panel is the glass, so each control only keeps a faint shape on top of it
-                        tint: root.ccStyle === "macos" ? root.glassOpacity * 0.30 : root.glassOpacity
+                        tint: root.solidAll ? 1.0 : (root.ccStyle === "macos" ? root.glassOpacity * 0.30 : root.glassOpacity)
                         strength: root.ccStyle === "macos" ? root.glassLiquid * 0.30 : root.glassLiquid
                         rim: root.ccStyle === "macos" ? root.glassRim * 0.45 : root.glassRim
                         grain: root.glassGrain
@@ -7443,7 +7468,7 @@ Scope {
                         bx: swPanel.x; by: swPanel.y
                         cornerR: 26
                         // frosted: the same glass with no refraction, a heavier blur and more tint
-                        tint: swPanel.style === "frosted" ? Math.max(0.5, root.glassOpacity) : root.glassOpacity
+                        tint: root.solidAll ? 1.0 : (swPanel.style === "frosted" ? Math.max(0.5, root.glassOpacity) : root.glassOpacity)
                         thickness: swPanel.style === "frosted" ? 6 : 20
                         strength: swPanel.style === "frosted" ? 0.0 : 0.75 * root.glassLiquid
                         rim: swPanel.style === "frosted" ? 0.15 : root.glassRim
@@ -7594,7 +7619,7 @@ Scope {
                         dark: root.effDark
                         bx: wpPanel.x; by: wpPanel.y
                         cornerR: 28
-                        tint: root.glassOpacity
+                        tint: root.effGlassOpacity
                         tintHue: root.tintAccent ? root.accent : "transparent"
                         thickness: 22
                         strength: 0.75 * root.glassLiquid
@@ -8078,7 +8103,7 @@ Scope {
                     blurred: !root.liquidActive && root.wantBackdrop
                     shaderUrl: root.glassShaderUrl
                     dark: root.effDark
-                    tint: root.glassOpacity
+                    tint: root.effGlassOpacity
                     strength: root.glassLiquid * 0.6        // Spotlight: gentler refraction than the Dock
                     rim: root.glassRim * 0.4                 // and a subtle rim (no heavy outline)
                     grain: root.glassGrain

@@ -168,6 +168,8 @@ Scope {
     property real glassBlur: 5            // Liquid Glass backdrop blur radius, px (settings slider)
     property bool glassDebug: false       // settings.json only: draw the raw Liquid Glass backdrop texture
     property string wallpaperPath: ""    // optional override for the wallpaper the Liquid Glass refracts
+    // Opaque material or Game Mode: the Dock and Settings are solid too
+    readonly property bool solidLook: bar ? bar.solidAll : false
     property real glassOpacity: 0.42     // 0 = fully clear; below the layerrule's ignore_alpha (0.2) the blur turns off
     // "smart"  = hide while a non-floating window is open on that monitor's workspace
     // "always" = always auto-hide, "never" = always visible and reserves space
@@ -1751,8 +1753,8 @@ Scope {
                         width: prow.width + 16
                         height: pv.base + 14
                         radius: root.cornerRadius * 0.6
-                        color: root.darkMode ? Qt.rgba(0.10, 0.10, 0.11, root.glassOpacity)
-                                             : Qt.rgba(1, 1, 1, root.glassOpacity * 0.55)
+                        color: root.darkMode ? Qt.rgba(0.10, 0.10, 0.11, root.solidLook ? 1 : root.glassOpacity)
+                                             : Qt.rgba(root.solidLook ? 0.97 : 1, root.solidLook ? 0.97 : 1, root.solidLook ? 0.98 : 1, root.solidLook ? 1 : root.glassOpacity * 0.55)
                         border.width: 1
                         border.color: root.darkMode ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.45)
                     }
@@ -5670,8 +5672,8 @@ Scope {
                         visible: !root.liquidActive
                         anchors.fill: parent
                         radius: root.cornerRadius
-                        color: root.darkMode ? Qt.rgba(0.10, 0.10, 0.11, root.glassOpacity)
-                                             : Qt.rgba(1, 1, 1, root.glassOpacity * 0.55)
+                        color: root.darkMode ? Qt.rgba(0.10, 0.10, 0.11, root.solidLook ? 1 : root.glassOpacity)
+                                             : Qt.rgba(root.solidLook ? 0.97 : 1, root.solidLook ? 0.97 : 1, root.solidLook ? 0.98 : 1, root.solidLook ? 1 : root.glassOpacity * 0.55)
                         border.width: 1
                         border.color: root.darkMode ? Qt.rgba(0, 0, 0, 0.45) : Qt.rgba(0, 0, 0, 0.12)
 
