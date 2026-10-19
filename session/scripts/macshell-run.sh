@@ -11,6 +11,9 @@ GOOD="$CFG.lastgood"
 export QSG_USE_SIMPLE_ANIMATION_DRIVER=1 MALLOC_ARENA_MAX=2
 # videos (Mac Hello, previews) decode on the integrated GPU via VA-API: probing CUDA first woke the NVIDIA card
 export QT_FFMPEG_DECODING_HW_DEVICE_TYPES=vaapi
+# one shell at a time: Quickshell's own crash handler would relaunch a crashed shell by itself while this loop
+# starts another one, leaving two bars / Docks fighting each other. This loop is the only thing that restarts it.
+export QS_DISABLE_CRASH_HANDLER=1
 # Everything the shell prints, per run: ~/.cache/macshell/shell.log (this run) and shell.prev.log (the one before).
 # Settings → About → Logs opens or copies it. Qt / Wayland fatal errors only ever show up here.
 LOGDIR="${XDG_CACHE_HOME:-$HOME/.cache}/macshell"; mkdir -p "$LOGDIR"
@@ -25,6 +28,8 @@ while :; do
         name="$CFG"
     fi
 
+    # a copy is already running (started by hand, or left from an older session): wait for it instead of adding a second
+    while qs list -c "$CFG" 2>/dev/null | grep -q 'Process ID'; do sleep 2; done
     start=$(date +%s)
     # once it has stayed up for a while, this config is good: remember it
     if [ "$name" = "$CFG" ]; then

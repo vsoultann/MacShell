@@ -83,7 +83,9 @@ declare -A DESC=(
 #   MALLOC_ARENA_MAX: Qt runs ~50 threads; without it each gets its own heap arena (RAM that never comes back)
 LAUNCH="while :; do pkill -x mako; QSG_USE_SIMPLE_ANIMATION_DRIVER=1 MALLOC_ARENA_MAX=2 qs -c MacShell; sleep 1; done"
 
-c_b=$'\e[1m'; c_d=$'\e[2m'; c_g=$'\e[32m'; c_y=$'\e[33m'; c_r=$'\e[31m'; c_0=$'\e[0m'
+# colours only in a terminal (Settings → Software Update shows the plain text)
+if [ -t 1 ]; then c_b=$'\e[1m'; c_d=$'\e[2m'; c_g=$'\e[32m'; c_y=$'\e[33m'; c_r=$'\e[31m'; c_0=$'\e[0m'
+else c_b=""; c_d=""; c_g=""; c_y=""; c_r=""; c_0=""; fi
 say()  { printf '%s==>%s %s\n' "$c_g$c_b" "$c_0" "$*"; }
 note() { printf '%s  ·%s %s\n' "$c_d" "$c_0" "$*"; }
 warn() { printf '%s!!%s %s\n' "$c_y$c_b" "$c_0" "$*"; }

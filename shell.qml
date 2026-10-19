@@ -22,6 +22,10 @@ import Quickshell.Io
 import Quickshell.Hyprland
 
 ShellRoot {
+    // No hot reload: reloading a running shell tears down its live window captures mid-frame, which crashed
+    // Quickshell (wl_proxy_marshal on a destroyed object). Updates restart the shell instead (Settings →
+    // Software Update, or Settings → About → Restart the shell).
+    settings.watchFiles: false
     Scope {
         id: sharedHub
 

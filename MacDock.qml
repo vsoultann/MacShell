@@ -3391,7 +3391,8 @@ Scope {
                     path: updPane.updating ? updPane.logFile : ""
                     printErrors: false
                     onLoaded: {
-                        var t = text();
+                        // plain text only: an older installer still writes terminal colour codes
+                        var t = text().replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
                         updPane.log = "Updating MacShell\u2026\n" + (t.length > 8000 ? t.slice(-8000) : t);
                         var m = /\[exit (\d+)\]/.exec(t);
                         if (m) {
@@ -3475,7 +3476,7 @@ Scope {
                         x: 14; width: parent.width - 28; topPadding: 4; bottomPadding: 12
                         text: updPane.log.split("\n").slice(-12).join("\n")
                         wrapMode: Text.WrapAnywhere
-                        color: pal.text2; font.family: "monospace"; font.pixelSize: 11
+                        color: pal.text2; font.family: pal.fam; font.pixelSize: 11
                     }
                 }
                 SLabel { t: pal; header: true; text: "What's New" }
@@ -4463,9 +4464,10 @@ Scope {
             try { root.applySettings(JSON.parse(text())); } catch (err) { }
             root.settingsReady = true;
             floatOnce.restart();            // make sure the Lua file matches the setting at least once per session
-            if (root.dockStyle === "liquid") root.startGlass();
+            // always built: the widgets and Mac Hello use this shader whatever the Dock style is
+            root.startGlass();
         }
-        onLoadFailed: { root.settingsReady = true; floatOnce.restart(); }
+        onLoadFailed: { root.settingsReady = true; floatOnce.restart(); root.startGlass(); }
     }
     Timer { id: saveTimer; interval: 400; onTriggered: root.saveSettings() }
 
@@ -4595,10 +4597,23 @@ Scope {
         return out;
     }
 
+    // the Hyprland side of a Wayland window, for minimising from the Dock
+    function hyprTl(tl) { return root.hub && root.hub.hyprWin ? root.hub.hyprWin(function (t) { return t.wayland === tl; }) : null; }
+    function tlMinimized(tl) { var h = hyprTl(tl); return h && root.hub.isMinimized ? root.hub.isMinimized(h) : false; }
+    function minimizeTl(tl) {
+        var h = hyprTl(tl);
+        if (!h || !root.hub || !root.hub.minimizeHyprWin) return false;
+        root.hub.minimizeHyprWin(h);
+        return true;
+    }
     function activate(item, forceNew) {
         // a minimised window comes back out of the Dock with the minimise effect played in reverse
         if (item.kind === "win") {
-            if (item.tl && !(root.hub && root.hub.restoreIfMinimized && root.hub.restoreIfMinimized(item.tl))) item.tl.activate();
+            if (!item.tl) return;
+            if (root.hub && root.hub.restoreIfMinimized && root.hub.restoreIfMinimized(item.tl)) return;
+            // the window in front: clicking its thumbnail puts it away, like clicking it in a taskbar
+            if (item.tl.activated && root.minimizeTl(item.tl)) return;
+            item.tl.activate();
             return;
         }
         if (item.kind === "folder") { root.loadStack(item.path); return; }
@@ -4611,10 +4626,14 @@ Scope {
         }
         var wins = windowsFor(item.key);
         if (wins.length > 0 && !forceNew) {
-            var idx = -1;
-            for (var i = 0; i < wins.length; i++) if (wins[i].activated) idx = i;
-            var next = wins[(idx + 1) % wins.length];
-            if (!(root.hub && root.hub.restoreIfMinimized && root.hub.restoreIfMinimized(next))) next.activate();
+            // the app in front: its window goes down into the icon (Magic Lamp / Fade / Instant, Settings → Desktop & Dock)
+            for (var i = 0; i < wins.length; i++)
+                if (wins[i].activated && !root.tlMinimized(wins[i]) && root.minimizeTl(wins[i])) return;
+            // an app in the background: bring its window forward
+            for (var j = wins.length - 1; j >= 0; j--)
+                if (!root.tlMinimized(wins[j])) { wins[j].activate(); return; }
+            // everything minimised: the last one comes back out
+            if (root.hub && root.hub.restoreIfMinimized) root.hub.restoreIfMinimized(wins[wins.length - 1]);
             return;
         }
         if (item.entry || item.key) {
