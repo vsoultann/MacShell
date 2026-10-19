@@ -1876,6 +1876,21 @@ Scope {
                             onPicked: i => { if (root.bar) root.bar.applyMaterial(["liquid", "frosted", "blur", "opaque"][i]); }
                         }
                     }
+                    // every material but Opaque blurs what is behind it
+                    SRow {
+                        t: pal
+                        visible: root.bar && root.bar.material !== "opaque"
+                        title: "Blur"
+                        subtitle: "How much the menus, Control Center, notifications and Spotlight blur what's behind them"
+                        SSlider {
+                            t: pal
+                            width: 220
+                            from: 0; to: 60; stepSize: 1
+                            value: root.bar ? root.bar.glassBlur : 16
+                            leftLabel: "Clear"; rightLabel: "Very blurry"
+                            onMoved: v => { if (root.bar) root.bar.glassBlur = Math.round(v); }
+                        }
+                    }
                     // Tint belongs to the two materials that have glass to tint
                     SRow {
                         t: pal
@@ -3357,27 +3372,40 @@ Scope {
                 // instead of a terminal window opening over Settings.
                 property bool updating: false
                 property string log: ""
+                // The installer runs on its own (setsid), not as a child of the shell: the update swaps the shell's files
+                // and restarts it at the end, and a child process would die with it half way. Its output goes to a log
+                // file that this card follows.
+                readonly property string logFile: Quickshell.env("HOME") + "/.cache/macshell/update.log"
                 function runUpdate() {
                     if (updating) return;
                     updating = true;
                     log = "Updating MacShell\u2026\n";
-                    updProc.running = false;
-                    updProc.command = ["sh", "-c", "\"$HOME/.local/share/macshell/install.sh\" --update 2>&1"];
-                    updProc.running = true;
+                    Quickshell.execDetached(["sh", "-c",
+                        "mkdir -p \"$HOME/.cache/macshell\"; : > \"$1\"; "
+                        + "setsid -f sh -c '\"$HOME/.local/share/macshell/install.sh\" --update -y >>\"$0\" 2>&1; echo \"[exit $?]\" >>\"$0\"' \"$1\"",
+                        "sh", updPane.logFile]);
+                    logPoll.restart();
                 }
-                Process {
-                    id: updProc
-                    stdout: SplitParser { onRead: line => { updPane.log += line + "\n"; if (updPane.log.length > 8000) updPane.log = updPane.log.slice(-8000); } }
-                    onExited: {
-                        updPane.updating = false;
-                        updPane.log += (exitCode === 0 ? "\nDone. MacShell reloads itself." : "\nUpdate failed (exit " + exitCode + ").") + "\n";
-                        updPane.check();
+                FileView {
+                    id: logView
+                    path: updPane.updating ? updPane.logFile : ""
+                    printErrors: false
+                    onLoaded: {
+                        var t = text();
+                        updPane.log = "Updating MacShell\u2026\n" + (t.length > 8000 ? t.slice(-8000) : t);
+                        var m = /\[exit (\d+)\]/.exec(t);
+                        if (m) {
+                            updPane.updating = false; logPoll.stop();
+                            updPane.log += m[1] === "0" ? "\nDone. MacShell restarts on the new version." : "\nThe update failed: nothing was changed.";
+                            updPane.check();
+                        }
                     }
                 }
-                // what is installed: the commit the shell was installed from
+                Timer { id: logPoll; interval: 700; repeat: true; onTriggered: logView.reload() }
+                // what is installed: the version the installer stamped
                 Process {
                     id: verProc
-                    command: ["sh", "-c", "git -C \"$HOME/src/Macshell\" log -1 --format=%h' '%cd --date=format:'%d %b %Y' 2>/dev/null || echo unknown"]
+                    command: ["sh", "-c", "v=\"$HOME/.local/share/macshell/version\"; if [ -s \"$v\" ]; then cut -c1-7 \"$v\" | tr -d '\\n'; printf ' '; cut -d' ' -f2- \"$v\"; else echo unknown; fi"]
                     stdout: StdioCollector { onStreamFinished: updPane.localVer = text.trim() }
                 }
                 // what is on GitHub: the latest commits on the tahoe branch, used as the release notes
@@ -3398,7 +3426,8 @@ Scope {
                             }
                             updPane.notes = out;
                             var head = out.length ? out[0].sha : "";
-                            updPane.status = (updPane.localVer.indexOf(head) === 0) ? "MacShell is up to date." : "An update is available.";
+                            updPane.status = updPane.localVer === "unknown" ? "Installed version unknown: updating installs the latest."
+                                           : (updPane.localVer.indexOf(head) === 0 ? "MacShell is up to date." : "An update is available.");
                         }
                     }
                 }
@@ -3433,16 +3462,20 @@ Scope {
                     SRow {
                         t: pal
                         title: "Update MacShell"
-                        subtitle: "Pulls the latest version and reinstalls the shell and lock screen, right here. Your settings are kept."
+                        subtitle: "Downloads the latest version and installs it next to the running one, then switches over. Your settings are kept, and the version you had stays in ~/.config/quickshell/MacShell.prev."
                         SButton {
                             t: pal
-                            text: "Update\u2026"
-                            onClicked: {
-                                var inst = Quickshell.env("HOME") + "/.local/share/macshell/install.sh";
-                                var term = root.bar ? root.bar.terminal : "kitty";
-                                Quickshell.execDetached(["sh", "-c", term + " -e sh -c '\"$0\" --update; echo; echo Press Enter to close; read x'", inst]);
-                            }
+                            text: updPane.updating ? "Updating\u2026" : "Update Now"
+                            enabled: !updPane.updating
+                            onClicked: updPane.runUpdate()
                         }
+                    }
+                    Text {
+                        visible: updPane.log !== ""
+                        x: 14; width: parent.width - 28; topPadding: 4; bottomPadding: 12
+                        text: updPane.log.split("\n").slice(-12).join("\n")
+                        wrapMode: Text.WrapAnywhere
+                        color: pal.text2; font.family: "monospace"; font.pixelSize: 11
                     }
                 }
                 SLabel { t: pal; header: true; text: "What's New" }
@@ -4102,6 +4135,28 @@ Scope {
                     t: pal
                     SRow {
                         t: pal
+                        title: "Logs"
+                        subtitle: "Everything the shell reported since it started (~/.cache/macshell/shell.log). Copy it into a bug report when something misbehaves."
+                        Row {
+                            spacing: 8
+                            SButton {
+                                t: pal; text: "Open"
+                                onClicked: Quickshell.execDetached(["sh", "-c", "f=\"$HOME/.cache/macshell/shell.log\"; [ -f \"$f\" ] && xdg-open \"$f\""])
+                            }
+                            SButton {
+                                t: pal; text: copiedT.running ? "Copied" : "Copy"
+                                onClicked: {
+                                    Quickshell.execDetached(["sh", "-c",
+                                        "d=\"$HOME/.cache/macshell\"; { echo '## MacShell bug report'; cat \"$HOME/.local/share/macshell/version\" 2>/dev/null; uname -sr; hyprctl version 2>/dev/null | head -1; qs --version 2>/dev/null | head -1; "
+                                        + "echo; echo '## this run'; tail -n 300 \"$d/shell.log\" 2>/dev/null; echo; echo '## previous run'; tail -n 120 \"$d/shell.prev.log\" 2>/dev/null; } | wl-copy"]);
+                                    copiedT.restart();
+                                }
+                                Timer { id: copiedT; interval: 1600 }
+                            }
+                        }
+                    }
+                    SRow {
+                        t: pal
                         title: "Restart the shell"
                         subtitle: "Reloads MacShell. Your settings, pinned apps and widgets are kept."
                         SButton {
@@ -4110,7 +4165,7 @@ Scope {
                             onClicked: {
                                 root.hideWin(prefsWindow);
                                 // the autostart loop brings it straight back; -x -f never matched the real command line
-                                Quickshell.execDetached(["sh", "-c", "sleep 0.3; pkill -x qs || pkill -f 'qs -c MacShell'"]);
+                                Quickshell.execDetached(["sh", "-c", "sleep 0.3; qs kill -c MacShell"]);
                             }
                         }
                     }

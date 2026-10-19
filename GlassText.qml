@@ -19,6 +19,7 @@ Item {
     property real margin: 70            // room around the letters for the morph and the refraction
     property real rimSoft: -1           // px over which a stroke rounds off (-1: thin rim, the lock clock's look; larger: thick lens-like glass)
     property real bevel: 4.5
+    property bool dome: false           // thick glass letters (glassdome.frag): every stroke is a rounded lens — Mac Hello
     readonly property bool failed: glass.status === ShaderEffect.Error
 
     implicitWidth: label.implicitWidth
@@ -90,7 +91,7 @@ Item {
         width: maskTex.sourceRect.width
         height: maskTex.sourceRect.height
         visible: gt.backdrop !== null && gt.frame !== null
-        fragmentShader: Qt.resolvedUrl("glasstext.frag.qsb")
+        fragmentShader: Qt.resolvedUrl(gt.dome ? "glassdome.frag.qsb" : "glasstext.frag.qsb")
         // where the glass really is inside the backdrop (follows the word's width as it changes)
         readonly property point fp: { gt.x; gt.y; label.x; label.width; return gt.frame ? glass.mapToItem(gt.frame, 0, 0) : Qt.point(0, 0); }
         property variant src: backTex

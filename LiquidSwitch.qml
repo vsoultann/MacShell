@@ -15,19 +15,21 @@ Item {
     opacity: enabled ? 1 : 0.4
 
     property real glass: 0
-    Behavior on glass { NumberAnimation { duration: sw.glass < 0.5 ? 160 : 320; easing.type: Easing.OutCubic } }
-    Timer { id: settle; interval: 300; onTriggered: if (!ma.pressed) sw.glass = 0 }
+    // into glass quickly, back to solid slowly once it has landed
+    Behavior on glass { NumberAnimation { duration: ma.pressed ? 220 : 380; easing.type: ma.pressed ? Easing.OutCubic : Easing.InOutCubic } }
+    Timer { id: settle; interval: 380; onTriggered: if (!ma.pressed) sw.glass = 0 }
 
     Rectangle {
         anchors.fill: parent
         radius: height / 2
         color: sw.checked ? sw.accent : sw.offColor
-        Behavior on color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
+        Behavior on color { ColorAnimation { duration: 320; easing.type: Easing.InOutCubic } }
     }
     LiquidKnob {
         id: knob
         restW: sw.height - 4; restH: sw.height - 4
-        grow: 1.55
+        grow: 1.5
+        growH: 0.08
         glass: sw.glass
         material: sw.material
         dark: sw.dark
@@ -35,10 +37,11 @@ Item {
         trackH: sw.height - 4
         leftRoom: sw.checked ? 1e6 : 0
         rightRoom: sw.checked ? 0 : 1e6
-        readonly property real restX: sw.checked ? sw.width - 2 - width : 2
-        x: ma.dragging ? Math.max(2 - (width - restW) / 2, Math.min(sw.width - 2 - width + (width - restW) / 2, ma.dragX - width / 2)) : restX
-        y: (sw.height - height) / 2
-        Behavior on x { enabled: !ma.dragging; NumberAnimation { duration: 380; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
+        // where along the track it sits (0 off … 1 on); animated on its own, so stretching never pushes it past the ends
+        property real along: sw.checked ? 1 : 0
+        Behavior on along { enabled: !ma.dragging; NumberAnimation { duration: 460; easing.type: Easing.OutBack; easing.overshoot: 0.8 } }
+        x: ma.dragging ? Math.max(2, Math.min(sw.width - 2 - width, ma.dragX - width / 2))
+                       : 2 + Math.max(0, Math.min(1, along)) * (sw.width - 4 - width)
     }
     MouseArea {
         id: ma

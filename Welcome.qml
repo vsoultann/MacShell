@@ -268,10 +268,11 @@ Scope {
                     frame: w.contentItem
                     // thick, clear glass: each stroke rounds off over most of its width, so the whole letter bends the
                     // scene like a lens instead of only catching light at its rim
-                    intensity: 0.05
-                    rimSoft: Math.round(w.height * 0.009)
-                    bevel: 7
-                    refract: Math.round(w.height * 0.03)
+                    dome: true
+                    intensity: 0.0
+                    rimSoft: Math.round(w.height * 0.012)
+                    bevel: 22
+                    refract: Math.round(w.height * 0.035)
                 }
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter

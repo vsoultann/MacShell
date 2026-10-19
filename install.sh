@@ -43,6 +43,10 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QS="$HOME/.config/quickshell"
 SESS="$HOME/.config/hypr-macshell"
 SHARE="$HOME/.local/share/macshell"
+# where Settings → Software Update gets new versions from (a clone the installer owns; your own checkout is never touched)
+UPSTREAM="https://github.com/vsoultann/MacShell.git"
+BRANCH="tahoe"
+SRC="$SHARE/src"
 YES=0
 ORDER=(deps shell applemusic menubar spotlight controlcenter notifications dock widgets clock lock config session existing sandbox hotspot icons fonts apply defaults emoji wallpapers sounds)
 # the parts of the shell you can pick individually (one set of files, each part switched on or off)
@@ -150,13 +154,21 @@ compile_shaders() {
 
 do_shell() {
     [ "$(installed_kind)" = original ] && backup_original
+    # never install from a folder that isn't a MacShell checkout: the copy below replaces the whole shell
+    [ -f "$REPO/shell.qml" ] && [ -f "$REPO/MacBar.qml" ] || die "$REPO doesn't contain MacShell (run the installer from the repository)"
     say "Installing the shell"
-    mkdir -p "$QS/MacShell" "$SHARE"
-    # repo root = the shell (QML, shaders, assets); the running shell reloads by itself
-    rsync -a --delete --exclude '.git' --exclude 'MacLock' --exclude 'session' --exclude 'install.sh' --exclude 'README*' \
-          --exclude 'docs' --exclude '*.qsb' "$REPO"/ "$QS/MacShell"/
-    compile_shaders "$QS/MacShell"
+    mkdir -p "$QS" "$SHARE"
+    # built next to the running shell, then swapped in with one rename: a running shell never sees half-copied files,
+    # and the version you had stays in MacShell.prev
+    rm -rf "$QS/MacShell.new"
+    rsync -a --exclude '.git' --exclude 'MacLock' --exclude 'session' --exclude 'install.sh' --exclude 'README*' \
+          --exclude 'docs' --exclude '*.qsb' "$REPO"/ "$QS/MacShell.new"/
+    compile_shaders "$QS/MacShell.new"
+    if [ -d "$QS/MacShell" ]; then rm -rf "$QS/MacShell.prev"; mv "$QS/MacShell" "$QS/MacShell.prev"; fi
+    mv "$QS/MacShell.new" "$QS/MacShell"
     cp "$REPO/install.sh" "$SHARE/install.sh"; chmod +x "$SHARE/install.sh"
+    # what is installed, for Settings → Software Update
+    if have git && [ -d "$REPO/.git" ]; then git -C "$REPO" log -1 --format='%H %cd' --date=format:'%d %b %Y' > "$SHARE/version" 2>/dev/null || true; fi
     # MacShell's own apps (Clock) in the app launcher / Spotlight / Dock
     mkdir -p "$HOME/.local/share/applications"
     cp "$REPO"/session/applications/*.desktop "$HOME/.local/share/applications/" 2>/dev/null || true
@@ -207,6 +219,7 @@ do_applemusic() {
 }
 
 do_lock() {
+    [ -f "$REPO/MacLock/shell.qml" ] || die "$REPO/MacLock is missing (run the installer from the repository)"
     say "Installing the lock screen"
     mkdir -p "$QS/MacLock"
     rsync -a --delete --exclude '*.qsb' "$REPO/MacLock"/ "$QS/MacLock"/
@@ -478,9 +491,29 @@ do_check() {
 }
 
 pull() {
-    have git && [ -d "$REPO/.git" ] || { warn "$REPO is not a git checkout — using the files as they are"; return 0; }
+    have git || die "git is needed to update"
     say "Getting the latest version"
-    git -C "$REPO" pull --ff-only || die "couldn't update (local changes in $REPO?)"
+    if [ -d "$REPO/.git" ] && [ "$REPO" != "$SRC" ]; then
+        git -C "$REPO" pull --ff-only || die "couldn't update (local changes in $REPO?)"
+        return 0
+    fi
+    # run from ~/.local/share/macshell (Settings → Software Update): update the installer's own clone, then let the
+    # NEW installer do the work, so an update can also fix the installer itself
+    if [ -d "$SRC/.git" ]; then
+        git -C "$SRC" fetch --depth 1 origin "$BRANCH" && git -C "$SRC" reset --hard FETCH_HEAD || die "couldn't download the update"
+    else
+        rm -rf "$SRC"
+        git clone --depth 1 -b "$BRANCH" "$UPSTREAM" "$SRC" || die "couldn't download the update"
+    fi
+    [ "$REPO" = "$SRC" ] && return 0
+    exec bash "$SRC/install.sh" --update-here -y "${UPDATE_PARTS[@]}"
+}
+
+# the shell restarts on the new version (the session / autostart loop starts it again within a second)
+restart_shell() {
+    have qs || return 0
+    qs kill -c MacShell >/dev/null 2>&1 || true
+    note "MacShell restarted"
 }
 
 run() {
@@ -589,6 +622,7 @@ while [ $i -lt ${#args[@]} ]; do
         --deps-only) do_deps; exit 0 ;;
         --only) i=$((i + 1)); IFS=',' read -r -a parts <<< "${args[$i]:-}"; for p in "${parts[@]}"; do known "$p" || die "unknown feature: $p"; todo+=("$p"); done ;;
         --update) mode=update ;;
+        --update-here) mode=update-here ;;
         --uninstall) mode=uninstall ;;
         --check) do_check; exit 0 ;;
         -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
@@ -598,7 +632,12 @@ while [ $i -lt ${#args[@]} ]; do
     i=$((i + 1))
 done
 case "$mode" in
-    update) pull; [ ${#todo[@]} -eq 0 ] && todo=(shell lock config); run "${todo[@]}" ;;
+    update|update-here)
+        [ ${#todo[@]} -eq 0 ] && todo=(shell lock config)
+        UPDATE_PARTS=("${todo[@]}")
+        [ "$mode" = update ] && pull
+        run "${todo[@]}"
+        restart_shell ;;
     uninstall) do_uninstall "${todo[@]}" ;;
     *) [ ${#todo[@]} -eq 0 ] && die "nothing to do (see --help)"; run "${todo[@]}" ;;
 esac

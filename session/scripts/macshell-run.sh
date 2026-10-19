@@ -9,7 +9,8 @@ CFG="${MACSHELL_CONFIG:-MacShell}"
 QS_DIR="$HOME/.config/quickshell"
 GOOD="$CFG.lastgood"
 export QSG_USE_SIMPLE_ANIMATION_DRIVER=1 MALLOC_ARENA_MAX=2
-# stderr of the last runs (Qt / Wayland fatal errors never reach the shell's own log)
+# Everything the shell prints, per run: ~/.cache/macshell/shell.log (this run) and shell.prev.log (the one before).
+# Settings → About → Logs opens or copies it. Qt / Wayland fatal errors only ever show up here.
 LOGDIR="${XDG_CACHE_HOME:-$HOME/.cache}/macshell"; mkdir -p "$LOGDIR"
 
 fails=0
@@ -33,9 +34,11 @@ while :; do
           fi ) &
     fi
 
-    [ -f "$LOGDIR/qs-stderr.log" ] && mv -f "$LOGDIR/qs-stderr.log" "$LOGDIR/qs-stderr.prev.log"
-    qs -c "$name" 2>"$LOGDIR/qs-stderr.log"
-    echo "exit status $? after $(( $(date +%s) - start ))s" >>"$LOGDIR/qs-stderr.log"
+    [ -f "$LOGDIR/shell.log" ] && mv -f "$LOGDIR/shell.log" "$LOGDIR/shell.prev.log"
+    { echo "== MacShell ($name) started $(date '+%F %T')"; } >"$LOGDIR/shell.log"
+    # no colour codes in the file; the Wayland text-input chatter is dropped (thousands of harmless lines)
+    qs -c "$name" 2>&1 | sed -u -e 's/\x1b\[[0-9;]*m//g' -e '/QWaylandTextInputv3::disableSurface/d' >>"$LOGDIR/shell.log"
+    echo "== exited after $(( $(date +%s) - start ))s" >>"$LOGDIR/shell.log"
     lived=$(( $(date +%s) - start ))
     if [ "$lived" -lt 15 ]; then fails=$((fails + 1)); else fails=0; fi
     # after the fallback has been running, try the real one again next time

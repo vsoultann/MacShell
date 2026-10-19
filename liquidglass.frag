@@ -123,18 +123,24 @@ void main()
     }
 
     // ── distance to edge + outward edge direction ──
-    // The direction comes from a rounder copy of the shape (corner radius at least the bezel's width): with the real
-    // radius, a bezel wider than the corner switched from "left edge" to "top edge" along a hard diagonal, and the
-    // refraction showed that seam as a mitred picture-frame corner.
+    // Follows the real shape. Inside the straight part the two edges used to meet along a hard diagonal (the inner
+    // distance is max(dx, dy)), which the refraction showed as a mitred picture-frame corner; a smooth max blends the
+    // two edges over a few pixels instead, so the corner is seamless and the glass still matches the outline.
     float t = max(-sd, 0.0);
-    float bzN = max(bezel, 1.0) * 1.45;
-    float rN = min(max(r, bzN), min(hs.x, hs.y));
-    vec2 d2 = abs(q) - (hs - rN);
-    float tS = max(-roundBox(q, hs, rN), 0.0);     // distance to that rounder edge: smooth contours deep inside
+    vec2 d2 = abs(q) - (hs - r);
     vec2 sg = vec2(q.x >= 0.0 ? 1.0 : -1.0, q.y >= 0.0 ? 1.0 : -1.0);
-    vec2 m  = max(d2, 0.0);
-    vec2 g  = (length(m) > 1e-4) ? normalize(m) * sg
-                                 : ((d2.x > d2.y) ? vec2(sg.x, 0.0) : vec2(0.0, sg.y));
+    float tS;
+    vec2 g;
+    if (d2.x > 0.0 && d2.y > 0.0) {                // the rounded corner itself: exact
+        tS = t;
+        g = normalize(d2) * sg;
+    } else {
+        float k = clamp(bezel * 0.5, 4.0, 14.0);
+        float h = clamp(0.5 + 0.5 * (d2.x - d2.y) / k, 0.0, 1.0);
+        float sm = mix(d2.y, d2.x, h) + k * h * (1.0 - h);
+        tS = max(r - sm, 0.0);
+        g = normalize(vec2(h * sg.x, (1.0 - h) * sg.y));
+    }
 
     // ── convex squircle bezel → surface normal ──
     float bz   = max(bezel, 1.0) * 1.45;           // wider bezel: the glass reads thicker

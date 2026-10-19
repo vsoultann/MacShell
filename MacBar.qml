@@ -990,8 +990,11 @@ Scope {
             active: !g.liquid && g.backdrop !== null && g.visible && g.blur > 0.5
             sourceComponent: Item {
                 id: fl
-                readonly property real m: Math.max(24, g.blur * 1.5)     // backdrop captured around the slab, so the blur has pixels to pull in
-                readonly property real ds: g.blur >= 8 ? 0.5 : 1.0
+                // Blur and Frosted are meant to be properly blurry (the slider used to move ~1.4 px per step and barely
+                // showed): 2.5× the Liquid Glass radius, blurred at half / quarter size so the strong end stays cheap
+                readonly property real px: g.blur * 2.5
+                readonly property real m: Math.max(24, px * 1.2)     // backdrop captured around the slab, so the blur has pixels to pull in
+                readonly property real ds: px >= 48 ? 0.25 : (px >= 8 ? 0.5 : 1.0)
                 anchors.fill: parent
                 ShaderEffectSource {
                     id: fsrc
@@ -1020,7 +1023,7 @@ Scope {
                         source: fsrc
                         blurEnabled: true
                         blurMax: 64
-                        blur: Math.min(1.0, g.blur * 1.4 * fl.ds / 64.0)
+                        blur: Math.min(1.0, fl.px * fl.ds / 32.0)
                         autoPaddingEnabled: false
                         saturation: 0.25            // frosted glass desaturates a little, like macOS
                     }
@@ -1031,7 +1034,8 @@ Scope {
             visible: !g.liquid
             anchors.fill: parent
             radius: g.cornerR
-            color: g.dark ? Qt.rgba(0.12, 0.12, 0.13, 0.30 + g.tint * 0.9) : Qt.rgba(1, 1, 1, 0.30 + g.tint * 0.7)
+            // lighter than it was: the tint hid the blur under it
+            color: g.dark ? Qt.rgba(0.12, 0.12, 0.13, 0.16 + g.tint * 0.62) : Qt.rgba(1, 1, 1, 0.18 + g.tint * 0.55)
             border.width: 1
             border.color: g.dark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.55)
         }
@@ -1240,6 +1244,16 @@ Scope {
         required property var gx
         property real radius: 34
         GGlass { anchors.fill: parent; gx: tile.gx; cornerR: tile.radius; thickness: 22; shadowAmt: 0.45 }
+        // a subtle light line follows the outline while the pointer is over the tile, brightest near the pointer
+        HoverHandler { id: tileHov }
+        ContourGlow {
+            z: 50; pad: 8
+            cornerR: tile.radius
+            hovered: tileHov.hovered
+            at: tileHov.point.position
+            glowColor: tile.t.dark ? "white" : tile.t.accent
+            opacity: 0.55
+        }
     }
 
     // small glass pill button ("Edit Controls", "Done", "Reset")
@@ -1300,12 +1314,13 @@ Scope {
         property string onTint: ""
         property real d: 40
         property real shadow: 0
+        property bool glass: true          // false when the tile under it already is the glass (1×1 buttons fill their tile)
         signal clicked()
         property bool bounce: false
         width: d; height: d
         scale: (bounce && bma.pressed) ? 0.88 : 1
         Behavior on scale { NumberAnimation { duration: 230; easing.type: Easing.OutBack; easing.overshoot: 3.2 } }
-        GGlass { anchors.fill: parent; gx: b.gx; cornerR: b.d / 2; thickness: 14; strengthMul: 0.6; shadowAmt: b.shadow }
+        GGlass { visible: b.glass; anchors.fill: parent; gx: b.gx; cornerR: b.d / 2; thickness: 14; strengthMul: 0.6; shadowAmt: b.shadow }
         Rectangle {
             anchors.fill: parent
             radius: b.d / 2
@@ -4684,6 +4699,9 @@ Scope {
                         readonly property bool mic: root.osdKind === "mic"
                         property real kick: 0
                         property real spin: 0
+                        // a small turn per step (with the brightness going up: clockwise), not a whole revolution
+                        property real lastBright: 0
+                        onSpinChanged: lastBright = root.osdValue
                         scale: 1 + kick * 0.16
                         Behavior on spin { NumberAnimation { duration: 680; easing.type: Easing.OutCubic } }
                         SequentialAnimation {
@@ -4695,7 +4713,7 @@ Scope {
                             target: root
                             function onOsdValueChanged() {
                                 kickAnim.restart();
-                                if (root.osdKind === "brightness") osdIcon.spin += 360;
+                                if (root.osdKind === "brightness") osdIcon.spin += root.osdValue > osdIcon.lastBright ? 30 : -30;
                             }
                         }
                         Glyph {
@@ -5256,7 +5274,7 @@ Scope {
                         strength: root.glassLiquid
                         rim: root.glassRim
                         grain: root.glassGrain
-                        blur: root.glassBlur
+                        blur: root.liquidActive ? root.glassBlur : root.glassBlur * 2.5
                         debug: root.glassDebug
                         onFailed: root.glassState = "failed"
                     }
@@ -6649,7 +6667,7 @@ Scope {
                         strength: root.ccStyle === "macos" ? root.glassLiquid * 0.30 : root.glassLiquid
                         rim: root.ccStyle === "macos" ? root.glassRim * 0.45 : root.glassRim
                         grain: root.glassGrain
-                        blur: root.glassBlur
+                        blur: root.liquidActive ? root.glassBlur : root.glassBlur * 2.5
                         debug: root.glassDebug
                         onFailed: root.glassState = "failed"
                     }
@@ -6718,7 +6736,7 @@ Scope {
                         CCTile {
                             t: pal; gx: ccg
                             CCBtn {
-                                t: pal; gx: ccg; anchors.centerIn: parent
+                                t: pal; gx: ccg; anchors.fill: parent; d: Math.min(parent.width, parent.height); glass: false
                                 kind: "bluetooth"; on: root.btOn
                                 onClicked: root.toggleBt()
                             }
@@ -6729,7 +6747,7 @@ Scope {
                         CCTile {
                             t: pal; gx: ccg
                             CCBtn {
-                                t: pal; gx: ccg; anchors.centerIn: parent
+                                t: pal; gx: ccg; anchors.fill: parent; d: Math.min(parent.width, parent.height); glass: false
                                 kind: "airplane"; on: root.airplane
                                 onClicked: root.toggleAirplane()
                             }
@@ -6797,7 +6815,7 @@ Scope {
                         CCTile {
                             t: pal; gx: ccg
                             CCBtn {
-                                t: pal; gx: ccg; anchors.centerIn: parent
+                                t: pal; gx: ccg; anchors.fill: parent; d: Math.min(parent.width, parent.height); glass: false
                                 kind: "nightshift"; on: root.nightOn
                                 onClicked: root.nightOn = !root.nightOn
                             }
@@ -6808,7 +6826,7 @@ Scope {
                         CCTile {
                             t: pal; gx: ccg
                             CCBtn {
-                                t: pal; gx: ccg; anchors.centerIn: parent
+                                t: pal; gx: ccg; anchors.fill: parent; d: Math.min(parent.width, parent.height); glass: false
                                 kind: "coffee"; on: root.keepAwake
                                 onClicked: root.keepAwake = !root.keepAwake
                             }
@@ -6862,7 +6880,7 @@ Scope {
                         CCTile {
                             t: pal; gx: ccg
                             CCBtn {
-                                t: pal; gx: ccg; anchors.centerIn: parent
+                                t: pal; gx: ccg; anchors.fill: parent; d: Math.min(parent.width, parent.height); glass: false
                                 kind: "airdrop"; on: root.localsendRunning
                                 onClicked: root.toggleAirDrop()
                             }
@@ -6873,7 +6891,7 @@ Scope {
                         CCTile {
                             t: pal; gx: ccg
                             CCBtn {
-                                t: pal; gx: ccg; anchors.centerIn: parent
+                                t: pal; gx: ccg; anchors.fill: parent; d: Math.min(parent.width, parent.height); glass: false
                                 kind: "lock"; on: false
                                 onClicked: { root.closeCC(); Quickshell.execDetached(["sh", "-c", "loginctl lock-session 2>/dev/null || qs -c MacLock ipc call lock lock"]); }
                             }
@@ -6884,7 +6902,7 @@ Scope {
                         CCTile {
                             t: pal; gx: ccg
                             CCBtn {
-                                t: pal; gx: ccg; anchors.centerIn: parent
+                                t: pal; gx: ccg; anchors.fill: parent; d: Math.min(parent.width, parent.height); glass: false
                                 kind: "power"; on: false
                                 onClicked: { root.closeCC(); Quickshell.execDetached(["systemctl", "suspend"]); }
                             }
@@ -6936,7 +6954,7 @@ Scope {
                         CCTile {
                             t: pal; gx: ccg
                             CCBtn {
-                                t: pal; gx: ccg; anchors.centerIn: parent
+                                t: pal; gx: ccg; anchors.fill: parent; d: Math.min(parent.width, parent.height); glass: false
                                 kind: "contrast"; on: root.darkMode
                                 onClicked: root.setDark(!root.darkMode)
                             }
