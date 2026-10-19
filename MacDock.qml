@@ -238,7 +238,7 @@ Scope {
     property real minimizeSecs: 0.42
     // Settings → Mouse → Pointer: Apple's macOS cursors (black "macOS" or "macOS-White") and their size
     property string cursorTheme: "macOS"
-    property int cursorSize: 24
+    property int cursorSize: 32               // 32 ≈ the macOS pointer's size on a normal-density screen
     function applyCursor() {
         Quickshell.execDetached([Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-cursor.sh", cursorTheme, String(cursorSize)]);
     }
@@ -3886,7 +3886,7 @@ Scope {
                     t: pal
                     SRow {
                         t: pal; title: "Pointer"
-                        subtitle: "Apple's macOS pointer, black or white"
+                        subtitle: "Apple's macOS pointer, drawn sharp at any size with its soft shadow"
                         SSegmented {
                             t: pal
                             model: ["Black", "White"]
@@ -3901,8 +3901,8 @@ Scope {
                             t: pal
                             model: ["Normal", "Large", "Larger"]
                             segWidth: 72
-                            current: root.cursorSize >= 48 ? 2 : (root.cursorSize >= 32 ? 1 : 0)
-                            onPicked: i => root.cursorSize = [24, 32, 48][i]
+                            current: root.cursorSize >= 56 ? 2 : (root.cursorSize >= 40 ? 1 : 0)
+                            onPicked: i => root.cursorSize = [32, 40, 56][i]
                         }
                     }
                 }

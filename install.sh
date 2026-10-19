@@ -409,6 +409,11 @@ do_icons() {
             && mkdir -p "$HOME/.local/share/icons" && tar -xf "$c/$n.tar.xz" -C "$HOME/.local/share/icons" \
             || warn "couldn't fetch the $n pointer"
     done
+    # then redrawn from Apple's vector drawings at every size MacShell offers, with the fuller macOS shadow
+    if curl -fsSL -o "$c/src.tgz" https://github.com/ful1e5/apple_cursor/archive/refs/tags/v2.0.1.tar.gz \
+         && mkdir -p "$c/src" && tar -xzf "$c/src.tgz" -C "$c/src"; then
+        python3 -I "$REPO/session/scripts/macshell-cursor-build.py" "$(echo "$c"/src/*)" || warn "pointers: keeping the stock ones"
+    fi
     rm -rf "$c"
     say "Installing the MacTahoe icon theme"
     local t; t=$(mktemp -d)
