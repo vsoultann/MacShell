@@ -2219,7 +2219,7 @@ Scope {
                     SRow {
                         t: pal
                         title: "Automatically hide and show the Dock"
-                        subtitle: root.hideMode === "smart" ? "Hides only while a tiled window needs the space"
+                        subtitle: root.hideMode === "smart" ? "Hides while a window fills the screen — maximised, fullscreen or tiled"
                                 : (root.hideMode === "always" ? "Always hidden until the pointer touches the screen edge"
                                                               : "Always visible and reserves screen space")
                         SSegmented {
@@ -4904,7 +4904,10 @@ Scope {
             if (mon.specialWorkspace && mon.specialWorkspace.id !== 0) ids.push(mon.specialWorkspace.id);
             for (var c = 0; c < clients.length; c++) {
                 var cl = clients[c];
-                if (cl.floating || !cl.mapped || cl.hidden) continue;
+                if (!cl.mapped || cl.hidden) continue;
+                // Windows open floating here, so "floating" alone can't mean "out of the way": a floating
+                // window that has been maximised (Super+D) or made fullscreen needs the whole screen too.
+                if (cl.floating && !(cl.fullscreen > 0)) continue;
                 if (cl.monitor !== mon.id) continue;
                 if (ids.indexOf(cl.workspace.id) >= 0) { busy[mon.name] = true; break; }
             }

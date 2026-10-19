@@ -27,13 +27,36 @@ Scope {
     property string avatar: ""
     property string material: "liquid"
     property real amount: 0.5               // blur / glass amount
+    property string appearance: "dark"
+    property color pickAccent: "#0A84FF"
     property int avatarPick: -1
+    readonly property var accents: [
+        { n: "Blue", c: "#0a84ff" }, { n: "Purple", c: "#bf5af2" }, { n: "Pink", c: "#ff375f" }, { n: "Red", c: "#ff453a" },
+        { n: "Orange", c: "#ff9f0a" }, { n: "Yellow", c: "#ffd60a" }, { n: "Green", c: "#30d158" }, { n: "Graphite", c: "#8e8e93" }
+    ]
+    // C: what the look page needs from the shell — the real glass shader, and a Mac picture to sit on
+    readonly property url glassShader: bar && bar.glassShaderUrl ? bar.glassShaderUrl
+                                     : "file://" + Quickshell.env("HOME") + "/.config/macbar/liquidglass.frag.qsb"
+    readonly property string goldenGate: Quickshell.env("HOME") + "/Pictures/Wallpapers/macos-27-GoldenGate-" + (appearance === "dark" ? "Dark" : "Light") + ".png"
+    property bool hasGoldenGate: false
+    readonly property string macWallpaper: hasGoldenGate ? "file://" + goldenGate
+                                         : (bar && bar.wallpaperPath ? "file://" + bar.wallpaperPath : "")
+    // how much tint the glass carries for the chosen material and amount (the same curve the shell uses)
+    readonly property real glassTint: material === "opaque" ? 1
+                                    : (material === "frosted" ? 0.28 + amount * 0.34
+                                    : (material === "blur" ? 0.16 + amount * 0.22 : 0.10 + amount * 0.26))
+    Process {
+        id: ggCheck
+        running: true
+        command: ["sh", "-c", "[ -r \"$HOME/Pictures/Wallpapers/macos-27-GoldenGate-Dark.png\" ] && echo yes || echo no"]
+        stdout: StdioCollector { onStreamFinished: root.hasGoldenGate = text.trim() === "yes" }
+    }
 
     readonly property var hellos: [
         "hello", "مرحبا", "bonjour", "hola", "你好", "こんにちは", "안녕하세요", "olá", "привет",
         "ciao", "hallo", "नमस्ते", "merhaba", "שלום", "cześć", "hej", "xin chào", "สวัสดี",
-        "γεια", "ahoj", "salam", "কি খবর", "สบายดี", "سلام", "habari", "halo", "こんにちは",
-        "szia", "tere", "sveiki", "bună", "zdravo", "selam", "hei", "aloha"
+        "γεια σου", "ahoj", "নমস্কার", "سلام", "habari", "halo", "szia", "tere", "sveiki",
+        "bună", "zdravo", "selam", "hei", "kamusta", "aloha"
     ]
     readonly property var avatars: [
         { c1: "#FF9F0A", c2: "#FF375F" }, { c1: "#0A84FF", c2: "#5E5CE6" }, { c1: "#30D158", c2: "#0A84FF" },
@@ -52,7 +75,11 @@ Scope {
     function open() {
         step = 0; helloIdx = 0;
         userName = Quickshell.env("USER") || "";
-        if (bar) { material = bar.material === "custom" ? "liquid" : bar.material; }
+        if (bar) {
+            material = bar.material === "custom" ? "liquid" : bar.material;
+            appearance = bar.darkMode ? "dark" : "light";
+            pickAccent = bar.accent;
+        }
         shown = true;
         nameProc.running = true;
     }
@@ -71,6 +98,14 @@ Scope {
                 bar.material = material;        // the sliders are part of the chosen material, not "custom"
             }
             bar.userDisplayName = userName;
+        }
+        // appearance and accent are system settings: they go through the Dock, which every app reads
+        if (hub && hub.dock && hub.dock.setLook) {
+            hub.dock.setLook("darkMode", appearance === "dark");
+            hub.dock.setLook("accent", pickAccent);
+        } else if (bar) {
+            bar.darkMode = (appearance === "dark");
+            bar.accent = pickAccent;
         }
         if (avatarPick >= 0) {
             // draw the chosen picture and keep it as ~/.face, where the lock screen and Settings read it
@@ -125,17 +160,47 @@ Scope {
                 color: "black"      // fully covers the bar and the Dock, like Setup Assistant
                 opacity: 1
             }
-            // a soft moving glow behind everything, like Apple's welcome
-            Rectangle {
-                anchors.centerIn: parent
-                // big enough that rotating it never uncovers a corner
-                width: Math.hypot(parent.width, parent.height) * 1.1; height: width
-                gradient: Gradient {
-                    GradientStop { position: 0; color: Qt.rgba(0.05, 0.25, 0.65, 0.55) }
-                    GradientStop { position: 1; color: Qt.rgba(0.35, 0.05, 0.45, 0.35) }
+            // A Mac picture behind everything: the macOS Golden Gate wallpaper when it is installed, otherwise
+            // your own. Blurred and dimmed the way Setup Assistant sits over its backdrop, so text stays legible.
+            Item {
+                anchors.fill: parent
+                Image {
+                    id: helloWall
+                    anchors.fill: parent
+                    source: root.macWallpaper
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true; cache: true; smooth: true
+                    sourceSize: Qt.size(1600, 1000)
+                    visible: false
                 }
-                opacity: 0.6
-                NumberAnimation on rotation { from: 0; to: 360; duration: 90000; loops: Animation.Infinite; running: root.shown }
+                MultiEffect {
+                    anchors.fill: parent
+                    source: helloWall
+                    visible: helloWall.status === Image.Ready
+                    blurEnabled: true; blurMax: 64; blur: 0.85
+                    saturation: 0.15
+                    // dim in both modes: the page's text is white, and Light / Dark is shown in the preview card
+                    brightness: root.appearance === "dark" ? -0.34 : -0.28
+                    // a slow drift, so the backdrop feels alive without pulling the eye
+                    scale: 1.06
+                    SequentialAnimation on x {
+                        running: root.shown; loops: Animation.Infinite
+                        NumberAnimation { from: -18; to: 18; duration: 24000; easing.type: Easing.InOutSine }
+                        NumberAnimation { from: 18; to: -18; duration: 24000; easing.type: Easing.InOutSine }
+                    }
+                }
+                // no picture at all: the old soft glow
+                Rectangle {
+                    anchors.centerIn: parent
+                    visible: helloWall.status !== Image.Ready
+                    width: Math.hypot(parent.width, parent.height) * 1.1; height: width
+                    gradient: Gradient {
+                        GradientStop { position: 0; color: Qt.rgba(0.05, 0.25, 0.65, 0.55) }
+                        GradientStop { position: 1; color: Qt.rgba(0.35, 0.05, 0.45, 0.35) }
+                    }
+                    opacity: 0.6
+                    NumberAnimation on rotation { from: 0; to: 360; duration: 90000; loops: Animation.Infinite; running: root.shown && !helloWall.visible }
+                }
             }
 
             // ── 0: hello in every language ──
@@ -148,7 +213,9 @@ Scope {
                     anchors.centerIn: parent
                     text: root.hellos[Math.min(root.helloIdx, root.hellos.length - 1)]
                     color: "white"
-                    font.family: root.fam + ", Noto Sans, Noto Sans Arabic, Noto Sans Hebrew, Noto Sans Devanagari, Noto Sans CJK SC, Noto Sans Thai, Noto Sans Bengali"
+                    // One real family. The old value was a comma-separated list, which Qt reads as a single
+                    // family name that doesn't exist — so scripts Inter lacks never found a fallback.
+                    font.family: root.fam
                     font.pixelSize: Math.round(w.height * 0.11); font.weight: Font.Light
                     duration: 620
                     blurMax: 60
@@ -243,143 +310,139 @@ Scope {
                     width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
                     color: Qt.rgba(1, 1, 1, 0.6); font.family: root.fam; font.pixelSize: 13
                 }
-                // Live preview: a page you can actually scroll, with the shell's glass sitting over it,
-                // so the effect is visible on moving content — the way the macOS sheet shows it.
+                // The preview uses the shell's own Liquid Glass component and shader, so what you pick here
+                // is literally what you get: the slider moves the same uniforms the menu bar uses.
                 Rectangle {
                     id: prevCard
                     anchors.horizontalCenter: parent.horizontalCenter
-                    width: Math.min(560, parent.width); height: 250
+                    width: Math.min(640, parent.width); height: 300
                     radius: 16
                     clip: true
-                    color: "#15151A"
+                    color: root.appearance === "dark" ? "#15151A" : "#E9E9EE"
+                    Behavior on color { ColorAnimation { duration: 260 } }
 
                     Item {
                         id: prevContent
                         anchors.fill: parent
+
                         Image {
+                            id: prevWall
                             anchors.fill: parent
-                            source: root.bar && root.bar.wallpaperPath !== "" ? "file://" + root.bar.wallpaperPath : ""
+                            source: root.macWallpaper
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true; cache: true; smooth: true; mipmap: true
-                            sourceSize: Qt.size(900, 500)
+                            sourceSize: Qt.size(1000, 480)
                         }
                         Rectangle {
                             anchors.fill: parent
-                            visible: parent.children[0].status !== Image.Ready
+                            visible: prevWall.status !== Image.Ready
                             gradient: Gradient {
-                                GradientStop { position: 0; color: "#8C7A6B" }
-                                GradientStop { position: 1; color: "#3E3530" }
+                                GradientStop { position: 0; color: root.appearance === "dark" ? "#2B3A55" : "#BBD3F2" }
+                                GradientStop { position: 1; color: root.appearance === "dark" ? "#0E1018" : "#F2E7DA" }
                             }
                         }
+
                         Flickable {
                             id: prevFlick
                             anchors.fill: parent
+                            anchors.topMargin: 30
                             contentHeight: pcol.height + 150
                             clip: true
                             boundsBehavior: Flickable.OvershootBounds
                             Column {
                                 id: pcol
-                                x: 22; y: 20; width: prevCard.width - 44
-                                spacing: 12
+                                x: 22; y: 16; width: prevCard.width - 44
+                                spacing: 10
                                 Text {
                                     text: "Scroll me"
-                                    color: "white"; font.family: root.fam; font.pixelSize: 22; font.weight: Font.Bold
+                                    color: root.appearance === "dark" ? "white" : "#1D1D1F"
+                                    font.family: root.fam; font.pixelSize: 20; font.weight: Font.Bold
                                 }
                                 Repeater {
                                     model: 7
                                     delegate: Rectangle {
                                         required property int index
-                                        width: pcol.width; height: 52; radius: 12
-                                        color: Qt.rgba(1, 1, 1, 0.14)
+                                        width: pcol.width; height: 46; radius: 11
+                                        color: root.appearance === "dark" ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.62)
                                         Rectangle {
-                                            x: 12; anchors.verticalCenter: parent.verticalCenter
-                                            width: 28; height: 28; radius: 8
-                                            color: ["#FF375F", "#FF9F0A", "#FFD60A", "#30D158", "#64D2FF", "#0A84FF", "#BF5AF2"][index % 7]
+                                            x: 10; anchors.verticalCenter: parent.verticalCenter
+                                            width: 26; height: 26; radius: 7
+                                            color: root.accents[index % root.accents.length].c
                                         }
-                                        Rectangle { x: 52; y: 15; width: parent.width * 0.42; height: 8; radius: 4; color: Qt.rgba(1, 1, 1, 0.75) }
-                                        Rectangle { x: 52; y: 30; width: parent.width * 0.62; height: 7; radius: 3.5; color: Qt.rgba(1, 1, 1, 0.4) }
+                                        Rectangle { x: 48; y: 13; width: parent.width * 0.4; height: 7; radius: 3.5
+                                                    color: root.appearance === "dark" ? Qt.rgba(1, 1, 1, 0.8) : Qt.rgba(0, 0, 0, 0.6) }
+                                        Rectangle { x: 48; y: 26; width: parent.width * 0.6; height: 6; radius: 3
+                                                    color: root.appearance === "dark" ? Qt.rgba(1, 1, 1, 0.4) : Qt.rgba(0, 0, 0, 0.3) }
                                     }
                                 }
                             }
                         }
                     }
 
-                    // what the chosen material does to everything behind it
-                    Item {
-                        id: prevGlass
-                        x: 26; width: parent.width - 52
-                        y: parent.height - 76; height: 54
-                        readonly property real amt: root.amount
-                        readonly property bool solid: root.material === "opaque"
-                        property real blurPx: root.material === "blur" ? (6 + amt * 52)
-                                                    : (root.material === "frosted" ? (10 + amt * 34) : (4 + amt * 22))
-                        Behavior on blurPx { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                    // what the glass refracts (the page, never itself)
+                    ShaderEffectSource {
+                        id: prevTex
+                        anchors.fill: parent
+                        visible: false
+                        live: true
+                        mipmap: true
+                        sourceItem: prevContent
+                    }
 
-                        ShaderEffectSource {
-                            id: prevSrc
-                            anchors.fill: parent
-                            visible: false
-                            live: true
-                            sourceItem: prevContent
-                            sourceRect: Qt.rect(prevGlass.x, prevGlass.y, prevGlass.width, prevGlass.height)
+                    // a menu bar and a Control Center card, both the real thing
+                    WGlass {
+                        x: 8; y: 6; width: prevCard.width - 16; height: 24
+                        src: prevTex; frame: prevCard
+                        shaderUrl: root.glassShader
+                        material: root.material
+                        dark: root.appearance === "dark"
+                        cornerR: 10
+                        thickness: 14
+                        strength: 0.5 + root.amount * 1.1
+                        tint: root.glassTint
+                        rim: 0.45
+                        shadowAmt: 0.2
+                    }
+                    WGlass {
+                        id: prevPanel
+                        x: prevCard.width - 236; y: prevCard.height - 150
+                        width: 220; height: 130
+                        src: prevTex; frame: prevCard
+                        shaderUrl: root.glassShader
+                        material: root.material
+                        dark: root.appearance === "dark"
+                        cornerR: 18
+                        thickness: 26
+                        strength: 0.5 + root.amount * 1.1
+                        tint: root.glassTint
+                        rim: 0.55
+                        shadowAmt: 0.4
+                    }
+                    Column {
+                        x: prevPanel.x + 14; y: prevPanel.y + 12
+                        spacing: 9
+                        Text {
+                            text: "Control Center"
+                            color: root.appearance === "dark" ? "white" : "#1D1D1F"
+                            font.family: root.fam; font.pixelSize: 12; font.weight: Font.DemiBold
                         }
-                        Rectangle {
-                            id: prevMask
-                            anchors.fill: parent
-                            radius: 16
-                            color: "black"
-                            visible: false
-                            layer.enabled: true
-                        }
-                        Item {
-                            anchors.fill: parent
-                            visible: !prevGlass.solid
-                            layer.enabled: true
-                            layer.effect: MultiEffect { maskEnabled: true; maskSource: prevMask }
-                            MultiEffect {
-                                anchors.fill: parent
-                                source: prevSrc
-                                blurEnabled: true
-                                blurMax: 64
-                                blur: Math.max(0, Math.min(1, prevGlass.blurPx / 64))
-                                saturation: root.material === "liquid" ? 0.35 : 0.1
-                                brightness: root.material === "liquid" ? 0.06 : 0
-                            }
-                        }
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: 16
-                            color: Qt.rgba(0.12, 0.12, 0.14,
-                                           prevGlass.solid ? 0.97
-                                         : (root.material === "frosted" ? 0.24 + root.amount * 0.3
-                                         : (root.material === "blur" ? 0.12 + root.amount * 0.2 : 0.08 + root.amount * 0.16)))
-                            Behavior on color { ColorAnimation { duration: 240 } }
-                            border.width: 1
-                            border.color: Qt.rgba(1, 1, 1, root.material === "liquid" ? 0.3 + root.amount * 0.2 : 0.12)
-                        }
-                        // a search field, the way the macOS sheet shows one over the page
                         Row {
-                            anchors.verticalCenter: parent.verticalCenter
-                            x: 16; spacing: 10
-                            Rectangle {
-                                width: 26; height: 26; radius: 13
-                                anchors.verticalCenter: parent.verticalCenter
-                                color: Qt.rgba(1, 1, 1, 0.18)
-                                Canvas {
-                                    anchors.centerIn: parent; width: 13; height: 13
-                                    onPaint: {
-                                        var c = getContext("2d"); c.reset();
-                                        c.strokeStyle = "white"; c.lineWidth = 1.6; c.lineCap = "round";
-                                        c.beginPath(); c.arc(5.4, 5.4, 4.1, 0, Math.PI * 2); c.stroke();
-                                        c.beginPath(); c.moveTo(8.6, 8.6); c.lineTo(12, 12); c.stroke();
-                                    }
+                            spacing: 8
+                            Repeater {
+                                model: 3
+                                delegate: Rectangle {
+                                    required property int index
+                                    width: 34; height: 34; radius: 17
+                                    color: index === 0 ? root.pickAccent
+                                         : (root.appearance === "dark" ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.12))
+                                    Behavior on color { ColorAnimation { duration: 200 } }
                                 }
                             }
-                            Text {
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: "Search"
-                                color: Qt.rgba(1, 1, 1, 0.8); font.family: root.fam; font.pixelSize: 14
-                            }
+                        }
+                        Rectangle {
+                            width: 190; height: 9; radius: 4.5
+                            color: root.appearance === "dark" ? Qt.rgba(1, 1, 1, 0.25) : Qt.rgba(0, 0, 0, 0.15)
+                            Rectangle { width: parent.width * 0.6; height: parent.height; radius: parent.radius; color: root.pickAccent }
                         }
                     }
                 }
@@ -392,7 +455,7 @@ Scope {
                             required property var modelData
                             readonly property bool sel: root.material === modelData.id
                             width: 128; height: 36; radius: 10
-                            color: sel ? root.accent : Qt.rgba(1, 1, 1, 0.12)
+                            color: sel ? root.pickAccent : Qt.rgba(1, 1, 1, 0.12)
                             Behavior on color { ColorAnimation { duration: 200 } }
                             scale: wma.pressed ? 0.96 : 1
                             Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutQuint } }
@@ -401,31 +464,110 @@ Scope {
                         }
                     }
                 }
-                // the amount slider — the System Settings one, with an icon at each end
                 Column {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: 10
+                    spacing: 8
                     opacity: root.material === "opaque" ? 0 : 1
                     visible: opacity > 0.01
                     Behavior on opacity { NumberAnimation { duration: 240 } }
                     WSlider {
-                        id: amtSlider
                         anchors.horizontalCenter: parent.horizontalCenter
                         width: 420
                         value: root.amount
-                        accent: root.accent
+                        accent: root.pickAccent
                         minimum: root.material === "blur" ? 0.15 : 0
                         onMoved: v => root.amount = v
                     }
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        width: 420; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
+                        width: 440; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
                         text: root.material === "blur"
                               ? "Less blur keeps more of the desktop visible; more blur hides it and makes text easier to read."
                               : "Clear is more transparent and tinted increases opacity, adding contrast to content and controls."
                         color: Qt.rgba(1, 1, 1, 0.55); font.family: root.fam; font.pixelSize: 12
                     }
                 }
+
+                // ── appearance and accent, both previewed above as you pick them ──
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 36
+                    Column {
+                        spacing: 8
+                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Appearance"; color: Qt.rgba(1, 1, 1, 0.6); font.family: root.fam; font.pixelSize: 12 }
+                        Row {
+                            spacing: 12
+                            Repeater {
+                                model: [{ k: "light", n: "Light" }, { k: "dark", n: "Dark" }]
+                                delegate: Column {
+                                    required property var modelData
+                                    readonly property bool sel: root.appearance === modelData.k
+                                    spacing: 5
+                                    Rectangle {
+                                        width: 86; height: 54; radius: 8
+                                        color: parent.modelData.k === "dark" ? "#2A2A2E" : "#EDEDF0"
+                                        border.width: parent.sel ? 3 : 1
+                                        border.color: parent.sel ? root.pickAccent : Qt.rgba(1, 1, 1, 0.18)
+                                        Behavior on border.color { ColorAnimation { duration: 180 } }
+                                        Rectangle {
+                                            x: 7; y: 7; width: parent.width - 14; height: 9; radius: 3
+                                            color: parent.parent.modelData.k === "dark" ? Qt.rgba(1, 1, 1, 0.3) : Qt.rgba(0, 0, 0, 0.2)
+                                        }
+                                        Rectangle {
+                                            x: 7; y: 22; width: (parent.width - 14) * 0.7; height: 7; radius: 3
+                                            color: root.pickAccent
+                                        }
+                                        Rectangle {
+                                            x: 7; y: 34; width: (parent.width - 14) * 0.5; height: 7; radius: 3
+                                            color: parent.parent.modelData.k === "dark" ? Qt.rgba(1, 1, 1, 0.2) : Qt.rgba(0, 0, 0, 0.14)
+                                        }
+                                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.appearance = parent.parent.modelData.k }
+                                    }
+                                    Text {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        text: parent.modelData.n
+                                        color: parent.sel ? "white" : Qt.rgba(1, 1, 1, 0.55)
+                                        font.family: root.fam; font.pixelSize: 12; font.weight: parent.sel ? Font.DemiBold : Font.Normal
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Column {
+                        spacing: 8
+                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Accent colour"; color: Qt.rgba(1, 1, 1, 0.6); font.family: root.fam; font.pixelSize: 12 }
+                        Row {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            spacing: 8
+                            topPadding: 14
+                            Repeater {
+                                model: root.accents
+                                delegate: Item {
+                                    required property var modelData
+                                    readonly property bool sel: String(root.pickAccent).toLowerCase() === modelData.c.toLowerCase()
+                                    width: 28; height: 28
+                                    Rectangle {
+                                        anchors.centerIn: parent
+                                        width: 20; height: 20; radius: 10
+                                        color: parent.modelData.c
+                                        border.width: 1; border.color: Qt.rgba(0, 0, 0, 0.2)
+                                        scale: swMa.pressed ? 0.88 : 1
+                                        Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutQuint } }
+                                    }
+                                    Rectangle {
+                                        anchors.centerIn: parent
+                                        visible: parent.sel
+                                        width: 26; height: 26; radius: 13
+                                        color: "transparent"
+                                        border.width: 2; border.color: Qt.rgba(1, 1, 1, 0.75)
+                                    }
+                                    MouseArea { id: swMa; anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.pickAccent = parent.modelData.c }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 WButton { label: "Continue"; onPressed2: root.step = 3 }
             }
 
@@ -515,7 +657,7 @@ Scope {
                     Rectangle {
                         anchors.horizontalCenter: parent.horizontalCenter
                         width: 200; height: 40; radius: 20
-                        color: tourMa.containsMouse ? Qt.lighter(root.accent, 1.1) : root.accent
+                        color: tourMa.containsMouse ? Qt.lighter(root.pickAccent, 1.1) : root.pickAccent
                         Behavior on color { ColorAnimation { duration: 160 } }
                         scale: tourMa.pressed ? 0.96 : 1
                         Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutQuint } }
@@ -562,7 +704,7 @@ Scope {
         signal pressed2()
         anchors.horizontalCenter: parent ? parent.horizontalCenter : undefined
         width: 200; height: 40; radius: 20
-        color: wbMa.containsMouse ? Qt.lighter(root.accent, 1.1) : root.accent
+        color: wbMa.containsMouse ? Qt.lighter(root.pickAccent, 1.1) : root.pickAccent
         Behavior on color { ColorAnimation { duration: 160 } }
         scale: wbMa.pressed ? 0.96 : 1
         Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutQuint } }

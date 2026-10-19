@@ -8,7 +8,8 @@ hl.on("hyprland.start", function ()
     -- notification slot: stop it before every (re)start so MacShell always owns notifications
     -- QSG_USE_SIMPLE_ANIMATION_DRIVER: Qt otherwise paces every animation to the FIRST screen (often a 60 Hz laptop panel),
     -- so they ran at 60 fps on high-refresh monitors; with it, animations follow each screen's own refresh rate
-    hl.exec_cmd("sh -c 'while :; do pkill -x mako; QSG_USE_SIMPLE_ANIMATION_DRIVER=1 MALLOC_ARENA_MAX=2 qs -c MacShell; sleep 1; done'")
+    -- restarts the shell if it dies, and falls back to the last config that worked if the current one won't load
+    hl.exec_cmd("$HOME/.config/hypr-macshell/scripts/macshell-run.sh")
 
     -- Core components (authentication, lock screen)
     hl.exec_cmd("gnome-keyring-daemon --start --components=secrets")
