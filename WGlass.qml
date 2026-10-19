@@ -13,6 +13,7 @@ Item {
     property real tint: 0.32
     property real rim: 0.5
     property real shadowAmt: 0.5
+    property real blur: 1.5             // backdrop blur radius, px (Frosted / Blur use a lot)
     property bool dark: true
     // The system material (Settings → Appearance) reaches the lock screen: Liquid Glass refracts, Frosted and Blur
     // are the same blurred backdrop without the refraction, Opaque is a solid card.
@@ -72,7 +73,7 @@ Item {
         property real magnify: 0.05 * gg.effStrength * 1.6
         property real rim: gg.flat ? gg.rim * 0.4 : gg.rim
         property real grain: 0.006
-        property real blurPx: 1.5
+        property real blurPx: gg.blur
         property real tintMix: gg.effTint * 0.55
         property real saturation: 1.25
         property real dark: gg.dark ? 1 : 0

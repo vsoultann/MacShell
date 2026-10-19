@@ -59,8 +59,8 @@ Scope {
                                          : (bar && bar.wallpaperPath ? "file://" + bar.wallpaperPath : "")
     // how much tint the glass carries for the chosen material and amount (the same curve the shell uses)
     readonly property real glassTint: material === "opaque" ? 1
-                                    : (material === "frosted" ? 0.28 + amount * 0.34
-                                    : (material === "blur" ? 0.16 + amount * 0.22 : 0.10 + amount * 0.26))
+                                    : (material === "frosted" ? 0.24 + amount * 0.16
+                                    : (material === "blur" ? 0.12 + amount * 0.10 : 0.10 + amount * 0.26))
     Process {
         id: ggCheck
         running: true
@@ -110,7 +110,7 @@ Scope {
             bar.applyMaterial(material);
             if (material !== "opaque") {
                 if (material === "liquid") { bar.glassLiquid = 0.4 + amount * 1.2; bar.glassBlur = 2 + amount * 16; }
-                else bar.glassBlur = 6 + amount * 40;
+                else bar.glassBlur = Math.round(8 + amount * 52);      // up to the strongest Settings → Appearance → Blur offers
                 bar.material = material;        // the sliders are part of the chosen material, not "custom"
             }
             bar.userDisplayName = userName;
@@ -453,6 +453,8 @@ Scope {
                         cornerR: 10
                         thickness: 14
                         strength: 0.5 + root.amount * 1.1
+                        // Frosted / Blur: the slider is how blurry it is, from a light frost to fully diffused
+                        blur: root.material === "liquid" ? 1.5 : 4 + root.amount * 80
                         tint: root.glassTint
                         rim: 0.45
                         shadowAmt: 0.2
@@ -468,6 +470,8 @@ Scope {
                         cornerR: 18
                         thickness: 26
                         strength: 0.5 + root.amount * 1.1
+                        // Frosted / Blur: the slider is how blurry it is, from a light frost to fully diffused
+                        blur: root.material === "liquid" ? 1.5 : 4 + root.amount * 80
                         tint: root.glassTint
                         rim: 0.55
                         shadowAmt: 0.4
