@@ -27,6 +27,14 @@ Scope {
     readonly property url shaderUrl: dock ? dock.glassShaderUrl : ""
     readonly property bool shaderOk: dock ? dock.glassState === "ready" : false
     readonly property bool gaming: bar ? bar.gaming : false
+    // the widgets rest only while Game Mode is on AND a fullscreen window covers the desktop: with Game Mode on but
+    // the desktop in view, they kept a frozen clock and frozen lyrics
+    readonly property bool asleep: {
+        if (!gaming || !bar) return false;
+        var m = bar.screenFullscreen || ({});
+        for (var k in m) if (m[k] === true) return true;
+        return false;
+    }
     readonly property string home: Quickshell.env("HOME")
     readonly property string cfgDir: home + "/.config/macshell"
 
@@ -194,7 +202,7 @@ Scope {
 
     // ═════════════ SHARED DATA ═════════════
     property var now: new Date()
-    Timer { interval: 1000; repeat: true; running: root.enabled && !root.gaming && root.widgets.length > 0; onTriggered: root.now = new Date() }
+    Timer { interval: 1000; repeat: true; running: root.enabled && !root.asleep && root.widgets.length > 0; onTriggered: root.now = new Date() }
 
     // location (once) → weather every 15 min (Open-Meteo, no key)
     property var geo: ({ city: "", lat: 0, lon: 0, tz: "" })
@@ -217,7 +225,7 @@ Scope {
         command: ["sh", "-c", "curl -s --max-time 10 \"https://api.open-meteo.com/v1/forecast?latitude=$1&longitude=$2&current=temperature_2m,weather_code,is_day&hourly=temperature_2m,weather_code,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset&timezone=auto&forecast_days=6&forecast_hours=7\"", "sh", String(root.geo.lat), String(root.geo.lon)]
         stdout: StdioCollector { onStreamFinished: { try { var o = JSON.parse(text); if (o.current) root.weather = o; } catch (e) {} } }
     }
-    Timer { interval: 15 * 60 * 1000; repeat: true; running: root.wantsWeather && root.geo.lat !== 0 && !root.gaming; onTriggered: weatherProc.running = true }
+    Timer { interval: 15 * 60 * 1000; repeat: true; running: root.wantsWeather && root.geo.lat !== 0 && !root.asleep; onTriggered: weatherProc.running = true }
     function wmo(code, isDay) {
         // WMO weather code → [text, icon]
         var c = code | 0;
@@ -249,7 +257,7 @@ Scope {
             }
         }
     }
-    Timer { interval: 10 * 60 * 1000; repeat: true; running: root.wantsStocks && !root.gaming; onTriggered: stockProc.running = true }
+    Timer { interval: 10 * 60 * 1000; repeat: true; running: root.wantsStocks && !root.asleep; onTriggered: stockProc.running = true }
 
     // notes + reminders (plain files you can edit anywhere)
     FileView { id: notesFile; path: root.cfgDir + "/notes.md"; watchChanges: true; printErrors: false; onFileChanged: reload()
@@ -337,7 +345,7 @@ Scope {
             + "! -ipath '*screenshot*' ! -ipath '*/Wallpapers/*' ! -ipath '*/.cache/*' -size +60k 2>/dev/null | shuf -n 60"]
         stdout: StdioCollector { onStreamFinished: root.photoList = text.split("\n").filter(function (x) { return x !== ""; }) }
     }
-    Timer { interval: 15 * 60 * 1000; repeat: true; running: root.wantsPhotos && !root.gaming; onTriggered: root.photoIdx++ }
+    Timer { interval: 15 * 60 * 1000; repeat: true; running: root.wantsPhotos && !root.asleep; onTriggered: root.photoIdx++ }
 
     // media
     // Media players that really exist: Quickshell can keep a player whose app has quit (a closed Firefox tab stays
@@ -525,10 +533,10 @@ Scope {
     property real mEstPos: 0
     Timer {
         interval: 500; repeat: true; triggeredOnStart: true
-        running: root.wantsMusic && root.player !== null && !root.gaming
+        running: root.wantsMusic && root.player !== null && !root.asleep
         onTriggered: { if (root.player && root.player.positionSupported) { root.player.positionChanged(); root.mPosBase = root.player.position; root.mPosAt = Date.now(); root.mPosPlaying = root.player.isPlaying; } }
     }
-    Timer { interval: 50; repeat: true; running: root.musicLyrics && root.wantsMusic && !root.gaming; onTriggered: root.mEstPos = root.mPosBase + (root.mPosPlaying ? (Date.now() - root.mPosAt) / 1000 : 0) }
+    Timer { interval: 50; repeat: true; running: root.musicLyrics && root.wantsMusic && !root.asleep; onTriggered: root.mEstPos = root.mPosBase + (root.mPosPlaying ? (Date.now() - root.mPosAt) / 1000 : 0) }
     readonly property int mLyrCur: {
         if (mLyrStatus !== "synced") return -1;
         var p = mEstPos + 0.25, c = -1;
@@ -1883,7 +1891,7 @@ Scope {
             Timer { id: snapLift; interval: 140; onTriggered: { win.snapOk = screenShot.hasContent !== false; win.snapping = false; wallTex.scheduleUpdate(); } }
             WlrLayershell.layer: root.editing ? WlrLayer.Top : WlrLayer.Bottom
             WlrLayershell.namespace: "macwidgets"
-            WlrLayershell.keyboardFocus: root.editing ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+            WlrLayershell.keyboardFocus: root.editing ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
             // input only where the widgets are (the rest of the desktop stays clickable); everywhere while editing
             Variants {
@@ -1930,7 +1938,7 @@ Scope {
                         source: "file://" + root.glassAnim
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true; cache: false; smooth: false
-                        playing: !root.gaming && !(root.bar && root.bar.wallPaused[win.sname] === true)
+                        playing: !root.asleep && !(root.bar && root.bar.wallPaused[win.sname] === true)
                     }
                 }
             }
@@ -1983,7 +1991,8 @@ Scope {
                 opacity: root.editing && !win.snapping ? 0.28 : 0
                 visible: opacity > 0.01
                 Behavior on opacity { NumberAnimation { duration: 260 } }
-                MouseArea { anchors.fill: parent; enabled: root.editing; onClicked: root.selected = "" }
+                // a click on the empty desktop leaves edit mode, like on macOS
+                MouseArea { anchors.fill: parent; enabled: root.editing; onClicked: { root.editing = false; root.selected = ""; } }
             }
 
             Repeater {
@@ -2174,21 +2183,58 @@ Scope {
                         sourceComponent: root.compFor(wd.wtype, wd.shownSize)
                     }
 
-                    // drag anywhere (snaps to 16 px); right-click → edit
+                    // drag anywhere (snaps to 16 px), and across to another monitor; right-click → edit.
+                    // Crossing monitors: Hyprland stops sending the drag to this screen's layer once the pointer is over the
+                    // other one, so when the drag ends the pointer's real position is asked for; if it is on another
+                    // monitor, the widget lands there, under the pointer.
                     DragHandler {
                         id: wDrag
                         target: null
                         cursorShape: Qt.ClosedHandCursor
+                        property point grab: Qt.point(0, 0)
                         onTranslationChanged: { wd.dx = translation.x; wd.dy = translation.y; }
                         onActiveChanged: {
-                            if (active) { root.selected = wd.modelData.id; return; }
-                            var nx = Math.round((wd.wx + wd.dx) / 16) * 16, ny = Math.round((wd.wy + wd.dy) / 16) * 16;
-                            nx = Math.max(8, Math.min(win.width - wd.width - 8, nx));
-                            ny = Math.max(36, Math.min(win.height - wd.height - 8, ny));
-                            // never on top of another widget: slide to the nearest free spot
-                            var fp = root.freeSpot(win.sname, nx, ny, wd.width, wd.height, wd.wid, win.width, win.height);
-                            root.update(wd.wid, { x: fp.x, y: fp.y });
-                            wd.dx = 0; wd.dy = 0;
+                            if (active) { root.selected = wd.modelData.id; grab = centroid.pressPosition; return; }
+                            dropProc.from = { dx: wd.dx, dy: wd.dy, gx: grab.x, gy: grab.y };
+                            dropProc.last = ""; dropProc.tries = 0;
+                            dropWatch.restart();
+                        }
+                    }
+                    // the drop is where the pointer comes to rest (checked every 120 ms, at most ~4 s)
+                    Timer { id: dropWatch; interval: 120; repeat: true; onTriggered: if (!dropProc.running) dropProc.running = true }
+                    Process {
+                        id: dropProc
+                        property var from: ({})
+                        property string last: ""
+                        property int tries: 0
+                        command: ["hyprctl", "cursorpos"]
+                        stdout: StdioCollector {
+                            onStreamFinished: {
+                                var t = text.trim();
+                                dropProc.tries++;
+                                if (t !== dropProc.last && dropProc.tries < 34) { dropProc.last = t; return; }
+                                dropWatch.stop();
+                                var f = dropProc.from, m = /(-?\d+),\s*(-?\d+)/.exec(t);
+                                var sc = Quickshell.screens, to = null;
+                                if (m) {
+                                    var cx = parseInt(m[1]), cy = parseInt(m[2]);
+                                    for (var si = 0; si < sc.length; si++)
+                                        if (sc[si].name !== win.sname && cx >= sc[si].x && cx < sc[si].x + sc[si].width && cy >= sc[si].y && cy < sc[si].y + sc[si].height) to = sc[si];
+                                }
+                                var nx, ny, tw = win.width, th = win.height, tn = win.sname;
+                                if (to) {
+                                    tw = to.width; th = to.height; tn = to.name;
+                                    nx = Math.round((cx - to.x - f.gx) / 16) * 16; ny = Math.round((cy - to.y - f.gy) / 16) * 16;
+                                } else {
+                                    nx = Math.round((wd.wx + f.dx) / 16) * 16; ny = Math.round((wd.wy + f.dy) / 16) * 16;
+                                }
+                                nx = Math.max(8, Math.min(tw - wd.width - 8, nx));
+                                ny = Math.max(36, Math.min(th - wd.height - 8, ny));
+                                // never on top of another widget: slide to the nearest free spot
+                                var fp = root.freeSpot(tn, nx, ny, wd.width, wd.height, wd.wid, tw, th);
+                                root.update(wd.wid, to ? { x: fp.x, y: fp.y, screen: tn } : { x: fp.x, y: fp.y });
+                                wd.dx = 0; wd.dy = 0;
+                            }
                         }
                     }
                     TapHandler {
@@ -2249,6 +2295,22 @@ Scope {
                 }
             }
 
+            // leaving edit mode: click an empty spot of the desktop (the dimming above), press Done, or Escape
+            Rectangle {
+                id: doneBtn
+                z: 100
+                visible: opacity > 0.01
+                opacity: root.editing && !win.snapping ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom; anchors.bottomMargin: 120
+                width: 96; height: 36; radius: 18
+                color: doneMa.pressed ? Qt.darker(root.accent, 1.15) : root.accent
+                scale: doneMa.pressed ? 0.95 : 1
+                Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutQuint } }
+                Text { anchors.centerIn: parent; text: "Done"; color: "white"; font.family: root.fam; font.pixelSize: 14; font.weight: Font.DemiBold }
+                MouseArea { id: doneMa; anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { root.editing = false; root.selected = ""; } }
+            }
             // Escape leaves edit mode
             Item {
                 focus: root.editing
