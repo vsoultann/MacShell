@@ -4534,13 +4534,17 @@ Scope {
         return w.length > 0 ? w[0] : null;
     }
 
-    // MacShell's own windows all have the app id "org.quickshell": the Clock window counts as the Clock app
+    // MacShell's own windows all have the app id "org.quickshell", so the title says which app a window
+    // belongs to. Every one of them is listed here: the ones that weren't showed up as a bare gear.
+    readonly property var ownApps: ({
+        "Finder": "macshell-finder", "Photos": "macshell-photos", "App Store": "macshell-appstore",
+        "Clock": "macshell-clock", "AirDrop": "macshell-airdrop", "Reminders": "macshell-reminders",
+        "Preview": "macshell-preview", "Player": "macshell-player"
+    })
     function appOf(tl) {
         if (tl.appId !== "org.quickshell") return tl.appId;
-        if (tl.title === "Clock") return "macshell-clock";
-        if (tl.title === "App Store") return "macshell-appstore";
-        if (tl.title === "Photos") return "macshell-photos";
-        return tl.appId;
+        var a = ownApps[tl.title];
+        return a ? a : tl.appId;
     }
     function windowsFor(key) {
         var out = [];

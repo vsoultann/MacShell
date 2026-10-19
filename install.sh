@@ -160,6 +160,9 @@ do_shell() {
     # MacShell's own apps (Clock) in the app launcher / Spotlight / Dock
     mkdir -p "$HOME/.local/share/applications"
     cp "$REPO"/session/applications/*.desktop "$HOME/.local/share/applications/" 2>/dev/null || true
+    # AirDrop's icon is Apple's own symbol: downloaded and set on a macOS tile, not shipped in this repo
+    python3 -I "$REPO/session/scripts/macshell-airdrop-icon.py" || warn "AirDrop icon: using the theme's LocalSend icon"
+    command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
     note "$QS/MacShell"
 }
 

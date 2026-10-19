@@ -295,11 +295,21 @@ Scope {
                 anchors.fill: parent
                 anchors.topMargin: 48
                 anchors.bottomMargin: 64
+                // the radar grows and fades in when the window opens, instead of simply being there
+                property real intro: 0
+                opacity: intro
+                scale: 0.88 + 0.12 * intro
+                Connections {
+                    target: win
+                    function onVisibleChanged() { if (win.visible) { radar.intro = 0; radarIn.restart(); } }
+                }
+                NumberAnimation { id: radarIn; target: radar; property: "intro"; from: 0; to: 1; duration: 650; easing.type: Easing.OutCubic }
 
-                // rings that breathe outwards, like the real thing
+                // rings that ripple outwards one after another, like the real thing
                 Repeater {
                     model: 3
                     delegate: Rectangle {
+                        id: ringD
                         required property int index
                         anchors.centerIn: parent
                         property real t: 0
@@ -309,11 +319,14 @@ Scope {
                         color: "transparent"
                         border.width: 1
                         border.color: Qt.rgba(pal.text.r, pal.text.g, pal.text.b, 0.10 * (1 - t))
-                        NumberAnimation on t {
-                            from: 0; to: 1; duration: 3600; loops: Animation.Infinite
+                        SequentialAnimation {
                             running: win.visible
+                            PauseAnimation { duration: ringD.index * 1200 }
+                            NumberAnimation {
+                                target: ringD; property: "t"
+                                from: 0; to: 1; duration: 3600; loops: Animation.Infinite
+                            }
                         }
-                        Component.onCompleted: t = index / 3
                     }
                 }
 
@@ -514,7 +527,7 @@ Scope {
             // clicking anywhere else closes the discoverability pop-up
             MouseArea {
                 anchors.fill: parent
-                z: 8
+                z: 6                        // under the footer: above it, it ate the click meant for "No one"
                 visible: root.discMenu
                 enabled: root.discMenu
                 acceptedButtons: Qt.AllButtons
