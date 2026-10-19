@@ -16,7 +16,8 @@ Scope {
     property var job: null
     property real progress: 0
     readonly property bool busy: job !== null
-    readonly property int genieMs: 560
+    property real speed: 0.42                  // Magic Lamp duration, seconds (Settings → Desktop & Dock)
+    readonly property int genieMs: Math.round(Math.max(0.2, Math.min(1.2, speed)) * 1000)
     readonly property int fadeMs: 350
 
     // play(job): job.before() runs once the window has been captured, job.after() once the effect is over
@@ -87,7 +88,9 @@ Scope {
     NumberAnimation {
         id: anim
         target: fx; property: "progress"
-        easing.type: Easing.InOutQuad
+        // a fast ease: it leaves at once and glides into place (the old in-out curve lingered at both ends)
+        easing.type: Easing.BezierSpline
+        easing.bezierCurve: [0.22, 0.8, 0.28, 1.0, 1.0, 1.0]
         onFinished: fx.finish()
     }
 

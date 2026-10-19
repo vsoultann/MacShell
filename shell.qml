@@ -425,7 +425,7 @@ ShellRoot {
     AirDrop { id: airDrop; hub: sharedHub }
     Preview { id: previewApp; hub: sharedHub }
     Reminders { id: remindersApp; hub: sharedHub }
-    MinimizeFx { id: minFx; hub: sharedHub; effect: macDock.minimizeEffect }
+    MinimizeFx { id: minFx; hub: sharedHub; effect: macDock.minimizeEffect; speed: macDock.minimizeSecs }
     WindowBar { id: windowBar; hub: sharedHub }
 
     // reopen settings even when both the Dock and the Menu Bar are disabled:

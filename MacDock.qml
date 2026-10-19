@@ -235,6 +235,14 @@ Scope {
     onAccentChanged: if (bar && String(bar.accent) !== String(accent)) bar.accent = accent
     // How minimising looks: "genie" (the window pours into the Dock, the macOS default), "fade" (0.35 s), "instant".
     property string minimizeEffect: "genie"
+    property real minimizeSecs: 0.42          // how long Magic Lamp takes (Settings → Desktop & Dock → Speed)
+    // Settings → Icons: "default" or "tinted" (every app icon in one colour, like macOS Tahoe); only with Frosted
+    // or Liquid Glass. iconTint "" = the accent colour
+    property string iconStyle: "default"
+    property string iconTint: ""
+    readonly property bool tintAllowed: bar ? (bar.material === "liquid" || bar.material === "frosted") : true
+    readonly property bool iconsTinted: iconStyle === "tinted" && tintAllowed
+    readonly property color iconTintColor: iconTint !== "" ? iconTint : accent
     property var uiByScreen: ({})          // each screen's Dock, so the minimise effect knows where to aim
     // Where a window should pour into: its own preview cell in the Dock if it has one, otherwise its app's icon.
     // Returned in global (layout) coordinates, or null when the Dock isn't on that screen.
@@ -707,6 +715,7 @@ Scope {
             { id: "battery",    sec: 1, name: "Battery",         wg: "bolt",       c1: "#4CD964", c2: "#28A745", keys: "power energy charge profile performance game mode" },
             { id: "general",    sec: 2, name: "General",         glyph: "behavior", c1: "#9A9AA0", c2: "#636366", keys: "enable disable dock menu bar panel show hide off on widgets sound game" },
             { id: "appearance", sec: 2, name: "Appearance",      glyph: "appearance", c1: "#5A5A5F", c2: "#2C2C2E", keys: "theme dark light mode accent color glass liquid apple style translucency blur corner radius font" },
+            { id: "icons",      sec: 2, name: "Icons",           glyph: "apps",     c1: "#FF7AB6", c2: "#D63384", keys: "icon tinted tint colour color style dark light set dock app icons" },
             { id: "controlcenter", sec: 2, name: "Control Center", wg: "cc",       c1: "#7D7AFF", c2: "#5856D6", keys: "modules tiles controls" },
             { id: "dock",       sec: 2, name: "Desktop & Dock",  glyph: "dock",     c1: "#3D9BFF", c2: "#0A54D6", keys: "size icon magnification zoom spacing margin distance edge hide auto labels indicators bounce trash monitor preview minimise minimize genie fade effect" },
             { id: "displays",   sec: 2, name: "Displays",        wg: "sun",        c1: "#3D9BFF", c2: "#0A6CFF", keys: "brightness night shift monitor resolution refresh scale" },
@@ -1249,7 +1258,7 @@ Scope {
                     width: flick.width - 44
                     sourceComponent: ({
                         wifi: paneWifi, bluetooth: paneBt, network: paneNetwork, battery: paneBattery,
-                        general: paneGeneral, appearance: paneAppearance, controlcenter: paneCC, dock: paneDesktopDock,
+                        general: paneGeneral, appearance: paneAppearance, icons: paneIcons, controlcenter: paneCC, dock: paneDesktopDock,
                         displays: paneDisplays, menubar: paneMenuBar, wallpaper: paneWallpaper,
                         notifications: paneNotif, sound: paneSound, focus: paneFocus,
                         update: paneUpdate, shortcuts: paneShortcuts, sharing: paneSharing, lockscreen: paneLock, users: paneUsers, keyboard: paneKeyboard, mouse: paneMouse, trackpad: paneTrackpad,
@@ -1329,6 +1338,106 @@ Scope {
                                 anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                                 onClicked: { for (var i = 0; i < prefsWindow.panes.length; i++) if (prefsWindow.panes[i].id === navRow.modelData.id) { prefsWindow.go(i); break; } }
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Icons ──
+        Component {
+            id: paneIcons
+            Column {
+                spacing: 10
+                // a live preview: the first apps in your Dock, drawn the way the Dock draws them
+                SCard {
+                    t: pal
+                    Item {
+                        width: parent.width; height: 96
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 14
+                            Repeater {
+                                model: root.items.filter(function (it) { return it.kind === "app"; }).slice(0, 7)
+                                delegate: Item {
+                                    required property var modelData
+                                    width: 52; height: 52
+                                    Image {
+                                        id: pvImg
+                                        anchors.fill: parent
+                                        source: root.cellIconSrc(parent.modelData)
+                                        sourceSize: Qt.size(104, 104)
+                                        fillMode: Image.PreserveAspectFit
+                                        smooth: true; mipmap: true; asynchronous: true
+                                        visible: false
+                                    }
+                                    MultiEffect {
+                                        anchors.fill: pvImg
+                                        source: pvImg
+                                        shadowEnabled: true; shadowColor: "black"; shadowOpacity: 0.3; shadowBlur: 0.5; shadowVerticalOffset: 2
+                                        colorization: root.iconsTinted ? 0.9 : 0.0
+                                        colorizationColor: root.iconTintColor
+                                        Behavior on colorization { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                SCard {
+                    t: pal
+                    SRow {
+                        t: pal
+                        title: "Icon style"
+                        subtitle: root.tintAllowed ? "Tinted shows every app icon in one colour, like macOS Tahoe"
+                                                   : "Tinted needs the Frosted or Liquid Glass material (Appearance \u2192 Material)"
+                        SSegmented {
+                            t: pal
+                            enabled: root.tintAllowed
+                            opacity: enabled ? 1 : 0.45
+                            model: ["Default", "Tinted"]
+                            segWidth: 84
+                            current: root.iconStyle === "tinted" ? 1 : 0
+                            onPicked: i => root.iconStyle = ["default", "tinted"][i]
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        visible: root.iconsTinted
+                        title: "Tint colour"
+                        Row {
+                            spacing: 8
+                            Repeater {
+                                model: ["", "#0A84FF", "#BF5AF2", "#FF375F", "#FF453A", "#FF9F0A", "#FFD60A", "#30D158", "#8E8E93"]
+                                delegate: Rectangle {
+                                    required property string modelData
+                                    readonly property bool sel: root.iconTint === modelData
+                                    width: 20; height: 20; radius: 10
+                                    color: modelData === "" ? root.accent : modelData
+                                    border.width: sel ? 2 : 0
+                                    border.color: pal.text
+                                    scale: tMa.containsMouse ? 1.12 : 1
+                                    Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                                    // the first one is "the accent colour": it follows Appearance
+                                    Text { visible: parent.modelData === ""; anchors.centerIn: parent; text: "A"; color: "white"; font.pixelSize: 10; font.bold: true }
+                                    MouseArea { id: tMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.iconTint = parent.modelData }
+                                }
+                            }
+                        }
+                    }
+                }
+                SCard {
+                    t: pal
+                    SRow {
+                        t: pal
+                        title: "Icon set"
+                        subtitle: "App icons everywhere: follow the appearance, or pin them to the light or dark set"
+                        SSegmented {
+                            t: pal
+                            model: ["Auto", "Light", "Dark"]
+                            segWidth: 72
+                            current: ["auto", "light", "dark"].indexOf(root.iconMode)
+                            onPicked: i => root.setIconMode(["auto", "light", "dark"][i])
                         }
                     }
                 }
@@ -1923,18 +2032,6 @@ Scope {
                     }
                     SRow {
                         t: pal
-                        title: "Icons"
-                        subtitle: "App icons everywhere: follow the appearance, or pin them to the light or dark set"
-                        SSegmented {
-                            t: pal
-                            model: ["Auto", "Light", "Dark"]
-                            segWidth: 72
-                            current: ["auto", "light", "dark"].indexOf(root.iconMode)
-                            onPicked: i => root.setIconMode(["auto", "light", "dark"][i])
-                        }
-                    }
-                    SRow {
-                        t: pal
                         visible: root.bar && root.bar.material === "custom"
                         title: "Material: Custom"
                         subtitle: "You changed one of the pieces below by hand. Pick a material above to set everything again."
@@ -2114,6 +2211,21 @@ Scope {
                             segWidth: 84
                             current: root.minimizeEffect === "fade" ? 1 : (root.minimizeEffect === "instant" ? 2 : 0)
                             onPicked: i => root.minimizeEffect = ["genie", "fade", "instant"][i]
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        visible: root.minimizeEffect === "genie"
+                        title: "Magic Lamp speed"
+                        subtitle: root.minimizeSecs.toFixed(2) + " s"
+                        SSlider {
+                            t: pal
+                            width: 220
+                            // left = fast: the slider value is the duration, reversed
+                            from: 0; to: 1; stepSize: 0.01
+                            value: (0.9 - root.minimizeSecs) / 0.65
+                            leftLabel: "Slow"; rightLabel: "Fast"
+                            onMoved: v => root.minimizeSecs = Math.round((0.9 - v * 0.65) * 100) / 100
                         }
                     }
                 }
@@ -4418,7 +4530,7 @@ Scope {
     }
 
     // ── settings persistence (~/.config/macdock/settings.json) ──
-    readonly property string settingsSig: [dockEnabled, windowsFloat, minimizeEffect, hotspotSsid, hotspotPass, hotspotBand, iconSizePref, magnification, magnificationEnabled, spacing, margin,
+    readonly property string settingsSig: [dockEnabled, windowsFloat, minimizeEffect, minimizeSecs, iconStyle, iconTint, hotspotSsid, hotspotPass, hotspotBand, iconSizePref, magnification, magnificationEnabled, spacing, margin,
         cornerRadius, darkMode, glassOpacity, glassBlur, glassLiquid, dockStyle, wallpaperPath, String(accent), fontFamily, hideMode, hideDelay, monitor,
         showTrash, showLabels, showIndicators, bounceOnLaunch, showThumbs, windowCapture].join("|")
     property bool settingsReady: false
@@ -4433,7 +4545,7 @@ Scope {
 
     function saveSettings() {
         var o = {
-            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, hyprBinds: hyprBinds, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, iconMode: iconMode, pinMigTahoe: pinMigTahoe, minimizeEffect: minimizeEffect, hotspotSsid: hotspotSsid, hotspotPass: hotspotPass, hotspotBand: hotspotBand, iconSize: iconSizePref, magnification: magnification, magnificationEnabled: magnificationEnabled,
+            dockEnabled: dockEnabled, windowsFloat: windowsFloat, shortcuts: shortcuts, hyprBinds: hyprBinds, pinnedFolders: pinnedFolders, desktopIcons: desktopIcons, iconMode: iconMode, pinMigTahoe: pinMigTahoe, minimizeEffect: minimizeEffect, minimizeSecs: minimizeSecs, iconStyle: iconStyle, iconTint: iconTint, hotspotSsid: hotspotSsid, hotspotPass: hotspotPass, hotspotBand: hotspotBand, iconSize: iconSizePref, magnification: magnification, magnificationEnabled: magnificationEnabled,
             spacing: spacing, margin: margin, cornerRadius: cornerRadius,
             darkMode: darkMode, glassOpacity: glassOpacity, dockStyle: dockStyle, wallpaperPath: wallpaperPath, glassDebug: glassDebug,
             glassRim: glassRim, glassGrain: glassGrain, glassLiquid: glassLiquid, glassBlur: glassBlur,
@@ -4450,7 +4562,7 @@ Scope {
         var keys = ["dockEnabled", "windowsFloat", "shortcuts", "hyprBinds", "pinnedFolders", "desktopIcons", "iconMode", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
                     "darkMode", "glassOpacity", "dockStyle", "wallpaperPath", "glassDebug", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "accent", "fontFamily", "hideMode", "hideDelay", "monitor",
                     "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture", "pinMigTahoe",
-                    "hotspotSsid", "hotspotPass", "hotspotBand", "minimizeEffect"];
+                    "hotspotSsid", "hotspotPass", "hotspotBand", "minimizeEffect", "minimizeSecs", "iconStyle", "iconTint"];
         for (var i = 0; i < keys.length; i++) {
             if (o[keys[i]] === undefined) continue;
             try { root[keys[i]] = o[keys[i]]; } catch (err) { }
@@ -5790,6 +5902,10 @@ Scope {
                                     shadowOpacity: 0.32
                                     shadowBlur: 0.55
                                     shadowVerticalOffset: 3
+                                    // Settings → Icons → Tinted: every icon in one colour, keeping its shading
+                                    colorization: root.iconsTinted ? 0.9 : 0.0
+                                    colorizationColor: root.iconTintColor
+                                    Behavior on colorization { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
                                     brightness: ma.pressed ? -0.3 : 0.0
                                 }
 
