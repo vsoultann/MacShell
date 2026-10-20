@@ -195,8 +195,7 @@ Scope {
     ]
     property color accent: "#0A84FF"     // menu highlight (macOS blue)
     readonly property var defaultPinned: [
-        "macshell-finder", "macshell-applemusic", "macshell-photos",
-        "org.gnome.Nautilus", "org.kde.dolphin", "thunar",
+        "org.kde.dolphin", "macshell-applemusic", "macshell-photos",
         "firefox", "zen", "chromium", "google-chrome",
         "kitty", "com.mitchellh.ghostty", "Alacritty", "foot",
         "code", "discord", "spotify", "steam", "obsidian"
@@ -213,6 +212,7 @@ Scope {
     function setIconMode(mode) {
         iconMode = mode;
         applyIconTheme();
+        applyKdeTheme();
         saveSettings();
     }
     function applyIconTheme() {
@@ -228,7 +228,16 @@ Scope {
             + "k=\"$HOME/.config/kdeglobals\"; [ -f \"$k\" ] && grep -q '^Theme=' \"$k\" && sed -i \"s|^Theme=.*|Theme=$t|\" \"$k\"; "
             + "exit 0", "sh", name]);
     }
+    // Finder (Dolphin) and the other KDE apps follow the shell: light / dark, its icons, and glass or solid
+    // (macshell-kde-theme.sh writes the MacShell session's own KDE defaults; other sessions never read them)
+    function applyKdeTheme() {
+        Quickshell.execDetached([Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-kde-theme.sh",
+                                 darkMode ? "dark" : "light", iconThemeName(iconMode), solidLook ? "solid" : "glass"]);
+    }
+    onSolidLookChanged: if (settingsReady) applyKdeTheme()
+    onSettingsReadyChanged: if (settingsReady) applyKdeTheme()
     onDarkModeChanged: {
+        if (settingsReady) applyKdeTheme();
         if (settingsReady && iconMode === "auto") applyIconTheme();
         if (bar && bar.darkMode !== darkMode) bar.darkMode = darkMode;
     }
@@ -4925,9 +4934,9 @@ Scope {
     // MacShell's own windows all have the app id "org.quickshell", so the title says which app a window
     // belongs to. Every one of them is listed here: the ones that weren't showed up as a bare gear.
     readonly property var ownApps: ({
-        "Finder": "macshell-finder", "Photos": "macshell-photos", "App Store": "macshell-appstore",
+        "Photos": "macshell-photos", "App Store": "macshell-appstore",
         "Clock": "macshell-clock", "AirDrop": "macshell-airdrop", "Reminders": "macshell-reminders",
-        "Preview": "macshell-preview", "Player": "macshell-player", "macshell Settings": "macshell-settings",
+        "Preview": "macshell-preview", "macshell Settings": "macshell-settings",
         "Install Dependencies": "macshell-installer"
     })
     // apps that stand in for one of MacShell's: their windows join that app's Dock icon and take its name
@@ -4968,10 +4977,9 @@ Scope {
         }
         if (item.kind === "folder") { root.loadStack(item.path); return; }
         if (item.special === "trash") {
-            // our Finder, at the trash's own folder — not another desktop's file manager
-            var tdir = (Quickshell.env("XDG_DATA_HOME") || (Quickshell.env("HOME") + "/.local/share")) + "/Trash/files";
-            if (root.hub && root.hub.openFolder) { root.hub.openFolder(tdir); return; }
-            Quickshell.execDetached(["xdg-open", tdir]);
+            // Finder, at the Trash (Dolphin's trash:/ shows what is in it and can put things back)
+            if (root.hub && root.hub.openFolder) { root.hub.openFolder("trash:/"); return; }
+            Quickshell.execDetached(["xdg-open", "trash:/"]);
             return;
         }
         var wins = windowsFor(item.key);
@@ -5371,10 +5379,20 @@ Scope {
             try {
                 var a = JSON.parse(text());
                 if (Array.isArray(a)) {
+                    // MacShell's own Finder and Player are gone: their pins become the real apps (Dolphin is Finder,
+                    // VLC is QuickTime Player), once, where they were
+                    var moved = false, swap = { "macshell-finder": "org.kde.dolphin", "macshell-player": "vlc" };
+                    for (var m = a.length - 1; m >= 0; m--) {
+                        var to = swap[a[m]];
+                        if (!to) continue;
+                        moved = true;
+                        if (a.indexOf(to) >= 0) a.splice(m, 1); else a[m] = to;
+                    }
+                    if (moved) store.setText(JSON.stringify(a, null, 2));
                     // Finder and Apple Music belong in the Dock; a Dock pinned before they existed gets them once, up front
                     if (!root.pinMigTahoe) {
                         root.pinMigTahoe = true;
-                        var add = ["macshell-finder", "macshell-applemusic"], front = [];
+                        var add = ["org.kde.dolphin", "macshell-applemusic"], front = [];
                         for (var i = 0; i < add.length; i++) if (a.indexOf(add[i]) < 0) front.push(add[i]);
                         if (front.length > 0) { a = front.concat(a); store.setText(JSON.stringify(a, null, 2)); }
                     }

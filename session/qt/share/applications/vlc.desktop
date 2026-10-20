@@ -1,0 +1,15 @@
+[Desktop Entry]
+# MacShell session only (XDG_DATA_DIRS puts this folder first): VLC in its QuickTime Player skin
+Version=1.0
+Type=Application
+Name=QuickTime Player
+GenericName=Media Player
+Comment=Play movies and music
+Exec=@HOME@/.config/hypr-macshell/scripts/macshell-quicktime.sh %U
+TryExec=/usr/bin/vlc
+Icon=macshell-player
+Terminal=false
+Categories=AudioVideo;Player;Video;
+Keywords=quicktime;video;movie;player;vlc;
+StartupWMClass=vlc
+MimeType=video/mp4;video/x-m4v;video/quicktime;video/x-matroska;video/webm;video/x-msvideo;video/x-ms-wmv;video/mpeg;video/ogg;video/x-flv;video/3gpp;video/mp2t;audio/mpeg;audio/mp4;audio/x-m4a;audio/flac;audio/ogg;audio/x-wav;audio/aac;audio/x-matroska;application/x-matroska;

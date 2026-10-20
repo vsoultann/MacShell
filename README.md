@@ -26,9 +26,9 @@ Spotlight, desktop widgets, notifications and a full lock screen. This is a fork
 |---|---|
 | ![Appearance](docs/appearance.gif) | ![AirDrop](docs/airdrop.gif) |
 
-| Finder: Locations for USB sticks, tags, coloured folders | Reminders |
-|---|---|
-| ![Finder](docs/finder.png) | ![Reminders](docs/reminders.png) |
+| Reminders |
+|---|
+| ![Reminders](docs/reminders.png) |
 
 | Mac Hello explains what you just installed | Internet Sharing remembers its name and password |
 |---|---|
@@ -93,7 +93,7 @@ up, the network list stays real. Adapters that can't do both still work the old 
 **Its own session, laptop-ready** — the "Hyprland (MacShell)" login runs a standalone Hyprland config
 (`~/.config/hypr-macshell/hyprland.lua` + `macshell/*.lua`), not another shell's dotfiles. The volume, mute, mic-mute,
 brightness and media keys work out of the box (also on the lock screen) and show the Liquid Glass HUD. Folders open
-in MacShell's Finder everywhere — the Dock, the desktop, Spotlight, the Control Center, and `xdg-open` from other apps.
+in Finder everywhere — the Dock, the desktop, Spotlight, the Control Center, and `xdg-open` from other apps.
 Your `custom/*.lua` overrides carry over when you update.
 
 **Liquid Glass controls** — every switch and slider is one shared component: holding the knob turns it into a glass
@@ -111,15 +111,14 @@ refracting live and the window captures pause, so the desktop stays responsive; 
 drops. No setting to remember: it watches the load average and uses hysteresis so it never flaps.
 
 **New apps & screens**
-- **Finder** — sidebar with favourites and colour tags, list and icon views, coloured folders, search, new folder, trash,
-  Quick Look (pictures, text, PDF and video in our own player), **Merge Photos** (grid, side by side or stacked),
-  pinning a folder to the Dock, where it fans its contents out in an arc, and dragging files straight out into any
-  other app. **Locations** lists USB sticks and cards as you plug them in — click to mount and open, eject from the
-  sidebar — and the right-click menu does what a file manager should: Open With, Rename, Duplicate, Compress, Copy,
-  Cut, Paste, Get Info, Share with AirDrop, with the usual keys (⌘C/⌘X/⌘V/⌘D/⌘I/F2/Delete and ⌘⇧. for dotfiles).
+- **Finder** — Dolphin, dressed and named as Finder in the MacShell session only: the MacTahoe Kvantum theme and
+  colours following light / dark, translucent with live compositor blur in the glass materials and solid in Opaque,
+  Inter, Finder's toolbar (Back / Forward, where you are, the view buttons, search, the … menu) with the traffic lights
+  inside it, no menu bar, icon view. It is done with KDE's own locked defaults in `~/.config/hypr-macshell/qt`
+  (`macshell-kde-theme.sh` writes them), so your other sessions keep Dolphin exactly as it was.
 - **Photos** — your library grouped by day, folders as albums, favourites, a zoom slider and a full-screen viewer.
 - **AirDrop** — the radar, the devices around you, drag-to-send. Drag files onto someone to send straight away, or
-  drop them anywhere in the window and pick who gets them; Finder's menu has **Share with AirDrop** too. It speaks
+  drop them anywhere in the window and pick who gets them. It speaks
   LocalSend's protocol, so phones, tablets and other desktops running LocalSend appear here, send here and receive
   from here. Networks that drop multicast (phone hotspots, guest Wi-Fi) are swept directly, a device that changed
   address is found again by its fingerprint, and a failed send says why; tap the device to try again. If a firewall
@@ -133,7 +132,11 @@ drops. No setting to remember: it watches the load average and uses hysteresis s
   with the System Settings slider underneath.
 - **Desktop icons** — everything in ~/Desktop, drag and snap to the grid, double-click to open, drop one onto another
   to make a folder, rename and trash from the menu.
-- **Video player** — a QuickTime-looking player with a glass control bar, used by Quick Look and previews.
+- **QuickTime Player** — VLC in MacShell's own QuickTime skin (`macshell-quicktime-skin.py` draws it for VLC's skin
+  engine, `vlc-gui-skins2`): a dark window with round corners and the traffic lights, the movie edge to edge, and
+  QuickTime's rounded control bar (volume, previous / play / next, the … menu, full screen, the scrubber with the time
+  played and left). Full screen floats the same bar over the movie and hides it when the mouse rests. Everything VLC
+  plays, it plays. Without the skin engine VLC opens as itself.
 - **Lock screen (MacLock)** — its own process (a shell crash can't take the lock down), PAM unlock, glass clock that stretches
   like iOS 26's, Caps Lock indicator, animated wallpapers, per-character password dots, and:
   - **Now Playing** bubble tinted from the album art, shuffle / repeat, synced lyrics (in the bubble or side by side),
@@ -240,6 +243,8 @@ Keep all five files in the same folder.
 | Privacy indicators | PipeWire (`pw-dump`) |
 | Keep Awake | `systemd-inhibit` |
 | Lock / Sleep / Restart / Shut Down | `loginctl`, `systemctl` (UWSM sessions are stopped via `uwsm`) |
+| Finder | `dolphin`, `kvantum`, `kio-extras`, `ffmpegthumbs` (thumbnails); the MacTahoe KDE theme is downloaded by `./install.sh --config` |
+| QuickTime Player | `vlc` and `vlc-gui-skins2` (its skin engine, which runs through XWayland) |
 | Trash watching / emptying | `inotify-tools` (`inotifywait`), `ktrash6`/`ktrash5`, or a file manager (`dolphin`, `nautilus`, `thunar`, `nemo`, `pcmanfm-qt`) |
 | Folder pickers in Settings | `zenity`, `kdialog` or `yad` |
 | "About This Linux" | `fastfetch` or `neofetch` |
@@ -247,11 +252,9 @@ Keep all five files in the same folder.
 | Emoji search keywords | `emoji-test.txt` from the `unicode-emoji` package (otherwise `EmojiData.js` is used) |
 | Wallpaper detection / applying | one of: Noctalia, `awww`/`swww`, `hyprpaper`, `swaybg`, `wpaperd` — or set a path yourself (see [Wallpaper](#wallpaper)) |
 | Default apps | terminal `kitty`, file opener `xdg-open` — change `terminal`, `launcher`, `filesCmd`, `clipboardCmd` in `~/.config/macbar/settings.json` |
-| Video in the player and in Finder's Quick Look | `qt6-multimedia` (with `qt6-multimedia-ffmpeg`); hardware decoding through VA-API |
 | The AppleCare+ easter egg | `yt-dlp` (without it the video opens in your browser instead) |
 | PDF previews in Quick Look | `poppler` (`pdftotext`) |
-| Merge Photos in Finder | `imagemagick` (`magick`, `montage`) |
-| Picking files to send in AirDrop | `zenity` |
+| Picking files (AirDrop, Photos) | `kdialog` |
 | AirDrop itself | `python3` (standard library only) and a device running [LocalSend](https://localsend.org) on the same network |
 | Apple Music | [Cider](https://cider.sh) (`cider`), by the Cider Collective — installed as `macshell-applemusic.desktop` |
 | App Store | `flatpak` with Flathub added (`flatpak remote-add --if-not-exists flathub …`) |

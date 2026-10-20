@@ -1,0 +1,15 @@
+[Desktop Entry]
+# MacShell session only (XDG_DATA_DIRS puts this folder first): Dolphin, dressed and named as Finder
+Type=Application
+Name=Finder
+GenericName=File Manager
+Comment=Browse your files
+Exec=dolphin -stylesheet @HOME@/.config/hypr-macshell/qt/finder.qss %u
+Icon=system-file-manager
+Terminal=false
+Categories=Qt;KDE;System;FileTools;FileManager;
+MimeType=inode/directory;
+Keywords=files;folder;browse;manager;dolphin;finder;
+StartupWMClass=org.kde.dolphin
+X-DBUS-ServiceName=org.kde.dolphin
+X-KDE-StartupNotify=true

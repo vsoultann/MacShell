@@ -1,0 +1,15 @@
+/* MacShell: Finder's toolbar. MacShell draws the traffic lights over the top-left of every window, so Back starts
+   after them, the way Finder's buttons sit to the right of the lights. (Kvantum ignores toolbar padding, and a
+   border on the toolbar hands its whole painting to the stylesheet, so the room is a margin on Back itself.)
+   The stylesheet then draws that one button, so it gets the same quiet look and hover as the others. */
+QToolBar QToolButton[text="Back"] {
+    margin-left: 66px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    padding: 4px;
+}
+QToolBar QToolButton[text="Back"]:hover { background: rgba(128, 128, 128, 0.18); }
+QToolBar QToolButton[text="Back"]:pressed { background: rgba(128, 128, 128, 0.30); }
+QToolBar QToolButton[text="Back"]::menu-indicator { image: none; width: 0; }
+QToolBar QToolButton[text="Back"]::menu-button { width: 0; border: none; }

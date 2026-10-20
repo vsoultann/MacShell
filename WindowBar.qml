@@ -41,20 +41,30 @@ Scope {
             var c = clients[i];
             if (("0x" + String(c.address).replace(/^0x/, "")) !== activeAddr && String(c.address) !== activeAddr) continue;
             if (!c.mapped || c.hidden || c.fullscreen) return null;
-            // our own windows have their lights already
+            // our own windows have their lights already, and so does QuickTime Player (VLC's skin draws them)
             if (c.class === "org.quickshell" || c.class === "quickshell") return null;
+            if (/^(vlc|Vlc|VLC)$/.test(c.class)) return null;
+            // Finder (Dolphin, dressed by session/qt) always gets them: its toolbar leaves room for them, like
+            // the real one. Everything else only when the window controls are switched on.
+            if (!root.enabled && c.class !== "org.kde.dolphin") return null;
             if (c.size && (c.size[0] < 220 || c.size[1] < 120)) return null;
             return c;
         }
         return null;
     }
+    // Window positions come from the shell's geometry feed, which only runs when something asks for it (the glass
+    // did; in Opaque nothing did, so the controls had nowhere to go). Finder is known from the app id alone.
+    readonly property bool finderFocused: activeTl !== null && activeTl.appId === "org.kde.dolphin"
+    Binding { target: root.hub; property: "winBarWantsGeo"; value: root.enabled || root.finderFocused; when: root.hub !== null }
+    // Finder's lights sit inside its toolbar, centred on its buttons, without the app's name or a plate
+    readonly property bool finder: active !== null && active.class === "org.kde.dolphin"
     function dispatch(d) { Hyprland.dispatch(d + "({ window = \"address:" + activeAddr + "\" })"); }
     function close() { Hyprland.dispatch('hl.dsp.window.close({ window = "address:' + activeAddr + '" })'); }
     function minimize() { Hyprland.dispatch('hl.dsp.window.move({ workspace = "special:minimized", follow = false, window = "address:' + activeAddr + '" })'); }
     function zoom() { Hyprland.dispatch('hl.dsp.window.fullscreen_state({ internal = 2, client = 0, window = "address:' + activeAddr + '" })'); }
 
     Variants {
-        model: root.enabled ? Quickshell.screens : []
+        model: (root.enabled || root.finder) ? Quickshell.screens : []
         PanelWindow {
             id: w
             required property var modelData
@@ -78,9 +88,9 @@ Scope {
                 visible: w.here && opacity > 0.01
                 opacity: w.here ? 1 : 0
                 Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                x: w.wx + 12
-                y: w.wy + 10
-                width: lights.width + (root.showTitle ? titleRow.width + 12 : 0)
+                x: w.wx + (root.finder ? 16 : 12)
+                y: w.wy + (root.finder ? 13 : 10)
+                width: lights.width + (root.showTitle && !root.finder ? titleRow.width + 12 : 0)
                 height: 20
                 Behavior on x { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
                 Behavior on y { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
@@ -90,6 +100,7 @@ Scope {
                     anchors.fill: parent
                     anchors.margins: -5
                     radius: 11
+                    visible: !root.finder
                     color: root.darkMode ? Qt.rgba(0, 0, 0, 0.28) : Qt.rgba(1, 1, 1, 0.3)
                     opacity: hover.hovered ? 1 : 0.55
                     Behavior on opacity { NumberAnimation { duration: 180 } }
@@ -134,7 +145,7 @@ Scope {
                 }
                 Row {
                     id: titleRow
-                    visible: root.showTitle
+                    visible: root.showTitle && !root.finder
                     anchors.left: lights.right; anchors.leftMargin: 12
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 6

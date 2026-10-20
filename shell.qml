@@ -40,17 +40,17 @@ ShellRoot {
         property var clock: clockApp
         property var appstore: appStore
         property var photos: photosApp
-        property var finder: finderApp
+        property var finder: filesApp
         // one way to open a folder, and one way to put a window away — every part of the shell uses these
-        function openFolder(path) { if (finderApp) finderApp.open(path); else Quickshell.execDetached(["xdg-open", path]); }
-        // any path: folders in Finder, pictures in Preview, videos in the Player, everything else in its own app
+        function openFolder(path) { filesApp.open(path); }
+        // any path: folders in Finder, pictures in Preview, movies in QuickTime Player, everything else in its own app
         function openPath(path) {
             var p = String(path || "").replace(/^file:\/\//, "");
             if (p === "") return;
             if (/\.(png|jpe?g|webp|gif|bmp|avif|tiff?|heic)$/i.test(p) && previewApp) { previewApp.open(p); return; }
-            if (/\.(mp4|mkv|webm|mov|avi|m4v)$/i.test(p) && videoPlayer) { videoPlayer.play(p, p.split("/").pop()); return; }
+            if (/\.(mp4|mkv|webm|mov|avi|m4v)$/i.test(p)) { filesApp.player.play(p); return; }
             // a folder (or anything we can't tell) goes through the session's opener, which sends folders to Finder
-            Quickshell.execDetached(["sh", "-c", "if [ -d \"$1\" ]; then qs -c MacShell ipc call finder folder \"$1\"; else exec xdg-open \"$1\"; fi", "sh", p]);
+            Quickshell.execDetached(["sh", "-c", "if [ -d \"$1\" ]; then exec \"$HOME/.config/hypr-macshell/scripts/macshell-finder.sh\" \"$1\"; else exec xdg-open \"$1\"; fi", "sh", p]);
         }
         // ── Closing one of the shell's own windows (Finder, Photos, Settings, …) ──
         // The glass and the Dock previews capture every window, ours included. Destroying one of our windows while a
@@ -193,7 +193,7 @@ ShellRoot {
             for (var i = ts.length - 1; i >= 0; i--) if (ts[i].wayland && isMinimized(ts[i])) { restoreHyprWin(ts[i]); return; }
         }
         property var welcome: welcomeApp
-        property var player: videoPlayer
+        property var player: filesApp.player
         property var desktop: desktopIcons
         property var airdrop: airDrop
         property var preview: previewApp
@@ -204,6 +204,7 @@ ShellRoot {
         // set by MacBar / MacDock (Binding elements) when their glass needs live data
         property bool barWantsGeo: false
         property bool dockWantsGeo: false
+        property bool winBarWantsGeo: false     // the window controls place themselves from the same feed
         property bool barWantsWallpaper: false
         property bool dockWantsWallpaper: false
 
@@ -335,7 +336,7 @@ ShellRoot {
         Timer {
             interval: sharedHub.geoHot ? 90 : 250
             repeat: true
-            running: (sharedHub.barWantsGeo || sharedHub.dockWantsGeo) && !sharedHub.ipcOk
+            running: (sharedHub.barWantsGeo || sharedHub.dockWantsGeo || sharedHub.winBarWantsGeo) && !sharedHub.ipcOk
             triggeredOnStart: true
             onTriggered: if (!geoProc.running) geoProc.running = true
         }
@@ -377,7 +378,7 @@ ShellRoot {
             // fast (60 Hz) for 1.5 s after any window event, otherwise a relaxed 2.5 Hz check (idle CPU)
             interval: sharedHub.geoHot ? 16 : 400
             repeat: true
-            running: (sharedHub.barWantsGeo || sharedHub.dockWantsGeo) && !sharedHub.ipcBroken
+            running: (sharedHub.barWantsGeo || sharedHub.dockWantsGeo || sharedHub.winBarWantsGeo) && !sharedHub.ipcBroken
             triggeredOnStart: true
             onTriggered: sharedHub.ipcPoll()
         }
@@ -419,9 +420,9 @@ ShellRoot {
     ClockApp { id: clockApp; hub: sharedHub }
     AppStore { id: appStore; hub: sharedHub }
     Photos { id: photosApp; hub: sharedHub }
-    Finder { id: finderApp; hub: sharedHub }
+    // Finder (Dolphin) and QuickTime Player (VLC) are real apps; this is how the shell reaches them
+    Files { id: filesApp; hub: sharedHub }
     Welcome { id: welcomeApp; hub: sharedHub }
-    VideoPlayer { id: videoPlayer; hub: sharedHub }
     Desktop { id: desktopIcons; hub: sharedHub }
     AirDrop { id: airDrop; hub: sharedHub }
     Preview { id: previewApp; hub: sharedHub }
@@ -477,8 +478,7 @@ ShellRoot {
         // choose files in Finder, then pick who gets them
         function pick(): void {
             airDrop.open();
-            if (finderApp && finderApp.chooseFiles)
-                finderApp.chooseFiles(function (files) { airDrop.stagePaths(files); }, "Send");
+            filesApp.chooseFiles(function (files) { airDrop.stagePaths(files); }, "Send with AirDrop");
         }
     }
     IpcHandler {
@@ -488,9 +488,8 @@ ShellRoot {
     }
     IpcHandler {
         target: "player"
-        function play(src: string): void { videoPlayer.play(src, src.split("/").pop()); }
-        function youtube(url: string): void { videoPlayer.playYoutube(url, "Video"); }
-        function toggle(): void { videoPlayer.toggle(); }
+        function play(src: string): void { filesApp.player.play(src); }
+        function youtube(url: string): void { filesApp.player.playYoutube(url, "Video"); }
     }
     // qs -c MacShell ipc call window minimize | restore | restorelast
     IpcHandler {
@@ -511,8 +510,8 @@ ShellRoot {
     }
     IpcHandler {
         target: "finder"
-        function open(): void { finderApp.open(); }
-        function folder(p: string): void { finderApp.open(p); }
+        function open(): void { filesApp.open(""); }
+        function folder(p: string): void { filesApp.open(p); }
     }
     IpcHandler {
         target: "photos"
