@@ -20,8 +20,7 @@ end
 
 -- ── MacShell (defaults; Settings → Keyboard Shortcuts can change these) ──
 hl.bind("SUPER + Space", ipc("spotlight toggle"), { description = "MacShell: Spotlight" })
--- tapping Super also opens Spotlight; it moves (or goes away) with Spotlight's shortcut in Settings
-hl.bind("SUPER + SUPER_L", ipc("spotlight toggle"), { release = true })
+-- (no Super tap: a shortcut fires only on its exact keys; record "Tap Super" in Settings to get one)
 hl.bind("SUPER + V", ipc("spotlight clipboard"), { description = "MacShell: Clipboard history" })
 hl.bind("SUPER + Period", ipc("spotlight emoji"), { description = "MacShell: Emoji picker" })
 hl.bind("SUPER + A", ipc("spotlight apps"), { description = "MacShell: All applications" })

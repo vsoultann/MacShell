@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Installer
+Comment=Install what MacShell needs
+Exec=qs -c MacShell ipc call deps open
+Icon=application-x-alpm-package
+Categories=System;Settings;
+Keywords=dependencies;install;packages;
+StartupNotify=false

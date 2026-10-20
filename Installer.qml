@@ -169,15 +169,12 @@ Scope {
                         }
                     }
                 }
-                // the package icon
-                Rectangle {
-                    x: 24; y: 58; width: 56; height: 56; radius: 13
-                    gradient: Gradient {
-                        GradientStop { position: 0; color: "#C8A46A" }
-                        GradientStop { position: 1; color: "#9C7A43" }
-                    }
-                    Rectangle { anchors.centerIn: parent; width: 36; height: 4; radius: 2; color: Qt.rgba(1, 1, 1, 0.55) }
-                    Rectangle { anchors.centerIn: parent; width: 4; height: 36; radius: 2; color: Qt.rgba(1, 1, 1, 0.55) }
+                // the Installer's icon (the same one the Dock shows)
+                Image {
+                    x: 24; y: 58; width: 60; height: 60
+                    source: Quickshell.iconPath("application-x-alpm-package", "package-x-generic")
+                    sourceSize: Qt.size(120, 120)
+                    smooth: true; mipmap: true
                 }
                 Column {
                     x: 24; y: 140

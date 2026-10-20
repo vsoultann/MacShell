@@ -1222,10 +1222,82 @@ Scope {
                 width: parent.width - sidebar.x - sidebar.width - 2
                 height: 52
 
-                Row {
-                    x: 14
+                // back / forward: on Liquid Glass and Frosted they sit in a glass pill, like the macOS Tahoe toolbar;
+                // Blur and Opaque keep the plain chevrons
+                readonly property string navLook: root.solidLook ? "plain"
+                    : (root.bar && (root.bar.material === "liquid" || (root.bar.material === "custom" && root.bar.barStyle === "liquid"))) ? "liquid"
+                    : (root.bar && root.bar.material === "frosted") ? "frosted" : "plain"
+                Item {
+                    id: navPill
+                    x: 10
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: 2
+                    width: 66; height: 34
+                    opacity: header.navLook === "plain" ? 0 : 1
+                    visible: opacity > 0.01
+                    Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+                    // soft shadow under the glass
+                    Rectangle {
+                        anchors.fill: parent; anchors.topMargin: 2; anchors.bottomMargin: -2
+                        radius: height / 2
+                        color: Qt.rgba(0, 0, 0, pal.dark ? 0.35 : 0.12)
+                        layer.enabled: true
+                        layer.effect: MultiEffect { blurEnabled: true; blurMax: 12; blur: 0.8; autoPaddingEnabled: true }
+                    }
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: height / 2
+                        // Liquid Glass: nearly clear, the window shows through; Frosted: milky
+                        color: header.navLook === "liquid" ? (pal.dark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(1, 1, 1, 0.35))
+                                                           : (pal.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.65))
+                        // light across the top, a faint glow along the bottom (light passing through)
+                        Rectangle {
+                            anchors.fill: parent; radius: parent.radius
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, header.navLook === "liquid" ? 0.16 : 0.10) }
+                                GradientStop { position: 0.45; color: Qt.rgba(1, 1, 1, 0.0) }
+                                GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, header.navLook === "liquid" ? 0.07 : 0.03) }
+                            }
+                        }
+                    }
+                    // the rim: bright at the top-left and bottom-right, fading along the sides, like glass catching light
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: height / 2
+                        color: "transparent"
+                        border.width: 1
+                        border.color: "white"
+                        opacity: header.navLook === "liquid" ? 0.55 : 0.3
+                        layer.enabled: true
+                        layer.effect: MultiEffect {
+                            maskEnabled: true; maskSource: rimMask
+                        }
+                    }
+                    Item {
+                        id: rimMask
+                        anchors.fill: parent
+                        visible: false
+                        layer.enabled: true
+                        Rectangle {
+                            anchors.fill: parent
+                            gradient: Gradient {
+                                orientation: Gradient.Horizontal
+                                GradientStop { position: 0.0; color: "white" }
+                                GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.35) }
+                                GradientStop { position: 1.0; color: "white" }
+                            }
+                        }
+                    }
+                    // a hair-thin divider between the two buttons
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 1; height: parent.height - 14
+                        color: pal.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
+                    }
+                }
+                Row {
+                    x: header.navLook === "plain" ? 14 : 10
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: header.navLook === "plain" ? 2 : 0
                     Repeater {
                         model: [ { g: "\u2039", dir: -1 }, { g: "\u203A", dir: 1 } ]
                         delegate: Item {
@@ -1233,17 +1305,30 @@ Scope {
                             required property var modelData
                             readonly property bool ok: modelData.dir < 0 ? prefsWindow.backStack.length > 0
                                                                            : prefsWindow.fwdStack.length > 0
-                            width: 26; height: 28
+                            width: header.navLook === "plain" ? 26 : 33; height: header.navLook === "plain" ? 28 : 34
+                            // hover / press: a faint light inside the pill half
+                            Rectangle {
+                                visible: header.navLook !== "plain"
+                                anchors.fill: parent; anchors.margins: 3
+                                radius: height / 2
+                                color: (navBtn.ok && navMa.containsMouse) ? (pal.dark ? Qt.rgba(1, 1, 1, navMa.pressed ? 0.14 : 0.08) : Qt.rgba(0, 0, 0, navMa.pressed ? 0.10 : 0.05)) : "transparent"
+                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                            }
                             Text {
                                 anchors.centerIn: parent
                                 anchors.verticalCenterOffset: -2
                                 text: navBtn.modelData.g
-                                font.pixelSize: 28
-                                color: navBtn.ok ? pal.text2 : pal.text3
+                                font.pixelSize: header.navLook === "plain" ? 28 : 26
+                                font.weight: header.navLook === "plain" ? Font.Normal : Font.DemiBold
+                                color: navBtn.ok ? (header.navLook === "plain" ? pal.text2 : pal.text) : pal.text3
                                 opacity: navBtn.ok ? 1 : 0.5
+                                scale: (navBtn.ok && navMa.pressed) ? 0.86 : 1
+                                Behavior on scale { NumberAnimation { duration: 230; easing.type: Easing.OutBack; easing.overshoot: 3 } }
                             }
                             MouseArea {
+                                id: navMa
                                 anchors.fill: parent
+                                hoverEnabled: true
                                 enabled: navBtn.ok
                                 onClicked: {
                                     if (navBtn.modelData.dir < 0) prefsWindow.back();
@@ -1254,7 +1339,7 @@ Scope {
                     }
                 }
                 Text {
-                    x: 74
+                    x: header.navLook === "plain" ? 74 : 88
                     anchors.verticalCenter: parent.verticalCenter
                     text: prefsWindow.panes[prefsWindow.cur].name
                     color: pal.text
@@ -3365,9 +3450,8 @@ Scope {
                         binds.push('hl.bind("' + k + '", ' + action + ', { description = "MacShell: ' + d.name + '"' + scPane.relOpt(k) + ' })');
                     }
                     lines = lines.concat(binds);
-                    // tapping Super opens Spotlight only while Spotlight keeps its default key (or is set to the tap itself)
-                    var spot = scPane.keyOf("spotlight");
-                    if (spot !== "SUPER + Space") lines.splice(2, 0, 'free("SUPER + SUPER_L")');
+                    // a Super tap only exists when a shortcut is recorded as "Tap Super" (older sessions bound one by default)
+                    lines.splice(2, 0, 'free("SUPER + SUPER_L")');
                     // shortcuts you moved or switched off in the Hyprland list
                     var hm = root.hyprBinds || ({});
                     for (var h in hm) {
@@ -4787,7 +4871,8 @@ Scope {
     readonly property var ownApps: ({
         "Finder": "macshell-finder", "Photos": "macshell-photos", "App Store": "macshell-appstore",
         "Clock": "macshell-clock", "AirDrop": "macshell-airdrop", "Reminders": "macshell-reminders",
-        "Preview": "macshell-preview", "Player": "macshell-player", "macshell Settings": "macshell-settings"
+        "Preview": "macshell-preview", "Player": "macshell-player", "macshell Settings": "macshell-settings",
+        "Install Dependencies": "macshell-installer"
     })
     // apps that stand in for one of MacShell's: their windows join that app's Dock icon and take its name
     // (Apple Music is Cider when it is installed, otherwise Swift)
