@@ -593,7 +593,7 @@ do_uninstall() {
 do_check() {
     say "Checking"
     local miss=() c
-    for c in qs qsb hyprctl jq curl ffmpeg magick grim slurp wl-copy cliphist playerctl brightnessctl nmcli hypridle mpvpaper awww pw-play python3 rsync; do
+    for c in qs qsb hyprctl jq curl ffmpeg magick grim slurp wl-copy cliphist playerctl brightnessctl nmcli hypridle mpvpaper awww pw-play python3 openssl rsync; do
         if have "$c" || { [ "$c" = qsb ] && [ -x /usr/lib/qt6/bin/qsb ]; }; then note "ok       $c"; else miss+=("$c"); printf '%s  ✗%s missing  %s\n' "$c_r" "$c_0" "$c"; fi
     done
     [ -d "$QS/MacShell" ] && note "shell:        installed" || warn "shell:        not installed (./install.sh --shell)"

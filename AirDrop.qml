@@ -160,7 +160,8 @@ Scope {
             "noanswer": ["No answer", who + " didn't accept in time. Tap it to ask again."],
             "cancelled": ["Cancelled", who + " cancelled the transfer."],
             "interrupted": ["Interrupted", "The connection to " + who + " dropped partway. Tap it to send again."],
-            "nofiles": ["Nothing to send", "Those files can't be read."]
+            "nofiles": ["Nothing to send", "Those files can't be read."],
+            "nocert": ["Not reachable", who + " didn't answer. iPhones only take files from a sender with a certificate, and making one needs openssl: install it and try again."]
         }[code];
         return m || ["Failed", who + " couldn't take the files (" + code + "). Details are in ~/.cache/macshell/airdrop.log."];
     }

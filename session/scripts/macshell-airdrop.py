@@ -45,9 +45,38 @@ def _log(*parts):
 
 PORT = 53317
 ALIAS = os.environ.get("MACSHELL_AIRDROP_ALIAS") or socket.gethostname()
-# Stable per machine: the sending half and the receiving half must agree, or each half sees the other
-# as a stranger and the radar fills up with copies of this computer.
-FINGERPRINT = hashlib.sha256(("macshell:" + socket.gethostname() + ":" + (os.environ.get("USER") or "")).encode()).hexdigest()
+IDENTITY = os.path.join(os.path.expanduser("~"), ".local", "share", "macshell", "airdrop")
+CERT, KEY = os.path.join(IDENTITY, "cert.pem"), os.path.join(IDENTITY, "key.pem")
+
+
+def _identity():
+    """This machine's LocalSend identity: a self-signed certificate, and its SHA-256 as the fingerprint.
+
+    LocalSend on iOS (and any build with the stricter setting) asks the sender for a certificate over TLS and
+    refuses without one ("certificate required"), so sending to an iPhone failed every time while receiving
+    from it worked. LocalSend's fingerprint is the uppercase SHA-256 of the certificate (DER), so ours is too.
+    Made once with openssl and kept, so the phone sees the same device every time.
+    """
+    try:
+        if not (os.path.isfile(CERT) and os.path.isfile(KEY)):
+            import subprocess
+            os.makedirs(IDENTITY, mode=0o700, exist_ok=True)
+            subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-sha256", "-days", "3650",
+                            "-subj", "/CN=LocalSend User", "-keyout", KEY + ".tmp", "-out", CERT + ".tmp"],
+                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+            os.chmod(KEY + ".tmp", 0o600)
+            os.replace(KEY + ".tmp", KEY)
+            os.replace(CERT + ".tmp", CERT)
+        with open(CERT) as fh:
+            der = ssl.PEM_cert_to_DER_cert(fh.read())
+        return hashlib.sha256(der).hexdigest().upper(), True
+    except Exception:
+        # no openssl: still a stable id (the sending half and the receiving half must agree, or the radar fills up
+        # with copies of this computer), but devices that insist on a certificate can't be sent to
+        return hashlib.sha256(("macshell:" + socket.gethostname() + ":" + (os.environ.get("USER") or "")).encode()).hexdigest(), False
+
+
+FINGERPRINT, HAVE_CERT = _identity()
 
 
 # bridges for containers and VMs, and VPN tunnels: nobody holding a phone is on the other side of these
@@ -332,10 +361,16 @@ def discover(seconds=3.0):
     return 0
 
 
-# LocalSend serves HTTPS with a certificate it signed itself, so verification can only ever fail.
+# LocalSend serves HTTPS with a certificate it signed itself, so verification can only ever fail. We show ours
+# in return: iPhones won't talk to a sender without one.
 _TLS = ssl.create_default_context()
 _TLS.check_hostname = False
 _TLS.verify_mode = ssl.CERT_NONE
+if HAVE_CERT:
+    try:
+        _TLS.load_cert_chain(CERT, KEY)
+    except (OSError, ssl.SSLError):
+        pass
 
 
 def _open(req, timeout):
@@ -449,7 +484,7 @@ def send(ip, port, paths, protocol=None, fingerprint=None):
     where = _locate(ip, port, protocol, fingerprint)
     if where is None:
         _log("unreachable")
-        _emit(event="error", message="unreachable")
+        _emit(event="error", message="unreachable" if HAVE_CERT else "nocert")
         return 1
     ip, port, scheme = where
     base = "%s://%s:%s/api/localsend/v2" % (scheme, ip, port)
