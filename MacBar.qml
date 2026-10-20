@@ -4593,7 +4593,9 @@ Scope {
                         }
                         Image {
                             anchors.fill: parent
-                            visible: status === Image.Ready && !bdVideo.showing
+                            // always there, under the video: whatever moment the video's first frame arrives, the glass
+                            // never shows anything but the wallpaper (the gradient above is only for "no wallpaper at all")
+                            visible: status === Image.Ready
                             source: root.fileUrl(root.wallpaperFor(win.modelData.name))
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
