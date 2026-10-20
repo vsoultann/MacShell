@@ -101,7 +101,7 @@ PKGS=(quickshell rsync qt6-shadertools qt6-multimedia qt6-svg jq curl git ffmpeg
       playerctl brightnessctl bluez-utils networkmanager power-profiles-daemon hypridle hyprlock hyprsunset wf-recorder
       mpvpaper awww inter-font noto-fonts-emoji python-numpy zenity openbsd-netcat libwebp
       yt-dlp poppler python-pillow librsvg
-      dolphin kdialog kvantum vlc ffmpegthumbs kio-extras)
+      dolphin kdialog kvantum kvantum-qt5 vlc ffmpegthumbs kio-extras)
 
 # what VLC opens
 MOVIES="video/mp4 video/x-m4v video/quicktime video/x-matroska video/webm video/x-msvideo video/mpeg video/ogg video/x-flv video/3gpp video/mp2t"

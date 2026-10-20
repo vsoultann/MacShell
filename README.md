@@ -134,7 +134,9 @@ drops. No setting to remember: it watches the load average and uses hysteresis s
   with the System Settings slider underneath.
 - **Desktop icons** — everything in ~/Desktop, drag and snap to the grid, double-click to open, drop one onto another
   to make a folder, rename and trash from the menu.
-- **Videos** play in VLC.
+- **VLC** — still VLC (its name, icon and layout), dressed like the rest of the session by `macshell-vlc.sh`: the
+  MacShell Kvantum theme through Kvantum's Qt 5 half (`kvantum-qt5`), light / dark, your accent for highlights and
+  the volume wedge, solid menus, Inter. (Its seek bar stays VLC's blue: VLC 3 hard-codes that colour on Linux.)
 - **Lock screen (MacLock)** — its own process (a shell crash can't take the lock down), PAM unlock, glass clock that stretches
   like iOS 26's, Caps Lock indicator, animated wallpapers, per-character password dots, and:
   - **Now Playing** bubble tinted from the album art, shuffle / repeat, synced lyrics (in the bubble or side by side),
@@ -242,7 +244,7 @@ Keep all five files in the same folder.
 | Keep Awake | `systemd-inhibit` |
 | Lock / Sleep / Restart / Shut Down | `loginctl`, `systemctl` (UWSM sessions are stopped via `uwsm`) |
 | Finder | `dolphin`, `kvantum`, `kio-extras`, `ffmpegthumbs` (thumbnails); the MacTahoe KDE theme is downloaded by `./install.sh --config` |
-| Videos | `vlc` |
+| Videos | `vlc`, `kvantum-qt5` (its theme) |
 | Trash watching / emptying | `inotify-tools` (`inotifywait`), `ktrash6`/`ktrash5`, or a file manager (`dolphin`, `nautilus`, `thunar`, `nemo`, `pcmanfm-qt`) |
 | Folder pickers in Settings | `zenity`, `kdialog` or `yad` |
 | "About This Linux" | `fastfetch` or `neofetch` |

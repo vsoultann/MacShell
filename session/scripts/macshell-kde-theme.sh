@@ -18,8 +18,8 @@ X="$Q/xdg"
 mkdir -p "$X"
 
 case "$mode" in
-    light) scheme=MacTahoeLight; style=kvantum;      [ -n "$icons" ] || icons=MacTahoe-light ;;
-    *)     scheme=MacTahoeDark;  style=kvantum-dark; [ -n "$icons" ] || icons=MacTahoe-dark ;;
+    light) scheme=MacTahoeLight; kvtheme=MacShell;     [ -n "$icons" ] || icons=MacTahoe-light ;;
+    *)     scheme=MacTahoeDark;  kvtheme=MacShellDark; [ -n "$icons" ] || icons=MacTahoe-dark ;;
 esac
 colors="$Q/share/color-schemes/$scheme.colors"
 font="Inter,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1"
@@ -38,7 +38,9 @@ tmp="$X/kdeglobals.tmp"
     printf '[General]\nColorScheme[$i]=%s\nAccentColor[$i]=%s\nfont[$i]=%s\nmenuFont[$i]=%s\ntoolBarFont[$i]=%s\nsmallestReadableFont[$i]=%s\n\n' \
         "$scheme" "$rgb" "$font" "$font" "$font" "Inter,8,-1,5,400,0,0,0,0,0,0,0,0,0,0,1"
     # Finder opens with a double click
-    printf '[KDE]\nwidgetStyle[$i]=%s\nSingleClick[$i]=false\n\n' "$style"
+    # one style name for light and dark: the theme it draws with is picked below (Qt 5 apps such as VLC only
+    # know "kvantum", so switching the theme rather than the style is what lets them follow light / dark too)
+    printf '[KDE]\nwidgetStyle[$i]=kvantum\nSingleClick[$i]=false\n\n'
     printf '[Icons]\nTheme[$i]=%s\n\n' "$icons"
     # every colour group of the scheme, locked whole, with the shell's accent for selection and focus
     if [ -f "$colors" ]; then
@@ -144,27 +146,29 @@ EOF
     msgfmt -o "$loc/kio6.mo" "$loc/kio6.po" 2>/dev/null
 fi
 
-# The Kvantum theme both styles draw with: MacShell's own copy of MacTahoe (kvantum = MacShell, kvantum-dark = its
-# MacShellDark half), translucent or solid to match the shell, its blues repainted in the accent, toolbar buttons
-# that sit together grouped like Finder's (Back | Forward, the view switcher). Only apps styled with Kvantum read
-# it, and only the MacShell session styles apps with it; the MacTahoe copy itself is never touched.
+# The Kvantum themes: MacShell (light) and MacShellDark, MacShell's own copies of MacTahoe's two halves,
+# translucent or solid to match the shell, MacTahoe's blues repainted in the accent (and the highlight colour
+# itself), toolbar buttons that sit together grouped like Finder's, overlay scrollbars, solid menus (nothing blurs
+# behind an app's menus, so a see-through one would just be a painted imitation of glass), and a selected item that
+# is the accent with white text in the window you are using (grey in a background one: Kvantum "pressed" =
+# selected + active, "toggled" = not). Only apps styled with Kvantum read them, and only the MacShell session
+# styles apps with Kvantum; the MacTahoe copy itself is never touched.
 src="$Q/kvantum/MacTahoe"
 [ -d "$src" ] || src="$HOME/.config/Kvantum/MacTahoe"
-kv="$HOME/.config/Kvantum/MacShell"
 if [ -f "$src/MacTahoe.kvconfig" ]; then
-    mkdir -p "$kv"
     if [ "$look" = solid ]; then t=false; else t=true; fi
+    rm -f "$HOME/.config/Kvantum/MacShell/MacShellDark".* 2>/dev/null      # (the dark half used to live in here)
     for v in "" Dark; do
+        kv="$HOME/.config/Kvantum/MacShell$v"
+        mkdir -p "$kv"
         sed -e "s/#0860f2/#$hex/gI" -e "s/#315bef/#$hex/gI" -e "s/#5294e2/#$hex/gI" \
             -e "s/#195edc/#$deep/gI" -e "s/#195dda/#$deep/gI" "$src/MacTahoe$v.svg" > "$kv/MacShell$v.svg"
         sed -e "s/^translucent_windows=.*/translucent_windows=$t/" -e "s/^blurring=.*/blurring=$t/" \
             -e "s/^popup_blurring=.*/popup_blurring=$t/" -e "s/^group_toolbar_buttons=.*/group_toolbar_buttons=true/" \
-            -e "s/^transient_scrollbar=.*/transient_scrollbar=true/" \
+            -e "s/^transient_scrollbar=.*/transient_scrollbar=true/" -e "s/^reduce_menu_opacity=.*/reduce_menu_opacity=0/" \
+            -e "s/^highlight.color=.*/highlight.color=#$hex/" -e "s/^inactive.highlight.color=.*/inactive.highlight.color=#$hex/" \
+            -e "s/^highlight.text.color=.*/highlight.text.color=#ffffff/" \
             "$src/MacTahoe$v.kvconfig" > "$kv/MacShell$v.kvconfig"
-    done
-    # a selected item in the window you are using is the accent with white text, like Finder's selected row and
-    # name; in a window in the background it stays grey (Kvantum: "pressed" = selected + active, "toggled" = not)
-    for v in "" Dark; do
         python3 -I - "$kv/MacShell$v.svg" "$hex" <<'PY' 2>/dev/null
 import re, sys
 p, hexc = sys.argv[1], sys.argv[2]
@@ -180,9 +184,19 @@ PY
         sed -i '/^\[ItemView\]/,/^\[/{s/^text.press.color=.*/text.press.color=#ffffff/;s/^highlight.text.color=.*/highlight.text.color=#ffffff/}' "$kv/MacShell$v.kvconfig"
     done
     k="$HOME/.config/Kvantum/kvantum.kvconfig"
-    if [ -f "$k" ] && grep -q '^theme=' "$k"; then sed -i 's/^theme=.*/theme=MacShell/' "$k"
-    else printf '[General]\ntheme=MacShell\n' >> "$k"; fi
+    if [ -f "$k" ] && grep -q '^theme=' "$k"; then sed -i "s/^theme=.*/theme=$kvtheme/" "$k"
+    else printf '[General]\ntheme=%s\n' "$kvtheme" >> "$k"; fi
 fi
+
+# VLC: dressed by the same theme (Kvantum's Qt 5 half, through macshell-vlc.sh) but still VLC. The session's
+# vlc.desktop is the system one with only the command changed, so its name, icon and file types stay VLC's own.
+if [ -f /usr/share/applications/vlc.desktop ]; then
+    mkdir -p "$Q/share/applications"
+    sed -e "s|^Exec=/usr/bin/vlc|Exec=$HOME/.config/hypr-macshell/scripts/macshell-vlc.sh|" \
+        -e "s|^Exec=vlc|Exec=$HOME/.config/hypr-macshell/scripts/macshell-vlc.sh|" \
+        /usr/share/applications/vlc.desktop > "$Q/share/applications/vlc.desktop"
+fi
+printf '%s\n' "$hex" > "$Q/accent"
 
 # tell running KDE apps: colours and icons changed (only apps in this session listen on this bus). Not "style
 # changed": Dolphin rebuilds its style on it and drops Finder's stylesheet with it; new Finder windows pick up
