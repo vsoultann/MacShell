@@ -2254,6 +2254,9 @@ Scope {
                     DragHandler {
                         id: wDrag
                         target: null
+                        // a press on the resize grip belongs to the grip: this one used to win the race and move the
+                        // widget instead of resizing it
+                        enabled: !gripPt.active && !rsDrag.active
                         cursorShape: Qt.ClosedHandCursor
                         property point grab: Qt.point(0, 0)
                         onTranslationChanged: { wd.dx = translation.x; wd.dy = translation.y; }
@@ -2329,14 +2332,24 @@ Scope {
                         }
                         property real w0: 0
                         property real h0: 0
+                        // knows about a press on the grip at once, before either drag decides it is a drag
+                        PointHandler { id: gripPt }
                         DragHandler {
                             id: rsDrag
                             target: null
+                            grabPermissions: PointerHandler.CanTakeOverFromAnything
                             cursorShape: Qt.SizeFDiagCursor
                             onActiveChanged: if (active) { grip.w0 = wd.d.w; grip.h0 = wd.d.h; root.selected = wd.wid; }
-                            onTranslationChanged: {
+                            // Measured on the screen from where the press started, not from the grip: the grip rides on
+                            // the widget's corner, so as soon as the widget snapped bigger the grip moved under the pointer,
+                            // the drag looked shorter, it snapped back, and the widget flickered or wouldn't grow at all.
+                            onCentroidChanged: {
                                 if (!active) return;
-                                var tw = grip.w0 + translation.x, th = grip.h0 + translation.y, best = wd.wsize, bd = 1e9;
+                                var tw = grip.w0 + (centroid.scenePosition.x - centroid.scenePressPosition.x);
+                                var th = grip.h0 + (centroid.scenePosition.y - centroid.scenePressPosition.y);
+                                var cur = root.dims(wd.wsize), best = wd.wsize;
+                                // the size it has now gets a head start, so it doesn't flip back and forth on the line
+                                var bd = Math.abs(cur.w - tw) + Math.abs(cur.h - th) - 40;
                                 for (var i = 0; i < grip.sizes.length; i++) {
                                     var dd = root.dims(grip.sizes[i]), dist = Math.abs(dd.w - tw) + Math.abs(dd.h - th);
                                     if (dist < bd) { bd = dist; best = grip.sizes[i]; }
