@@ -3231,9 +3231,7 @@ Scope {
                 property string apMode: "checking"      // checking | shared | takeover
                 Process {
                     id: capProc
-                    command: ["sh", "-c",
-                        "h=/usr/local/bin/macshell-ap; "
-                        + "if [ -x \"$h\" ] && [ \"$($h check 2>/dev/null)\" = yes ]; then echo shared; else echo takeover; fi"]
+                    command: [Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-sharing.sh", "mode"]
                     stdout: StdioCollector { onStreamFinished: shPane.apMode = text.trim() === "shared" ? "shared" : "takeover" }
                 }
                 function refresh() { if (!hsProc.running) hsProc.running = true; }
@@ -3257,39 +3255,16 @@ Scope {
                     // remember the network we are on, so switching sharing back off puts us back on it
                     if (root.bar && root.bar.wifiSsid !== "") root.hotspotPrevWifi = root.bar.wifiSsid;
                     hsStart.running = false;
-                    hsStart.command = ["sh", "-c",
-                        "set -e; mode=\"$4\"; ssid=\"$1\"; pass=\"$2\"; band=\"$3\"; "
-                        + "nmcli con delete MacShell-Hotspot >/dev/null 2>&1 || true; "
-                        + "wifi=$(nmcli -t -f DEVICE,TYPE dev | grep ':wifi$' | cut -d: -f1 | head -1); "
-                        + "[ -n \"$wifi\" ] || { echo 'no Wi-Fi adapter'; exit 1; }; "
-                        // Shared: the access point gets its own interface, so the client connection stays up.
-                        // One radio means one channel, so the AP has to sit on the channel we are already on.
-                        + "if [ \"$mode\" = shared ]; then "
-                        + "  dev=$(sudo -n /usr/local/bin/macshell-ap add 2>/dev/null || pkexec /usr/local/bin/macshell-ap add) || "
-                        + "    { echo 'could not create the AP interface'; exit 1; }; "
-                        + "  ch=$(iw dev \"$wifi\" info 2>/dev/null | awk '/channel/{print $2; exit}'); "
-                        + "  if [ -n \"$ch\" ] && [ \"$ch\" -gt 14 ] 2>/dev/null; then band=a; elif [ -n \"$ch\" ]; then band=bg; fi; "
-                        + "else dev=\"$wifi\"; ch=''; fi; "
-                        + "nmcli con add type wifi ifname \"$dev\" con-name MacShell-Hotspot autoconnect no ssid \"$ssid\" >/dev/null; "
-                        + "nmcli con modify MacShell-Hotspot 802-11-wireless.mode ap 802-11-wireless.band \"$band\" "
-                        + "  ipv4.method shared ipv6.method ignore "
-                        + "  wifi-sec.key-mgmt wpa-psk wifi-sec.proto rsn wifi-sec.pairwise ccmp wifi-sec.group ccmp wifi-sec.psk \"$pass\" >/dev/null; "
-                        + "[ -n \"$ch\" ] && nmcli con modify MacShell-Hotspot 802-11-wireless.channel \"$ch\" >/dev/null || true; "
-                        + "nmcli con up MacShell-Hotspot 2>&1 | tail -1",
-                        "sh", shPane.ssid, shPane.pass.length >= 8 ? shPane.pass : "macshell1", shPane.band, shPane.apMode];
+                    hsStart.command = [Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-sharing.sh", "start",
+                                       shPane.ssid, shPane.pass, shPane.band];
                     hsStart.running = true;
                 }
                 function stop() {
                     shPane.status = "Stopping\u2026";
                     hsStop.running = false;
                     // and re-join whatever we were on before, so the Wi-Fi menu is not left empty
-                    hsStop.command = ["sh", "-c",
-                        "nmcli con down MacShell-Hotspot >/dev/null 2>&1; nmcli con delete MacShell-Hotspot >/dev/null 2>&1; "
-                        + "sudo -n /usr/local/bin/macshell-ap del >/dev/null 2>&1 || true; "
-                        // only needed when sharing had taken the adapter over; a no-op otherwise
-                        + "[ -n \"$1\" ] && [ \"$2\" != shared ] && nmcli --wait 20 con up \"$1\" >/dev/null 2>&1; "
-                        + "nmcli dev wifi rescan >/dev/null 2>&1; exit 0",
-                        "sh", root.hotspotPrevWifi, shPane.apMode];
+                    hsStop.command = [Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-sharing.sh", "stop",
+                                      root.hotspotPrevWifi];
                     hsStop.running = true;
                 }
                 Process {

@@ -190,7 +190,8 @@ Scope {
     property bool localsendRunning: false
     property int keyLight: 0
     property int keyLightMax: 0
-    property bool mirrorOn: false
+    property bool mirrorOn: false           // read back from Hyprland (a monitor with mirrorOf set), not assumed
+    property int displayCount: 1
     // switches at once in the UI; if the system refuses, it says why and shows the real profile again
     function setPowerProfile(p) {
         powerProfile = p;
@@ -223,12 +224,16 @@ Scope {
     }
     Timer { interval: 5000; repeat: true; running: true; triggeredOnStart: true; onTriggered: if (!ppProc.running) ppProc.running = true }
     function toggleLowPower() { setPowerProfile(powerProfile === "power-saver" ? "balanced" : "power-saver"); }
+    // the same Internet Sharing as Settings → Sharing: your network name, password and band, and (with the helper)
+    // without dropping the Wi-Fi you are on. It used to start a hotspot of its own with a fixed name and password.
     function toggleHotspot() {
         hotspotOn = !hotspotOn;
-        Quickshell.execDetached(["sh", "-c", hotspotOn
-            ? "nmcli device wifi hotspot con-name MacShell-Hotspot ssid MacShell password macshell123 2>/dev/null"
-            // whatever the hotspot connection ended up being called, that is the one to bring down
-            : "nmcli -t -f NAME connection show --active | grep -i hotspot | while read -r n; do nmcli connection down \"$n\"; done"]);
+        var d = hub ? hub.dock : null;
+        var s = Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-sharing.sh";
+        if (hotspotOn) {
+            if (d && wifiSsid !== "") d.hotspotPrevWifi = wifiSsid;
+            Quickshell.execDetached([s, "start", d ? d.hotspotSsid : "", d ? d.hotspotPass : "", d ? d.hotspotBand : "bg"]);
+        } else Quickshell.execDetached([s, "stop", d ? d.hotspotPrevWifi : ""]);
     }
     function toggleAirDrop() {
         if (hub && hub.airdrop) { hub.airdrop.open(); return; }
@@ -239,12 +244,22 @@ Scope {
         Quickshell.execDetached(["sh", "-c", "brightnessctl -d \"$(ls /sys/class/leds | grep -i kbd_backlight | head -1)\" set \"$1\" >/dev/null 2>&1", "sh", String(keyLight)]);
     }
     function toggleMirror() {
-        // mirror every other monitor onto the focused one, or put them back side by side
+        // every other display shows the one you are on, or they go back to being displays of their own.
+        // (It used "hyprctl keyword monitor", which the Lua config no longer has, so it never did anything.)
+        if (displayCount < 2 && !mirrorOn) {
+            Quickshell.execDetached(["notify-send", "-a", "Screen Mirroring", "Screen Mirroring", "Connect another display to mirror this one to."]);
+            return;
+        }
         mirrorOn = !mirrorOn;
         Quickshell.execDetached(["sh", "-c", mirrorOn
-            ? "m=$(hyprctl activeworkspace -j | " + "jq -r .monitor); for o in $(hyprctl monitors -j | jq -r '.[].name'); do [ \"$o\" = \"$m\" ] || hyprctl keyword monitor \"$o,preferred,auto,1,mirror,$m\"; done"
-            : "hyprctl reload"]);
+            ? "m=$(hyprctl activeworkspace -j | jq -r .monitor); "
+              + "for o in $(hyprctl monitors -j | jq -r '.[].name'); do [ \"$o\" = \"$m\" ] || "
+              + "hyprctl eval \"hl.monitor({ output = \\\"$o\\\", mode = \\\"preferred\\\", position = \\\"auto\\\", scale = 1, mirror = \\\"$m\\\" })\" >/dev/null; done"
+            // the config's own monitor rules (and stretchres) put every display back
+            : "hyprctl reload >/dev/null"]);
+        mirrorCheck.restart();
     }
+    Timer { id: mirrorCheck; interval: 1500; onTriggered: ccPoll.triggered() }
     Process {
         id: ccStateProc
         stdout: StdioCollector {
@@ -255,6 +270,8 @@ Scope {
                 root.localsendRunning = (l[2] || "").trim() === "yes";
                 root.keyLight = parseInt((l[3] || "0").trim()) || 0;
                 root.keyLightMax = parseInt((l[4] || "0").trim()) || 0;
+                var dm = (l[5] || "").trim().split(/\s+/);
+                if (dm.length === 2) { root.displayCount = parseInt(dm[0]) || 1; root.mirrorOn = (parseInt(dm[1]) || 0) > 0; }
             }
         }
     }
@@ -270,10 +287,12 @@ Scope {
             if (ccStateProc.running) return;
             ccStateProc.command = ["sh", "-c",
                 "powerprofilesctl get 2>/dev/null || echo balanced; "
-                + "nmcli -t -f NAME connection show --active 2>/dev/null | grep -qi hotspot && echo yes || echo no; "
+                + "nmcli -t -f NAME connection show --active 2>/dev/null | grep -qFx MacShell-Hotspot && echo yes || echo no; "
                 + "pgrep -x localsend_app >/dev/null && echo yes || echo no; "
                 + "d=$(ls /sys/class/leds 2>/dev/null | grep -i kbd_backlight | head -1); "
-                + "if [ -n \"$d\" ]; then cat /sys/class/leds/$d/brightness; cat /sys/class/leds/$d/max_brightness; else echo 0; echo 0; fi"];
+                + "if [ -n \"$d\" ]; then cat /sys/class/leds/$d/brightness; cat /sys/class/leds/$d/max_brightness; else echo 0; echo 0; fi; "
+                // displays: how many, and how many are mirroring another
+                + "hyprctl monitors all -j 2>/dev/null | jq -r '[length, (map(select(.mirrorOf != \"none\" and .mirrorOf != null)) | length)] | @tsv'"];
             ccStateProc.running = true;
         }
     }
@@ -1248,8 +1267,10 @@ Scope {
             visible: !gg.shaded
             anchors.fill: parent
             radius: gg.cornerR
-            // no backdrop to work with (Opaque, or the shader failed): a plain translucent card
-            color: gg.gx.dark ? Qt.rgba(0.10, 0.10, 0.11, gg.gx.tint) : Qt.rgba(1, 1, 1, gg.gx.tint * 0.55)
+            // no backdrop to work with (Opaque, or the shader failed): a plain card. Full tint (Opaque / Game Mode)
+            // is solid in both looks: light used to stop at 55 % white, so in Opaque the light tiles were see-through.
+            color: gg.gx.tint >= 0.99 ? (gg.gx.dark ? Qt.rgba(0.10, 0.10, 0.11, 1) : Qt.rgba(0.97, 0.97, 0.98, 1))
+                 : (gg.gx.dark ? Qt.rgba(0.10, 0.10, 0.11, gg.gx.tint) : Qt.rgba(1, 1, 1, gg.gx.tint * 0.55))
             border.width: 1
             border.color: gg.gx.dark ? Qt.rgba(0, 0, 0, 0.45) : Qt.rgba(0, 0, 0, 0.12)
             Rectangle {
@@ -7082,7 +7103,7 @@ Scope {
                                 width: parent.width - 72
                                 spacing: 1
                                 Text { width: parent.width; wrapMode: Text.WordWrap; maximumLineCount: 2; lineHeight: 0.92; text: "Screen Mirroring"; color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                MorphText { animateWidth: false; duration: 420; width: parent.width; elide: Text.ElideRight; text: root.mirrorOn ? "Mirroring" : "Off"
+                                MorphText { animateWidth: false; duration: 420; width: parent.width; elide: Text.ElideRight; text: root.mirrorOn ? "Mirroring" : (root.displayCount < 2 ? "No other display" : "Off")
                                        color: root.mirrorOn ? root.accent : pal.fg2; font.family: pal.fam; font.pixelSize: 12 }
                             }
                         }
