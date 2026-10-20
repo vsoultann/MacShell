@@ -1,15 +1,37 @@
-/* MacShell: Finder's toolbar. MacShell draws the traffic lights over the top-left of every window, so Back starts
-   after them, the way Finder's buttons sit to the right of the lights. (Kvantum ignores toolbar padding, and a
-   border on the toolbar hands its whole painting to the stylesheet, so the room is a margin on Back itself.)
-   The stylesheet then draws that one button, so it gets the same quiet look and hover as the others. */
-QToolBar QToolButton[text="Back"] {
-    margin-left: 66px;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    padding: 4px;
+/* MacShell: the Finder touches Kvantum can't make. Applied by macshell-finder.sh (dolphin -stylesheet), so it only
+   reaches Dolphin started as Finder. Colours come from the palette (the MacShell session's MacTahoe scheme, with
+   the shell's accent), so it follows light / dark and the accent on its own. */
+
+/* Where you are: Finder shows the folder's name as the window title, not a path bar. No place picker in front,
+   no frame, the name in bold. */
+KUrlNavigator KDEPrivate--KUrlNavigatorPlacesSelector {
+    max-width: 0px; min-width: 0px; margin: 0px; padding: 0px; border: none; image: none;
 }
-QToolBar QToolButton[text="Back"]:hover { background: rgba(128, 128, 128, 0.18); }
-QToolBar QToolButton[text="Back"]:pressed { background: rgba(128, 128, 128, 0.30); }
-QToolBar QToolButton[text="Back"]::menu-indicator { image: none; width: 0; }
-QToolBar QToolButton[text="Back"]::menu-button { width: 0; border: none; }
+KUrlNavigator KDEPrivate--KUrlNavigatorDropDownButton {
+    max-width: 0px; min-width: 0px; margin: 0px; padding: 0px; border: none; image: none;
+}
+KUrlNavigator * {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* Tabs (only there when you open a second one): Finder's flat strip of equal tabs */
+DolphinTabBar {
+    font-size: 12px;
+}
+
+/* The sidebar: Finder's rounded selection, inset from the edges, in a soft grey (the accent marks focus, not the
+   sidebar row), roomier rows, the section names small and grey */
+KFilePlacesView {
+    background: transparent;
+    border: none;
+    padding: 4px 8px;
+    font-size: 13px;
+}
+KFilePlacesView::item {
+    padding: 4px 6px;
+    margin: 1px 0px;
+    border-radius: 6px;
+}
+KFilePlacesView::item:hover { background: rgba(128, 128, 128, 0.10); }
+KFilePlacesView::item:selected { background: rgba(128, 128, 128, 0.26); color: palette(text); }

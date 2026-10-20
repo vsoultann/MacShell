@@ -111,11 +111,13 @@ refracting live and the window captures pause, so the desktop stays responsive; 
 drops. No setting to remember: it watches the load average and uses hysteresis so it never flaps.
 
 **New apps & screens**
-- **Finder** — Dolphin, dressed and named as Finder in the MacShell session only: the MacTahoe Kvantum theme and
-  colours following light / dark, translucent with live compositor blur in the glass materials and solid in Opaque,
-  Inter, Finder's toolbar (Back / Forward, where you are, the view buttons, search, the … menu) with the traffic lights
-  inside it, no menu bar, icon view. It is done with KDE's own locked defaults in `~/.config/hypr-macshell/qt`
-  (`macshell-kde-theme.sh` writes them), so your other sessions keep Dolphin exactly as it was.
+- **Finder** — Dolphin, dressed and named as Finder in the MacShell session only: MacTahoe (Kvantum) following
+  light / dark and the shell's accent (selections, focus, controls), translucent with live compositor blur in the
+  glass materials and solid in Opaque, Inter. Finder's toolbar (Back | Forward grouped, the folder name in bold,
+  the view switcher, search, the … menu), Finder's sidebar (Favorites with your name for Home, Locations, Network;
+  rounded selection), 64 px icons, no menu bar, status bar or tab strip, double-click to open. It is done with
+  KDE's own locked defaults in `~/.config/hypr-macshell/qt` (`macshell-kde-theme.sh` writes them, `finder.qss` and
+  a small `en@macshell` translation do the rest), so your other sessions keep Dolphin exactly as it was.
 - **Photos** — your library grouped by day, folders as albums, favourites, a zoom slider and a full-screen viewer.
 - **AirDrop** — the radar, the devices around you, drag-to-send. Drag files onto someone to send straight away, or
   drop them anywhere in the window and pick who gets them. It speaks

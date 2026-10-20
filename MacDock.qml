@@ -228,11 +228,12 @@ Scope {
             + "k=\"$HOME/.config/kdeglobals\"; [ -f \"$k\" ] && grep -q '^Theme=' \"$k\" && sed -i \"s|^Theme=.*|Theme=$t|\" \"$k\"; "
             + "exit 0", "sh", name]);
     }
-    // Finder (Dolphin) and the other KDE apps follow the shell: light / dark, its icons, and glass or solid
+    // Finder (Dolphin) and the other KDE apps follow the shell: light / dark, its icons, glass or solid, the accent
     // (macshell-kde-theme.sh writes the MacShell session's own KDE defaults; other sessions never read them)
     function applyKdeTheme() {
         Quickshell.execDetached([Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-kde-theme.sh",
-                                 darkMode ? "dark" : "light", iconThemeName(iconMode), solidLook ? "solid" : "glass"]);
+                                 darkMode ? "dark" : "light", iconThemeName(iconMode), solidLook ? "solid" : "glass",
+                                 String(accent)]);
     }
     onSolidLookChanged: if (settingsReady) applyKdeTheme()
     onSettingsReadyChanged: if (settingsReady) applyKdeTheme()
@@ -241,7 +242,12 @@ Scope {
         if (settingsReady && iconMode === "auto") applyIconTheme();
         if (bar && bar.darkMode !== darkMode) bar.darkMode = darkMode;
     }
-    onAccentChanged: if (bar && String(bar.accent) !== String(accent)) bar.accent = accent
+    onAccentChanged: {
+        if (bar && String(bar.accent) !== String(accent)) bar.accent = accent;
+        if (settingsReady) kdeAccentT.restart();
+    }
+    // dragging through the accent colours fires this many times: theme once it settles
+    Timer { id: kdeAccentT; interval: 400; onTriggered: root.applyKdeTheme() }
     // How minimising looks: "genie" (the window pours into the Dock, the macOS default), "fade" (0.35 s), "instant".
     property string minimizeEffect: "genie"
     property real minimizeSecs: 0.42
