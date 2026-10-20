@@ -552,7 +552,10 @@ Scope {
         }
         return { items: out, rows: rows };
     }
-    readonly property var ccPlan: ccLayout(ccControls)
+    // controls for hardware this computer doesn't have are left out, here and in Edit Controls (a keyboard
+    // brightness slider on a keyboard with no backlight did nothing)
+    function ccUsable(id) { return id !== "keylight" || keyLightMax > 0; }
+    readonly property var ccPlan: ccLayout(ccControls.filter(ccUsable))
     function ccAdd(id) {
         if (ccControls.indexOf(id) < 0) ccControls = ccControls.concat([id]);
     }
@@ -7474,7 +7477,7 @@ Scope {
                                 spacing: 8
                                 Repeater {
                                     id: ccAddRep
-                                    model: root.ccCatalog.filter(function (d) { return root.ccControls.indexOf(d.id) < 0; })
+                                    model: root.ccCatalog.filter(function (d) { return root.ccControls.indexOf(d.id) < 0 && root.ccUsable(d.id); })
                                     delegate: CCTile {
                                         id: chip
                                         required property var modelData
