@@ -120,6 +120,20 @@ Scope {
         if (keep.length !== peers.length) peers = keep;
     }
 
+    // The radar's delegates hang off this, one entry per device, never off `peers` itself: every status update
+    // replaces `peers`, and a Repeater on it destroyed and rebuilt every device each time (the fade-in replayed and
+    // the spinner restarted on every percent)
+    ListModel { id: peerModel }
+    onPeersChanged: {
+        for (var i = peerModel.count - 1; i >= 0; i--)
+            if (peerIndex(peerModel.get(i).fp) < 0) peerModel.remove(i);
+        for (var j = 0; j < peers.length; j++) {
+            var found = false;
+            for (var k = 0; k < peerModel.count; k++) if (peerModel.get(k).fp === peers[j].fingerprint) { found = true; break; }
+            if (!found) peerModel.append({ fp: peers[j].fingerprint });
+        }
+    }
+    function peerByFp(fp) { var i = peerIndex(fp); return i >= 0 ? peers[i] : ({}); }
     function peerIndex(fp) { for (var i = 0; i < peers.length; i++) if (peers[i].fingerprint === fp) return i; return -1; }
     function setPeer(fp, state, detail) {
         var i = peerIndex(fp);
@@ -194,7 +208,7 @@ Scope {
         }
         onExited: (exitCode, exitStatus) => { if (exitCode !== 0) root.fail("exit " + exitCode); }
     }
-    Timer { id: doneT; interval: 2400; onTriggered: { root.setPeer(root.sendingTo, "idle", ""); root.sendingTo = ""; } }
+    Timer { id: doneT; interval: 2400; onTriggered: { var p = root.peerByFp(root.sendingTo); root.setPeer(root.sendingTo, "idle", p.deviceModel || p.ip || ""); root.sendingTo = ""; } }
 
     // Files dropped on the window (rather than straight onto someone) wait here until you pick who gets them,
     // the way macOS holds a drag over the AirDrop sheet.
@@ -422,12 +436,13 @@ Scope {
 
                 // the devices, arranged around the centre
                 Repeater {
-                    model: root.peers
+                    model: peerModel
                     delegate: Item {
                         id: peerItem
-                        required property var modelData
+                        required property string fp
                         required property int index
-                        readonly property int n: Math.max(1, root.peers.length)
+                        readonly property var modelData: root.peerByFp(fp)
+                        readonly property int n: Math.max(1, peerModel.count)
                         readonly property real ang: -Math.PI / 2 + index * (Math.PI * 2 / n)
                         readonly property real rad: n === 1 ? 0 : Math.min(radar.width, radar.height) * 0.3
                         width: 108; height: 116
@@ -437,6 +452,30 @@ Scope {
                         Behavior on y { NumberAnimation { duration: 500; easing.type: Easing.OutQuint } }
                         opacity: 0
                         Component.onCompleted: fadeIn.start()
+
+                        // ── the finish, as one motion driven by one clock (doneT 0 → 1): the spinner slows as its arc
+                        // closes into a full ring, the device behind it softly blurs, and the check writes itself in,
+                        // each starting before the last one ends. Leaving runs the same clock (outT) to unwrite it.
+                        readonly property bool isDone: modelData.state === "done"
+                        property real doneT: 0
+                        property real outT: 0
+                        property real sweep0: 0
+                        function ss(a, b, t) { var x = Math.max(0, Math.min(1, (t - a) / (b - a))); return x * x * (3 - 2 * x); }
+                        readonly property real blurA: ss(0, 0.45, doneT) * (1 - ss(0, 1, outT))
+                        onIsDoneChanged: {
+                            if (isDone) { outAnim.stop(); outT = 0; sweep0 = ring.sweep; doneT = 0; doneAnim.restart(); }
+                            else if (doneT > 0) outAnim.restart();
+                        }
+                        NumberAnimation { id: doneAnim; target: peerItem; property: "doneT"; to: 1; duration: 800; easing.type: Easing.Linear }
+                        NumberAnimation {
+                            id: outAnim; target: peerItem; property: "outT"; from: 0; to: 1; duration: 520; easing.type: Easing.InOutCubic
+                            onFinished: { peerItem.doneT = 0; peerItem.outT = 0; }
+                        }
+                        // the percentage, if that is what the status says ("Sending 42%")
+                        readonly property int pct: {
+                            var m = /^Sending (\d+)%$/.exec(modelData.detail || "");
+                            return m && modelData.state === "sending" ? Math.min(100, parseInt(m[1])) : -1;
+                        }
                         NumberAnimation { id: fadeIn; target: peerItem; property: "opacity"; from: 0; to: 1; duration: 420; easing.type: Easing.OutCubic }
 
                         Rectangle {
@@ -456,30 +495,62 @@ Scope {
                                 width: 34; height: 34
                                 kind: peerItem.modelData.deviceType === "mobile" ? "phone" : (peerItem.modelData.deviceType === "web" ? "globe" : "laptop")
                                 color: pal.text
-                                opacity: peerItem.modelData.state === "sending" ? 0.25 : 1
-                                Behavior on opacity { NumberAnimation { duration: 220 } }
+                                // dim while sending; at the finish it brightens a little as it blurs, and returns to full as the check leaves
+                                opacity: peerItem.doneT > 0
+                                    ? (0.25 + 0.2 * peerItem.ss(0, 0.45, peerItem.doneT)) * (1 - peerItem.ss(0, 1, peerItem.outT)) + peerItem.ss(0, 1, peerItem.outT)
+                                    : (peerItem.modelData.state === "sending" ? 0.25 : 1)
+                                Behavior on opacity { enabled: peerItem.doneT === 0; NumberAnimation { duration: 220 } }
+                                // the device goes soft behind the check
+                                layer.enabled: peerItem.blurA > 0.001
+                                layer.effect: MultiEffect { blurEnabled: true; blurMax: 20; blur: 0.75 * peerItem.blurA; autoPaddingEnabled: true }
                             }
                             // the progress ring while a transfer runs
                             Canvas {
                                 id: ring
                                 anchors.fill: parent
-                                visible: peerItem.modelData.state === "sending" || peerItem.modelData.state === "done"
+                                visible: peerItem.modelData.state === "sending" || peerItem.doneT > 0
                                 property real sweep: 0
-                                property bool done: peerItem.modelData.state === "done"
+                                readonly property real doneT: peerItem.doneT
+                                readonly property real outT: peerItem.outT
                                 onSweepChanged: requestPaint()
-                                onDoneChanged: requestPaint()
+                                onDoneTChanged: requestPaint()
+                                onOutTChanged: requestPaint()
                                 onPaint: {
                                     var c = getContext("2d"); c.reset();
-                                    c.lineWidth = 3; c.lineCap = "round";
+                                    c.lineWidth = 3; c.lineCap = "round"; c.lineJoin = "round";
                                     c.strokeStyle = root.accent;
-                                    if (done) {
-                                        c.beginPath(); c.arc(width / 2, height / 2, width / 2 - 2, 0, Math.PI * 2); c.stroke();
-                                        c.beginPath(); c.moveTo(width * 0.33, height * 0.52); c.lineTo(width * 0.45, height * 0.64); c.lineTo(width * 0.68, height * 0.37); c.stroke();
-                                    } else {
-                                        c.beginPath(); c.arc(width / 2, height / 2, width / 2 - 2, sweep, sweep + Math.PI * 0.6); c.stroke();
+                                    var cx = width / 2, cy = height / 2, r = width / 2 - 2;
+                                    if (doneT <= 0) {
+                                        c.beginPath(); c.arc(cx, cy, r, sweep, sweep + Math.PI * 0.6); c.stroke();
+                                        return;
+                                    }
+                                    // the spinner keeps its speed (2π per 1.1 s) and eases to a stop as its arc grows
+                                    // into the full ring, so there is no jolt where spinning ends and closing begins
+                                    var tc = 0.6, u = Math.min(1, doneT / tc), w = Math.PI * 2 / 1.1;
+                                    var start = peerItem.sweep0 + w * 0.8 * tc * (u - u * u / 2);   // 0.8 s = doneAnim
+                                    var len = Math.PI * 0.6 + Math.PI * 1.4 * peerItem.ss(0, 1, u);
+                                    var cut = peerItem.ss(0, 1, outT);          // leaving: the ring and the check unwrite
+                                    if (len * (1 - cut) > 0.001) {
+                                        c.beginPath(); c.arc(cx, cy, r, start + len * cut, start + len); c.stroke();
+                                    }
+                                    // the check writes itself, stroke by stroke, starting while the ring is still closing
+                                    var k = peerItem.ss(0.18, 0.85, doneT);
+                                    var p = [[0.31, 0.52], [0.44, 0.65], [0.69, 0.36]];
+                                    var l1 = Math.hypot((p[1][0] - p[0][0]) * width, (p[1][1] - p[0][1]) * height);
+                                    var l2 = Math.hypot((p[2][0] - p[1][0]) * width, (p[2][1] - p[1][1]) * height);
+                                    var from = (l1 + l2) * cut, to = (l1 + l2) * k;
+                                    if (to - from > 0.5) {
+                                        function at(d) {
+                                            if (d <= l1) { var f = d / l1; return [(p[0][0] + (p[1][0] - p[0][0]) * f) * width, (p[0][1] + (p[1][1] - p[0][1]) * f) * height]; }
+                                            var g = (d - l1) / l2; return [(p[1][0] + (p[2][0] - p[1][0]) * g) * width, (p[1][1] + (p[2][1] - p[1][1]) * g) * height];
+                                        }
+                                        var a0 = at(from), a1 = at(to);
+                                        c.beginPath(); c.moveTo(a0[0], a0[1]);
+                                        if (from < l1 && to > l1) c.lineTo(p[1][0] * width, p[1][1] * height);
+                                        c.lineTo(a1[0], a1[1]); c.stroke();
                                     }
                                 }
-                                NumberAnimation on sweep { from: 0; to: Math.PI * 2; duration: 1100; loops: Animation.Infinite; running: ring.visible && !ring.done }
+                                NumberAnimation on sweep { from: 0; to: Math.PI * 2; duration: 1100; loops: Animation.Infinite; running: ring.visible && peerItem.doneT === 0 }
                             }
                             DropArea {
                                 id: drop
@@ -503,12 +574,24 @@ Scope {
                             text: peerItem.modelData.alias
                             color: pal.text; font.family: root.fam; font.pixelSize: 12; font.weight: Font.Medium
                         }
+                        // while sending: the words stay put and only the digits that change roll over (no fades)
+                        Row {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            y: 98
+                            visible: peerItem.pct >= 0
+                            Text { text: "Sending "; color: pal.text3; font.family: root.fam; font.pixelSize: 11 }
+                            RollDigit { color: pal.text3; family: root.fam; visible: peerItem.pct >= 100; ch: String(Math.floor(peerItem.pct / 100) % 10) }
+                            RollDigit { color: pal.text3; family: root.fam; visible: peerItem.pct >= 10; ch: String(Math.floor(peerItem.pct / 10) % 10) }
+                            RollDigit { color: pal.text3; family: root.fam; ch: String(Math.max(0, peerItem.pct) % 10) }
+                            Text { text: "%"; color: pal.text3; font.family: root.fam; font.pixelSize: 11 }
+                        }
                         MorphText {
                             anchors.horizontalCenter: parent.horizontalCenter
                             y: 98
+                            visible: peerItem.pct < 0
                             width: parent.width; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
                             animateWidth: false; duration: 320
-                            text: peerItem.modelData.detail || ""
+                            text: peerItem.pct >= 0 ? "" : (peerItem.modelData.detail || "")
                             color: peerItem.modelData.state === "error" ? "#FF453A" : pal.text3
                             font.family: root.fam; font.pixelSize: 11
                         }
@@ -778,6 +861,30 @@ Scope {
                 }
             }
         }
+    }
+
+    // one digit of the percentage: the old one slides up and out as the new one slides up into place, clipped to
+    // the line, never faded; digits that did not change never move
+    component RollDigit: Item {
+        id: rd
+        property string ch: "0"
+        property color color: "white"
+        property string family: ""
+        // every digit is as wide as "0" (tabular figures), measured with exactly the text that draws it
+        Text { id: rdM; visible: false; text: "0"; font.family: rd.family; font.pixelSize: 11; font.features: { "tnum": 1 } }
+        width: visible ? rdM.implicitWidth : 0
+        height: rdA.implicitHeight
+        clip: true
+        property real t: 1
+        Component.onCompleted: { rdA.text = ch; rdB.text = ""; }
+        onChChanged: {
+            if (rdA.text === ch) return;
+            rdB.text = rdA.text; rdA.text = ch;
+            rdRoll.restart();
+        }
+        NumberAnimation { id: rdRoll; target: rd; property: "t"; from: 0; to: 1; duration: 240; easing.type: Easing.OutCubic }
+        Text { id: rdA; y: (1 - rd.t) * rd.height; color: rd.color; font.family: rd.family; font.pixelSize: 11; font.features: { "tnum": 1 } }
+        Text { id: rdB; y: -rd.t * rd.height; visible: rd.t < 1; color: rd.color; font.family: rd.family; font.pixelSize: 11; font.features: { "tnum": 1 } }
     }
 
     component ADGlyph: Canvas {
