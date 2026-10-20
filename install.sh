@@ -64,7 +64,7 @@ declare -A DESC=(
     [widgets]="Desktop widgets (Clock, Weather, Music, Reminders…)"
     [desktop]="Desktop icons (files, folders and apps in ~/Desktop)"
     [clock]="Clock app (World Clock, Alarms, Stopwatch, Timers)"
-    [apps]="Photos, App Store and AirDrop (Finder is Dolphin, QuickTime Player is VLC)"
+    [apps]="Photos, App Store and AirDrop (Finder is Dolphin, videos play in VLC)"
     [lock]="Lock screen (MacLock)"
     [config]="Session config + helper scripts (wallpapers, Game Mode, lock)"
     [session]="\"Hyprland (MacShell)\" login session (separate, needs sudo)"
@@ -76,7 +76,7 @@ declare -A DESC=(
     [icons]="MacTahoe icon theme"
     [fonts]="Fonts (Inter, Roboto Flex, Nunito, Noto Serif Display)"
     [apply]="Apply the icons + font to GTK / Qt / KDE apps"
-    [defaults]="Open pictures in Preview, folders in Finder (Dolphin), video in QuickTime Player (VLC)"
+    [defaults]="Open pictures in Preview, folders in Finder (Dolphin), video in VLC"
     [emoji]="Apple emoji font (fontconfig prefers it everywhere)"
     [wallpapers]="macOS 27 Golden Gate wallpapers"
     [sounds]="UI sounds + Clock alarm tones"
@@ -101,9 +101,9 @@ PKGS=(quickshell rsync qt6-shadertools qt6-multimedia qt6-svg jq curl git ffmpeg
       playerctl brightnessctl bluez-utils networkmanager power-profiles-daemon hypridle hyprlock hyprsunset wf-recorder
       mpvpaper awww inter-font noto-fonts-emoji python-numpy zenity openbsd-netcat libwebp
       yt-dlp poppler python-pillow librsvg
-      dolphin kdialog kvantum vlc vlc-gui-skins2 ffmpegthumbs kio-extras)
+      dolphin kdialog kvantum vlc ffmpegthumbs kio-extras)
 
-# what QuickTime Player (VLC) opens
+# what VLC opens
 MOVIES="video/mp4 video/x-m4v video/quicktime video/x-matroska video/webm video/x-msvideo video/mpeg video/ogg video/x-flv video/3gpp video/mp2t"
 
 # What --deps would do, decided once for the terminal and for the "Install Dependencies" window alike:
@@ -177,10 +177,10 @@ do_defaults() {
     have xdg-mime || { warn "xdg-mime missing: skipping"; return 0; }
     local m
     for m in image/png image/jpeg image/webp image/gif image/bmp image/tiff image/avif; do xdg-mime default macshell-preview.desktop "$m"; done
-    # Dolphin and VLC by their own names: in the MacShell session the same names are Finder and QuickTime Player
+    # Dolphin by its own name: in the MacShell session that name is Finder
     xdg-mime default org.kde.dolphin.desktop inode/directory
     for m in $MOVIES; do xdg-mime default vlc.desktop "$m"; done
-    note "Pictures → Preview, folders → Finder (Dolphin), video → QuickTime Player (VLC)"
+    note "Pictures → Preview, folders → Finder (Dolphin), video → VLC"
 }
 
 do_emoji() {
@@ -230,14 +230,12 @@ do_shell() {
     sed -i "s|@HOME@|$HOME|g" "$HOME"/.local/share/applications/macshell-*.desktop 2>/dev/null || true
     # MacShell's own Finder and Player became Dolphin and VLC: their old launchers go
     rm -f "$HOME/.local/share/applications/macshell-finder.desktop" "$HOME/.local/share/applications/macshell-player.desktop"
-    # folders open in Finder and movies in QuickTime Player, in the MacShell session only
-    # (XDG_CURRENT_DESKTOP=MacShell:Hyprland reads this list first; there the two names are dressed Dolphin and VLC)
+    # folders open in Finder and movies in VLC, in the MacShell session only
+    # (XDG_CURRENT_DESKTOP=MacShell:Hyprland reads this list first; there Dolphin is dressed as Finder)
     { printf '[Default Applications]\ninode/directory=org.kde.dolphin.desktop\n'
       for m in $MOVIES; do printf '%s=vlc.desktop\n' "$m"; done; } > "$HOME/.config/macshell-mimeapps.list"
     # AirDrop's icon is Apple's own symbol: downloaded and set on a macOS tile, not shipped in this repo
     python3 -I "$REPO/session/scripts/macshell-airdrop-icon.py" || warn "AirDrop icon: using the theme's LocalSend icon"
-    # QuickTime Player's icon is Apple's own, downloaded the same way
-    python3 -I "$REPO/session/scripts/macshell-player-icon.py" || warn "QuickTime Player icon: using the theme's video icon"
     command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
     note "$QS/MacShell"
 }
@@ -305,8 +303,6 @@ finder_look() {
         warn "couldn't get the MacTahoe KDE theme: Finder keeps Dolphin's own look until ./install.sh --config runs online"
     fi
     sh "$SESS/scripts/macshell-kde-theme.sh" dark >/dev/null 2>&1 || true
-    # QuickTime Player's skin is drawn here (and again by the launcher whenever the drawing changes)
-    python3 -I "$SESS/scripts/macshell-quicktime-skin.py" >/dev/null 2>&1 || warn "QuickTime Player skin: VLC keeps its own look"
 }
 
 do_config() {

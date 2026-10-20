@@ -43,7 +43,7 @@ ShellRoot {
         property var finder: filesApp
         // one way to open a folder, and one way to put a window away — every part of the shell uses these
         function openFolder(path) { filesApp.open(path); }
-        // any path: folders in Finder, pictures in Preview, movies in QuickTime Player, everything else in its own app
+        // any path: folders in Finder, pictures in Preview, movies in VLC, everything else in its own app
         function openPath(path) {
             var p = String(path || "").replace(/^file:\/\//, "");
             if (p === "") return;
@@ -420,7 +420,7 @@ ShellRoot {
     ClockApp { id: clockApp; hub: sharedHub }
     AppStore { id: appStore; hub: sharedHub }
     Photos { id: photosApp; hub: sharedHub }
-    // Finder (Dolphin) and QuickTime Player (VLC) are real apps; this is how the shell reaches them
+    // Finder (Dolphin) and VLC are real apps; this is how the shell reaches them
     Files { id: filesApp; hub: sharedHub }
     Welcome { id: welcomeApp; hub: sharedHub }
     Desktop { id: desktopIcons; hub: sharedHub }

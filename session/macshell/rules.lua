@@ -36,16 +36,9 @@ for title, size in pairs({ Clock = "780 540", ["App Store"] = "1080 720", Photos
     hl.window_rule({ match = { class = "^org\\.quickshell$", title = "^" .. title .. "$" }, float = true, size = size, center = true })
 end
 
--- Finder (Dolphin) and QuickTime Player (VLC's QuickTime skin): floating like on macOS. Finder's sidebar is
--- translucent (MacTahoe Kvantum), so it gets the compositor's live blur back; QuickTime draws its own shape.
+-- Finder (Dolphin) floats like on macOS; its sidebar is translucent in the glass materials (MacTahoe Kvantum),
+-- so it gets the compositor's live blur back
 hl.window_rule({ match = { class = "^org\\.kde\\.dolphin$" }, float = true, size = "1020 660", center = true, no_blur = false })
--- VLC's skin engine makes one X11 window per part: the player, the full-screen picture and the floating bar
--- (centred by class: the player's title is only set after it appears; the bar's own rule below moves it down)
--- (it draws its own round corners and edge, so no compositor border, shadow-free bar)
-hl.window_rule({ match = { class = "^([Vv]lc|VLC)$" }, float = true, center = true, no_blur = false, border_size = 0 })
-hl.window_rule({ match = { class = "^([Vv]lc|VLC)$", title = "^VLC \\(Fullscreen\\)$" }, fullscreen = true })
-hl.window_rule({ match = { class = "^([Vv]lc|VLC)$", title = "^VLC \\(FscWindow\\)$" }, pin = true, no_anim = true, no_shadow = true,
-                 move = { "(monitor_w*0.5-window_w*0.5)", "(monitor_h-window_h-48)" } })
 
 hl.workspace_rule({ workspace = "special:special", gaps_out = 30 })
 

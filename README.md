@@ -132,11 +132,7 @@ drops. No setting to remember: it watches the load average and uses hysteresis s
   with the System Settings slider underneath.
 - **Desktop icons** — everything in ~/Desktop, drag and snap to the grid, double-click to open, drop one onto another
   to make a folder, rename and trash from the menu.
-- **QuickTime Player** — VLC in MacShell's own QuickTime skin (`macshell-quicktime-skin.py` draws it for VLC's skin
-  engine, `vlc-gui-skins2`): a dark window with round corners and the traffic lights, the movie edge to edge, and
-  QuickTime's rounded control bar (volume, previous / play / next, the … menu, full screen, the scrubber with the time
-  played and left). Full screen floats the same bar over the movie and hides it when the mouse rests. Everything VLC
-  plays, it plays. Without the skin engine VLC opens as itself.
+- **Videos** play in VLC.
 - **Lock screen (MacLock)** — its own process (a shell crash can't take the lock down), PAM unlock, glass clock that stretches
   like iOS 26's, Caps Lock indicator, animated wallpapers, per-character password dots, and:
   - **Now Playing** bubble tinted from the album art, shuffle / repeat, synced lyrics (in the bubble or side by side),
@@ -244,7 +240,7 @@ Keep all five files in the same folder.
 | Keep Awake | `systemd-inhibit` |
 | Lock / Sleep / Restart / Shut Down | `loginctl`, `systemctl` (UWSM sessions are stopped via `uwsm`) |
 | Finder | `dolphin`, `kvantum`, `kio-extras`, `ffmpegthumbs` (thumbnails); the MacTahoe KDE theme is downloaded by `./install.sh --config` |
-| QuickTime Player | `vlc` and `vlc-gui-skins2` (its skin engine, which runs through XWayland) |
+| Videos | `vlc` |
 | Trash watching / emptying | `inotify-tools` (`inotifywait`), `ktrash6`/`ktrash5`, or a file manager (`dolphin`, `nautilus`, `thunar`, `nemo`, `pcmanfm-qt`) |
 | Folder pickers in Settings | `zenity`, `kdialog` or `yad` |
 | "About This Linux" | `fastfetch` or `neofetch` |

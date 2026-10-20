@@ -41,9 +41,8 @@ Scope {
             var c = clients[i];
             if (("0x" + String(c.address).replace(/^0x/, "")) !== activeAddr && String(c.address) !== activeAddr) continue;
             if (!c.mapped || c.hidden || c.fullscreen) return null;
-            // our own windows have their lights already, and so does QuickTime Player (VLC's skin draws them)
+            // our own windows have their lights already
             if (c.class === "org.quickshell" || c.class === "quickshell") return null;
-            if (/^(vlc|Vlc|VLC)$/.test(c.class)) return null;
             // Finder (Dolphin, dressed by session/qt) always gets them: its toolbar leaves room for them, like
             // the real one. Everything else only when the window controls are switched on.
             if (!root.enabled && c.class !== "org.kde.dolphin") return null;

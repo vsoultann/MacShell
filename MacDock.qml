@@ -5380,7 +5380,7 @@ Scope {
                 var a = JSON.parse(text());
                 if (Array.isArray(a)) {
                     // MacShell's own Finder and Player are gone: their pins become the real apps (Dolphin is Finder,
-                    // VLC is QuickTime Player), once, where they were
+                    // videos play in VLC), once, where they were
                     var moved = false, swap = { "macshell-finder": "org.kde.dolphin", "macshell-player": "vlc" };
                     for (var m = a.length - 1; m >= 0; m--) {
                         var to = swap[a[m]];

@@ -1,6 +1,6 @@
-// Finder and QuickTime Player, as the rest of the shell sees them. They are real apps now: Dolphin dressed as Finder
-// and VLC in MacShell's QuickTime skin (session/qt, macshell-kde-theme.sh, macshell-quicktime.sh). This is the
-// one place the shell opens folders, plays movies and asks for files, so every part of it goes through here.
+// Finder and the video player, as the rest of the shell sees them. They are real apps now: Dolphin dressed as
+// Finder (session/qt, macshell-kde-theme.sh) and VLC as itself. This is the one place the shell opens folders,
+// plays movies and asks for files, so every part of it goes through here.
 //
 //   finder: open(path), chooseFiles(cb, label, start), chooseFolder(cb, label, start)
 //   player: play(src[, title]), playYoutube(url[, title])
@@ -46,19 +46,19 @@ Scope {
         }
     }
 
-    // ── QuickTime Player ──
+    // ── VLC ──
     readonly property QtObject player: QtObject {
         function play(src, title) {
             var s = String(src || "");
             if (s === "") return;
-            Quickshell.execDetached([root.scripts + "/macshell-quicktime.sh", s]);
+            Quickshell.execDetached(["vlc", s]);
         }
         // a YouTube page: yt-dlp finds the stream (VLC's own YouTube script breaks whenever YouTube changes)
         function playYoutube(url, title) {
             Quickshell.execDetached(["sh", "-c",
                 "u=$(yt-dlp -g -f 'b[height<=1080]/b' --no-playlist \"$1\" 2>/dev/null | head -1); "
-                + "exec \"$2/macshell-quicktime.sh\" \"${u:-$1}\" --meta-title=\"$3\"",
-                "sh", String(url), root.scripts, String(title || "Video")]);
+                + "exec vlc \"${u:-$1}\" --meta-title=\"$2\"",
+                "sh", String(url), String(title || "Video")]);
         }
     }
 }
