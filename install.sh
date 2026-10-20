@@ -97,7 +97,7 @@ known() { local f; for f in "${ORDER[@]}"; do [ "$f" = "$1" ] && return 0; done;
 PKGS=(quickshell rsync qt6-shadertools qt6-multimedia qt6-svg jq curl git ffmpeg imagemagick libnotify grim slurp wl-clipboard cliphist
       playerctl brightnessctl bluez-utils networkmanager power-profiles-daemon hypridle hyprlock hyprsunset wf-recorder
       mpvpaper awww inter-font noto-fonts-emoji python-numpy zenity openbsd-netcat libwebp
-      yt-dlp poppler)
+      yt-dlp poppler python-pillow librsvg)
 
 do_deps() {
     say "Installing dependencies"
@@ -450,6 +450,19 @@ do_icons() {
     git clone --depth 1 https://github.com/vinceliuice/MacTahoe-icon-theme.git "$t/icons" >/dev/null 2>&1 || die "couldn't download MacTahoe"
     (cd "$t/icons" && ./install.sh >/dev/null)
     rm -rf "$t"
+    # Settings → Icons → Dark uses real dark icons: MacOS-Like (github.com/Scrimas/MacOS-Like, GPL-3.0) builds them
+    # from MacTahoe (dark Finder, dark glass for white tiles). Built into MacShell's own folder: your themes are untouched.
+    if python3 -c 'import PIL' 2>/dev/null && have rsvg-convert && have rsync && [ -d "$HOME/.local/share/icons/MacTahoe" ]; then
+        say "Building the dark app icons (MacOS-Like)"
+        local m; m=$(mktemp -d)
+        if git clone -q --depth 1 https://github.com/Scrimas/MacOS-Like.git "$m/src"; then
+            (cd "$m/src" && XDG_DATA_HOME="$SHARE/icons-build" ./setup.sh --source "$HOME/.local/share/icons/MacTahoe" --force </dev/null >/dev/null 2>&1) \
+                && note "dark icons: $SHARE/icons-build" || warn "dark icons: the build failed (Dark keeps the regular icons)"
+        fi
+        rm -rf "$m"
+    else
+        warn "dark icons need python-pillow, librsvg and rsync (Dark keeps the regular icons until then)"
+    fi
 }
 
 do_fonts() {

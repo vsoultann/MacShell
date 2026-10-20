@@ -370,12 +370,15 @@ Scope {
     // a .desktop file's icon, read out of the file itself
     property var appIcons: ({})
     function appIcon(path) {
+        // through the Dock, so Settings → Icons → Dark gives the desktop the same real dark icons
+        if (appIconNames[path] !== undefined && dock && dock.iconSrc) { var dk = dock.iconLook; return dock.iconSrc(appIconNames[path]); }
         if (appIcons[path] !== undefined) return appIcons[path];
         iconQueue.push(path);
         iconTimer.restart();
         return Quickshell.iconPath("application-x-executable", true);
     }
     property var iconQueue: []
+    property var appIconNames: ({})
     Timer {
         id: iconTimer
         interval: 60
@@ -396,6 +399,7 @@ Scope {
                 for (var k in root.appIcons) m[k] = root.appIcons[k];
                 m[iconProc.pending] = name === "" ? Quickshell.iconPath("application-x-executable", true)
                                     : (name.charAt(0) === "/" ? "file://" + name : Quickshell.iconPath(name, true));
+                if (name !== "") { var nm = {}; for (var k2 in root.appIconNames) nm[k2] = root.appIconNames[k2]; nm[iconProc.pending] = name; root.appIconNames = nm; }
                 root.appIcons = m;
                 if (root.iconQueue.length > 0) iconTimer.restart();
             }

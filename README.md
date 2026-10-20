@@ -177,6 +177,7 @@ drops. No setting to remember: it watches the load average and uses hysteresis s
 - Early versions of the session config started from [end-4/dots-hyprland](https://github.com/end-4/dots-hyprland) (GPL-3.0); it is its own standalone config now.
 - [MacTahoe icon theme](https://github.com/vinceliuice/MacTahoe-icon-theme) by vinceliuice (GPL-3.0).
 - [apple_cursor](https://github.com/ful1e5/apple_cursor) by ful1e5 (GPL-3.0) — the macOS pointers, downloaded by `./install.sh --icons`.
+- [MacOS-Like](https://github.com/Scrimas/MacOS-Like) by Scrimas (GPL-3.0) — builds the dark app icons for Settings → Icons → Dark.
 - [Roboto Flex](https://github.com/googlefonts/roboto-flex) (OFL) and [Inter](https://rsms.me/inter/) (OFL), downloaded by the installer.
 - Lyrics: [LRCLIB](https://lrclib.net) and NetEase Cloud Music. Weather: [Open-Meteo](https://open-meteo.com).
 - Apple's wallpapers belong to Apple and are not included — `--wallpapers` downloads them.

@@ -252,12 +252,12 @@ Scope {
     // Settings → Icons → Icon style, like macOS Tahoe: Default, Dark, Clear (frosted white glass) or Tinted (one
     // colour). Clear and Tinted are glass looks: with Blur / Opaque they fall back to Default.
     readonly property string iconLook: (iconStyle === "clear" || iconStyle === "tinted") && !tintAllowed ? "default" : iconStyle
-    readonly property bool iconsTinted: iconLook !== "default"
+    readonly property bool iconsTinted: iconLook === "clear" || iconLook === "tinted"
     readonly property color iconTintColor: iconTint !== "" ? iconTint : accent
     readonly property real iconColorize: iconLook === "tinted" ? 0.9 : (iconLook === "clear" ? 0.95 : 0)
     readonly property color iconColorizeColor: iconLook === "clear" ? "#FFFFFF" : iconTintColor
-    readonly property real iconBright: iconLook === "dark" ? -0.3 : (iconLook === "clear" ? 0.1 : 0)
-    readonly property real iconSat: iconLook === "dark" ? -0.3 : 0
+    readonly property real iconBright: iconLook === "clear" ? 0.1 : 0
+    readonly property real iconSat: 0
     readonly property real iconAlpha: iconLook === "clear" ? 0.82 : 1
     property var uiByScreen: ({})          // each screen's Dock, so the minimise effect knows where to aim
     // Where a window should pour into: its own preview cell in the Dock if it has one, otherwise its app's icon.
@@ -4639,10 +4639,27 @@ Scope {
     Timer { id: youngWin; interval: 250; onTriggered: root.rebuild() }
 
     readonly property url folderIcon: Qt.resolvedUrl("folder.svg")
+    // Settings → Icons → Dark: real dark icons, not a filter — the dark set MacOS-Like (github.com/Scrimas/MacOS-Like,
+    // GPL-3.0) builds from MacTahoe (dark Finder, dark glass instead of white tiles), built by ./install.sh --icons
+    // into ~/.local/share/macshell/icons-build. Icons it has no dark version of stay as they are.
+    readonly property string darkIconDir: Quickshell.env("HOME") + "/.local/share/macshell/icons-build/icons/MacOS-Like-Dark/apps/scalable"
+    property var darkIcons: ({})
+    Process {
+        running: true
+        command: ["sh", "-c", "ls \"$1\" 2>/dev/null | sed -n 's/\\.svg$//p'", "sh", root.darkIconDir]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var m = {}, l = text.split("\n");
+                for (var i = 0; i < l.length; i++) if (l[i] !== "") m[l[i]] = true;
+                root.darkIcons = m;
+            }
+        }
+    }
     function iconSrc(icon) {
         if (icon === "folder") return folderIcon;
         if (!icon) return Quickshell.iconPath("application-x-executable");
         if (icon.charAt(0) === "/") return "file://" + icon;
+        if (iconLook === "dark" && darkIcons[icon]) return "file://" + darkIconDir + "/" + icon + ".svg";
         return Quickshell.iconPath(icon, "application-x-executable");
     }
     // icon of a dock cell; the Trash switches to the "full" icon while there is something in it
