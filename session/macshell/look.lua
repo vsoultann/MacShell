@@ -82,3 +82,5 @@ for _, a in ipairs({
 }) do
     hl.animation({ leaf = a[1], enabled = true, speed = a[2], bezier = a[3], style = a[4] })
 end
+-- apps' own menus and right-click menus (Wayland popups) appear at once, like on macOS; they used the slow default fade
+hl.animation({ leaf = "fadePopups", enabled = false })
