@@ -15,6 +15,7 @@ Scope {
     readonly property var bar: hub ? hub.bar : null
     readonly property string fam: dock ? dock.fontFamily : "Inter Variable"
     readonly property color accent: dock ? dock.accent : "#0A84FF"
+    readonly property bool darkMode: dock ? dock.darkMode : true
     readonly property string home: Quickshell.env("HOME")
     readonly property string dir: home + "/Desktop"
 

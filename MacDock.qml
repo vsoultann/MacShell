@@ -1237,6 +1237,9 @@ Scope {
                 // what the toolbar sees: the strip of the page under it right now, over the window's own tint (live)
                 Item {
                     id: tbBackdrop
+                    // only the glass materials need it (tbSrc hides it there); in Opaque it would sit on top of the page
+                    // as a solid strip 24 px taller than the toolbar and cut off the first row
+                    visible: header.layered
                     width: header.width; height: header.height + 24
                     Rectangle { anchors.fill: parent; color: pal.content }
                     ShaderEffectSource {

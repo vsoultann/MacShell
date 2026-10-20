@@ -83,7 +83,13 @@ Scope {
         var f = root.peers.slice();
         for (var i = 0; i < f.length; i++)
             if (f[i].fingerprint === d.fingerprint || (f[i].ip === d.ip && f[i].port === d.port)) {
-                f[i].seen = Date.now();
+                // the same device at a new address (hotspot → Wi-Fi, iOS rotating its private address):
+                // follow it, or every send goes to where it used to be
+                if (f[i].ip !== d.ip || f[i].port !== d.port || f[i].protocol !== d.protocol) {
+                    f[i] = Object.assign({}, f[i], { ip: d.ip, port: d.port, protocol: d.protocol || f[i].protocol, seen: Date.now() });
+                    if (f[i].state === "idle") f[i].detail = f[i].deviceModel || d.ip;
+                    root.peers = f;
+                } else f[i].seen = Date.now();
                 return;
             }
         d.state = "idle"; d.detail = d.deviceModel || d.ip; d.seen = Date.now();
@@ -122,16 +128,49 @@ Scope {
     }
 
     property string sendingTo: ""
+    property var lastFiles: ({})            // fingerprint -> files, so tapping a failed device tries again
+    property string hint: ""                // the longer reason under the radar when a send fails
+    property bool failedOnce: false
     function sendTo(peer, files) {
         if (!files || files.length === 0) return;
-        setPeer(peer.fingerprint, "sending", "Waiting…");
+        if (sendProc.running) return;
+        var lf = Object.assign({}, lastFiles); lf[peer.fingerprint] = files; lastFiles = lf;
+        hint = ""; failedOnce = false;
+        setPeer(peer.fingerprint, "sending", "Connecting…");
         sendingTo = peer.fingerprint;
-        sendProc.running = false;
-        // use the scheme the device announced (recent LocalSend builds are HTTPS); the helper falls back to the other
+        sendAlias = peer.alias;
+        // use the scheme the device announced (recent LocalSend builds are HTTPS); the helper checks it is
+        // really there first, falls back to the other scheme, and finds it again by fingerprint if it moved
         sendProc.command = ["python3", "-I", helper, "send", peer.ip, String(peer.port),
-                            "--protocol", peer.protocol === "https" ? "https" : "http"].concat(files);
+                            "--protocol", peer.protocol === "https" ? "https" : "http",
+                            "--fingerprint", peer.fingerprint].concat(files);
         sendProc.running = true;
     }
+    property string sendAlias: ""
+    // what went wrong, short enough for under the icon, and what to do about it
+    function failure(code) {
+        var who = sendAlias || "The other device";
+        var m = {
+            "unreachable": ["Not reachable", who + " didn't answer. Keep LocalSend open on its screen (iPhones and iPads stop receiving in the background) and stay on the same network, then tap it to try again."],
+            "declined": ["Declined", who + " declined."],
+            "busy": ["Busy", who + " is in the middle of another transfer. Tap it to try again in a moment."],
+            "pin": ["Needs a PIN", who + " asks for a PIN. Turn off \u201cRequire PIN\u201d in its LocalSend settings."],
+            "noanswer": ["No answer", who + " didn't accept in time. Tap it to ask again."],
+            "cancelled": ["Cancelled", who + " cancelled the transfer."],
+            "interrupted": ["Interrupted", "The connection to " + who + " dropped partway. Tap it to send again."],
+            "nofiles": ["Nothing to send", "Those files can't be read."]
+        }[code];
+        return m || ["Failed", who + " couldn't take the files (" + code + "). Details are in ~/.cache/macshell/airdrop.log."];
+    }
+    function fail(code) {
+        if (failedOnce) return;
+        failedOnce = true;
+        var f = failure(code);
+        setPeer(sendingTo, "error", f[0]);
+        hint = f[1];
+        hintT.restart();
+    }
+    Timer { id: hintT; interval: 12000; onTriggered: root.hint = "" }
     Process {
         id: sendProc
         stdout: SplitParser {
@@ -140,14 +179,17 @@ Scope {
                 if (t === "") return;
                 try {
                     var d = JSON.parse(t);
-                    if (d.event === "asking") root.setPeer(root.sendingTo, "sending", "Waiting for them to accept…");
-                    else if (d.event === "sending") root.setPeer(root.sendingTo, "sending", "Sending " + d.file);
+                    if (d.event === "looking") root.setPeer(root.sendingTo, "sending", "Looking…");
+                    else if (d.event === "moved") root.addPeer({ fingerprint: root.sendingTo, ip: d.ip, port: d.port, protocol: d.protocol });
+                    else if (d.event === "asking") root.setPeer(root.sendingTo, "sending", "Waiting…");
+                    else if (d.event === "sending") root.setPeer(root.sendingTo, "sending", "Sending…");
+                    else if (d.event === "progress") root.setPeer(root.sendingTo, "sending", "Sending " + d.pct + "%");
                     else if (d.event === "done") { root.setPeer(root.sendingTo, "done", "Sent"); doneT.restart(); if (root.bar) root.bar.playSound("tink", 0.7); }
-                    else if (d.event === "error") root.setPeer(root.sendingTo, "error", d.message === "declined" ? "Declined" : "Failed");
+                    else if (d.event === "error") root.fail(d.message || "failed");
                 } catch (e) { }
             }
         }
-        onExited: if (exitCode !== 0) root.setPeer(root.sendingTo, "error", "Failed");
+        onExited: (exitCode, exitStatus) => { if (exitCode !== 0) root.fail("exit " + exitCode); }
     }
     Timer { id: doneT; interval: 2400; onTriggered: { root.setPeer(root.sendingTo, "idle", ""); root.sendingTo = ""; } }
 
@@ -176,6 +218,11 @@ Scope {
     }
     // clicking someone sends whatever is waiting, or asks you for files when nothing is
     function handOff(peer) {
+        // a failed device: tapping it sends the same files again
+        if (peer.state === "error" && pending.length === 0 && lastFiles[peer.fingerprint]) {
+            sendTo(peer, lastFiles[peer.fingerprint]);
+            return;
+        }
         if (pending.length > 0) {
             var f = pending.slice();
             pending = [];
@@ -464,6 +511,18 @@ Scope {
                         }
                     }
                 }
+            }
+
+            // why the last send failed, and what to do about it
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom; anchors.bottomMargin: 74
+                width: Math.min(parent.width - 48, 440)
+                horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
+                text: root.hint
+                opacity: root.hint !== "" ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+                color: pal.text2; font.family: root.fam; font.pixelSize: 12
             }
 
             // ── someone is sending you something ──

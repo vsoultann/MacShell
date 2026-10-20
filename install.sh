@@ -20,6 +20,8 @@
 #   hotspot     let Internet Sharing share your connection WITHOUT dropping Wi-Fi: installs a small
 #               root helper (it can only add/remove one virtual AP interface) and, if you agree, a
 #               sudoers line for that one file so the switch never asks for a password
+#   airdrop     let phones and other computers reach AirDrop: opens port 53317 (TCP + UDP, the
+#               LocalSend port) in ufw or firewalld when one is running (needs sudo)
 #   sandbox     a SECOND copy, side by side: its own shell folder, session, settings and login entry,
 #               so you can try a version without touching the MacShell you already run.
 #               Name it with  MACSHELL_SANDBOX_NAME=tahoe ./install.sh sandbox   (default: test)
@@ -48,7 +50,7 @@ UPSTREAM="https://github.com/vsoultann/MacShell.git"
 BRANCH="tahoe"
 SRC="$SHARE/src"
 YES=0
-ORDER=(deps shell applemusic menubar spotlight controlcenter notifications dock widgets clock lock config session existing sandbox hotspot icons fonts apply defaults emoji wallpapers sounds)
+ORDER=(deps shell applemusic menubar spotlight controlcenter notifications dock widgets clock lock config session existing sandbox hotspot airdrop icons fonts apply defaults emoji wallpapers sounds)
 # the parts of the shell you can pick individually (one set of files, each part switched on or off)
 PARTS=(menubar spotlight controlcenter notifications dock widgets clock desktop)
 declare -A DESC=(
@@ -68,6 +70,7 @@ declare -A DESC=(
     [session]="\"Hyprland (MacShell)\" login session (separate, needs sudo)"
     [sandbox]="A SECOND copy to try out, with its own settings and login entry (nothing shared)"
     [hotspot]="Internet Sharing that keeps your Wi-Fi connected (installs one small root helper)"
+    [airdrop]="Let other devices reach AirDrop through your firewall (port 53317, needs sudo)"
     [existing]="Start from my CURRENT Hyprland config instead of a separate session"
     [deps]="Dependencies (pacman + paru/yay)"
     [icons]="MacTahoe icon theme"
@@ -321,6 +324,40 @@ do_hotspot() {
     note "Internet Sharing will now keep your Wi-Fi connection while it shares it."
 }
 
+# ── AirDrop through the firewall ───────────────────────────────────────────────────────────────────
+# AirDrop speaks LocalSend's protocol: devices find each other with UDP multicast on 53317 and send over
+# TCP 53317. A firewall that drops incoming traffic (ufw and firewalld both do by default) lets you send
+# but hides you from everyone else, and their answers to your search never arrive either.
+do_airdrop() {
+    local done=0
+    if have ufw && systemctl is-active -q ufw 2>/dev/null; then
+        say "Opening AirDrop (port 53317) in ufw"
+        if sudo ufw allow 53317/tcp comment 'MacShell AirDrop (LocalSend)' >/dev/null &&
+           sudo ufw allow 53317/udp comment 'MacShell AirDrop (LocalSend)' >/dev/null; then
+            note "ufw: 53317/tcp + 53317/udp allowed (sudo ufw delete allow 53317/tcp, …/udp to undo)"; done=1
+        else
+            warn "ufw didn't take the rule; AirDrop can still send, but others won't see you"
+        fi
+    fi
+    if have firewall-cmd && firewall-cmd --state >/dev/null 2>&1; then
+        say "Opening AirDrop (port 53317) in firewalld"
+        if sudo firewall-cmd --permanent --add-port=53317/tcp >/dev/null &&
+           sudo firewall-cmd --permanent --add-port=53317/udp >/dev/null &&
+           sudo firewall-cmd --reload >/dev/null; then
+            note "firewalld: 53317/tcp + 53317/udp open in the default zone"; done=1
+        else
+            warn "firewalld didn't take the rule; AirDrop can still send, but others won't see you"
+        fi
+    fi
+    if [ "$done" = 0 ]; then
+        if systemctl is-active -q nftables 2>/dev/null || systemctl is-active -q iptables 2>/dev/null; then
+            warn "a hand-written nftables/iptables firewall is running: allow TCP and UDP port 53317 in it for AirDrop"
+        else
+            note "no firewall in the way; AirDrop works as it is"
+        fi
+    fi
+}
+
 do_sandbox() {
     local name="${MACSHELL_SANDBOX_NAME:-test}"
     name="$(printf '%s' "$name" | tr -cd '[:alnum:]-' | tr '[:upper:]' '[:lower:]')"
@@ -563,6 +600,9 @@ do_check() {
     [ -d "$QS/MacLock" ]  && note "lock screen:  installed" || warn "lock screen:  not installed (./install.sh --lock)"
     [ -d "$SESS/scripts" ] && note "config:       installed" || note "config:       not installed (./install.sh --config)"
     [ -f /usr/share/wayland-sessions/hyprland-macshell.desktop ] && note "login session: Hyprland (MacShell)" || note "login session: not added (./install.sh --session)"
+    if { have ufw && systemctl is-active -q ufw 2>/dev/null; } || { have firewall-cmd && firewall-cmd --state >/dev/null 2>&1; }; then
+        note "firewall:     running (./install.sh --airdrop opens AirDrop's port 53317 in it)"
+    fi
     [ ${#miss[@]} -eq 0 ] && say "Everything's there." || warn "${#miss[@]} missing — ./install.sh --deps installs them"
 }
 
@@ -663,7 +703,7 @@ menu() {
             local u; read -r -p "Choose [1]: " u
             case "${u:-1}" in
                 1) backup_original; run shell lock config sounds fonts; return ;;
-                2) backup_original; run deps shell menubar spotlight controlcenter notifications dock widgets clock lock config session icons fonts apply wallpapers sounds; return ;;
+                2) backup_original; run deps shell menubar spotlight controlcenter notifications dock widgets clock lock config session airdrop icons fonts apply wallpapers sounds; return ;;
             esac ;;
         tahoe)
             printf '%sMacShell (Tahoe edition) is already installed.%s\n' "$c_b" "$c_0"
@@ -671,14 +711,14 @@ menu() {
             local u; read -r -p "Choose [1]: " u
             case "${u:-1}" in
                 1) pull; run shell lock config sounds; return ;;
-                2) pull; run deps shell menubar spotlight controlcenter notifications dock widgets clock lock config icons fonts apply sounds; return ;;
+                2) pull; run deps shell menubar spotlight controlcenter notifications dock widgets clock lock config airdrop icons fonts apply sounds; return ;;
             esac ;;
     esac
     printf '  1) Install\n  2) Update (gets the latest version first)\n  3) Check what is installed\n  4) Uninstall\n'
     local w; read -r -p "Choose [1]: " w
     local -a sel
     case "${w:-1}" in
-        1) mapfile -t sel < <(pick "What do you want to install?" deps shell menubar spotlight controlcenter notifications dock widgets clock lock config session existing icons fonts apply wallpapers sounds) ;;
+        1) mapfile -t sel < <(pick "What do you want to install?" deps shell menubar spotlight controlcenter notifications dock widgets clock lock config session existing airdrop icons fonts apply wallpapers sounds) ;;
         2) pull; mapfile -t sel < <(pick "What do you want to update?" shell lock config sounds fonts icons) ;;
         3) do_check; return ;;
         4) mapfile -t sel < <(pick "What do you want to remove?" shell lock config session existing sounds); do_uninstall "${sel[@]}"; return ;;
@@ -694,7 +734,7 @@ while [ $i -lt ${#args[@]} ]; do
     a="${args[$i]}"
     case "$a" in
         -y|--yes) YES=1 ;;
-        --all) todo+=(deps shell menubar spotlight controlcenter notifications dock widgets clock lock config session icons fonts apply wallpapers sounds) ;;
+        --all) todo+=(deps shell menubar spotlight controlcenter notifications dock widgets clock lock config session airdrop icons fonts apply wallpapers sounds) ;;
         --deps-only) do_deps; exit 0 ;;
         --deps-plan) do_deps_plan; exit 0 ;;
         --only) i=$((i + 1)); IFS=',' read -r -a parts <<< "${args[$i]:-}"; for p in "${parts[@]}"; do known "$p" || die "unknown feature: $p"; todo+=("$p"); done ;;

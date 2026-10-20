@@ -6,8 +6,9 @@ in its downloads. Nothing is installed or configured: discovery is a UDP multica
 local network, and sending is two HTTPS-less HTTP calls.
 
     macshell-airdrop.py discover [seconds]        print one JSON object per device found
-    macshell-airdrop.py send <ip> <port> [--protocol http|https] <file…>
+    macshell-airdrop.py send <ip> <port> [--protocol http|https] [--fingerprint fp] <file…>
                                                   send files to a device, print progress as JSON lines
+                                                  (with a fingerprint, a device that moved is found again)
     macshell-airdrop.py serve                     be visible and receive files (answers accept/decline on stdin)
 """
 import fcntl
@@ -28,11 +29,29 @@ import urllib.error
 import urllib.request
 
 MULTICAST = "224.0.0.167"
+LOG = os.path.join(os.path.expanduser("~"), ".cache", "macshell", "airdrop.log")
+
+
+def _log(*parts):
+    """One line per thing that happened, so "Failed" always has a reason somewhere (~/.cache/macshell/airdrop.log)."""
+    try:
+        os.makedirs(os.path.dirname(LOG), exist_ok=True)
+        if os.path.exists(LOG) and os.path.getsize(LOG) > 512 * 1024:
+            os.replace(LOG, LOG + ".prev")
+        with open(LOG, "a") as fh:
+            fh.write("%s [%d] %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), os.getpid(), " ".join(str(p) for p in parts)))
+    except OSError:
+        pass
+
 PORT = 53317
 ALIAS = os.environ.get("MACSHELL_AIRDROP_ALIAS") or socket.gethostname()
 # Stable per machine: the sending half and the receiving half must agree, or each half sees the other
 # as a stranger and the radar fills up with copies of this computer.
 FINGERPRINT = hashlib.sha256(("macshell:" + socket.gethostname() + ":" + (os.environ.get("USER") or "")).encode()).hexdigest()
+
+
+# bridges for containers and VMs, and VPN tunnels: nobody holding a phone is on the other side of these
+_VIRTUAL = ("docker", "br-", "veth", "virbr", "waydroid", "tailscale", "tun", "wg", "zt", "vnet", "lxc", "podman")
 
 
 def _ipv4_interfaces():
@@ -59,6 +78,93 @@ def _ipv4_interfaces():
         if addr and not addr.startswith("127."):
             out.append((name, addr))
     return out
+
+
+def _netmask(name):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        return socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x891b,               # SIOCGIFNETMASK
+                                            struct.pack("256s", name[:15].encode()))[20:24])
+    except OSError:
+        return None
+    finally:
+        s.close()
+
+
+def _scan_targets():
+    """Every address on the local networks we are on (at most a /22 each, /24 around us beyond that)."""
+    out = []
+    for name, addr in _ipv4_interfaces():
+        if name.startswith(_VIRTUAL):
+            continue
+        mask = _netmask(name) or "255.255.255.0"
+        a = struct.unpack("!I", socket.inet_aton(addr))[0]
+        m = struct.unpack("!I", socket.inet_aton(mask))[0]
+        if bin(m).count("1") < 22:
+            m = 0xFFFFFF00
+        net, size = a & m, (~m & 0xFFFFFFFF)
+        for h in range(1, size):
+            ip = net + h
+            if ip != a:
+                out.append(socket.inet_ntoa(struct.pack("!I", ip)))
+    return out
+
+
+def _info(ip, port, scheme, timeout=1.5):
+    """GET /info: who is at this address, if it is running LocalSend at all."""
+    req = urllib.request.Request("%s://%s:%s/api/localsend/v2/info" % (scheme, ip, port))
+    with _open(req, timeout) as r:
+        d = json.loads(r.read().decode() or "{}")
+    if not isinstance(d, dict) or "alias" not in d:
+        raise OSError("not LocalSend")
+    d.setdefault("protocol", scheme)
+    return d
+
+
+def _sweep(want=None, port=PORT, on_found=None, budget=6.0):
+    """LocalSend's own fallback when multicast is dropped (guest Wi-Fi, phone hotspots, routers that filter it):
+    ask every address on the network directly. With `want`, stop at the device with that fingerprint."""
+    targets = _scan_targets()
+    found = {}
+    stop = threading.Event()
+    lock = threading.Lock()
+    queue = list(targets)
+    deadline = time.time() + budget
+
+    def worker():
+        while not stop.is_set() and time.time() < deadline:
+            with lock:
+                if not queue:
+                    return
+                ip = queue.pop()
+            # a closed port answers instantly, so most of the network costs nothing; only live hosts take time
+            try:
+                c = socket.create_connection((ip, port), timeout=0.6)
+                c.close()
+            except OSError:
+                continue
+            for scheme in ("https", "http"):
+                try:
+                    d = _info(ip, port, scheme)
+                except Exception:
+                    continue
+                if d.get("fingerprint") == FINGERPRINT:
+                    break
+                with lock:
+                    found[ip] = d
+                if on_found:
+                    on_found(ip, d)
+                if want and d.get("fingerprint") == want:
+                    stop.set()
+                break
+
+    threads = [threading.Thread(target=worker, daemon=True) for _ in range(min(96, max(1, len(targets))))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(max(0.1, deadline - time.time()))
+    stop.set()
+    return found
 
 
 def _join_all(sock):
@@ -246,11 +352,86 @@ def _post(url, obj, timeout=10):
     return json.loads(body) if body.strip() else {}
 
 
-def send(ip, port, paths, protocol=None):
+class _Progress:
+    """A file handed to urllib a block at a time (a 4 GB video never has to fit in memory), reporting as it goes."""
+
+    def __init__(self, path, name, on_progress):
+        self.fh = open(path, "rb")
+        self.size = os.path.getsize(path)
+        self.name, self.done, self.last = name, 0, 0.0
+        self.on_progress = on_progress
+
+    def read(self, n=-1):
+        chunk = self.fh.read(1 << 16 if n is None or n < 0 else n)
+        self.done += len(chunk)
+        now = time.time()
+        if now - self.last > 0.25 or self.done >= self.size:
+            self.last = now
+            self.on_progress(self.name, self.done, self.size)
+        return chunk
+
+    def close(self):
+        self.fh.close()
+
+
+def _emit(**kw):
+    print(json.dumps(kw), flush=True)
+
+
+def _locate(ip, port, protocol, fingerprint):
+    """Make sure the device is really there before asking it anything, and find it again if it moved.
+
+    A phone's address changes when it hops between the hotspot and Wi-Fi, or when iOS rotates its private
+    address, and the radar only knew the old one: every send then timed out into a bare "Failed".
+    Returns (ip, port, scheme) or None.
+    """
+    order = ["https", "http"] if protocol == "https" else ["http", "https"]
+    for attempt in range(2):
+        slow = False
+        for scheme in order:
+            try:
+                d = _info(ip, port, scheme, timeout=3 if attempt == 0 else 5)
+            except Exception as e:
+                _log("probe", scheme, ip, port, "->", repr(e))
+                # "no route" or "refused" is a clear answer; only a timeout is worth a second, longer try
+                slow = slow or "timed out" in repr(e) or isinstance(e, (socket.timeout, ssl.SSLError))
+                continue
+            if fingerprint and d.get("fingerprint") not in (None, "", fingerprint):
+                # someone else has that address now: the device we want has moved
+                _log("probe", ip, "is", d.get("alias"), "not the device we want")
+                break
+            return ip, port, scheme
+        if not slow:
+            break
+    if fingerprint:
+        _emit(event="looking")
+        _log("sweep for", fingerprint[:12])
+        for nip, d in _sweep(want=fingerprint, port=int(port), budget=8.0).items():
+            if d.get("fingerprint") == fingerprint:
+                _log("found again at", nip, d.get("protocol"))
+                _emit(event="moved", ip=nip, port=int(d.get("port", port)), protocol=d.get("protocol", "https"))
+                return nip, int(d.get("port", port)), d.get("protocol", "https")
+    return None
+
+
+def _cancel(base, session):
+    """Tell the receiver we gave up, or it keeps the session open and answers the next try with "busy"."""
+    if not base:
+        return
+    try:
+        q = "?sessionId=%s" % session if session else ""
+        urllib.request.urlopen(urllib.request.Request(base + "/cancel" + q, data=b"", method="POST"),
+                               timeout=3, **({"context": _TLS} if base.startswith("https") else {}))
+    except Exception:
+        pass
+
+
+def send(ip, port, paths, protocol=None, fingerprint=None):
     files = {}
     by_id = {}                      # the receiver answers with its own ids, so keep the mapping
     for i, p in enumerate(paths):
         if not os.path.isfile(p):
+            _log("skip, not a file:", p)
             continue
         fid = str(i)
         by_id[fid] = p
@@ -261,54 +442,104 @@ def send(ip, port, paths, protocol=None):
             "fileType": mimetypes.guess_type(p)[0] or "application/octet-stream",
         }
     if not files:
-        print(json.dumps({"event": "error", "message": "no files"}), flush=True)
+        _emit(event="error", message="nofiles")
         return 1
+    _log("send", len(files), "file(s) to", ip, port, protocol, (fingerprint or "")[:12])
 
-    # Recent LocalSend builds speak HTTPS and announce it; older ones are plain HTTP. Try what the device
-    # asked for first and fall back to the other, so a wrong guess is not a failed send.
-    order = ["https", "http"] if protocol == "https" else ["http", "https"]
-    print(json.dumps({"event": "asking"}), flush=True)
-    base, res, last = None, None, None
-    for scheme in order:
-        attempt = "%s://%s:%s/api/localsend/v2" % (scheme, ip, port)
+    where = _locate(ip, port, protocol, fingerprint)
+    if where is None:
+        _log("unreachable")
+        _emit(event="error", message="unreachable")
+        return 1
+    ip, port, scheme = where
+    base = "%s://%s:%s/api/localsend/v2" % (scheme, ip, port)
+
+    _emit(event="asking")
+    res, session = None, ""
+    for attempt in range(2):
         try:
-            res = _post(attempt + "/prepare-upload", {"info": ME, "files": files}, timeout=90)
-            base = attempt
+            # the person on the other end decides here, so this one is allowed to take its time
+            res = _post(base + "/prepare-upload", {"info": ME, "files": files}, timeout=120)
             break
         except urllib.error.HTTPError as e:
-            # the device answered, so this is its decision, not the wrong scheme
-            msg = "declined" if e.code in (403, 204) else ("busy" if e.code == 409 else "HTTP %s" % e.code)
-            print(json.dumps({"event": "error", "message": msg}), flush=True)
+            # the device answered, so this is its decision, not the network
+            _log("prepare-upload ->", e.code)
+            if e.code == 409 and attempt == 0:
+                # still holding an earlier attempt of ours: clear it and ask once more
+                _cancel(base, "")
+                time.sleep(0.5)
+                continue
+            msg = {403: "declined", 401: "pin", 409: "busy", 429: "busy"}.get(e.code, "http %d" % e.code)
+            _emit(event="error", message=msg)
+            return 1
+        except socket.timeout:
+            _log("prepare-upload timed out")
+            _cancel(base, "")
+            _emit(event="error", message="noanswer")
             return 1
         except (OSError, ssl.SSLError) as e:
-            last = e
-            continue
-    if base is None:
-        print(json.dumps({"event": "error", "message": "could not reach the device (%s)" % last}), flush=True)
+            _log("prepare-upload failed:", repr(e))
+            if attempt == 0:
+                time.sleep(1.0)
+                continue
+            _emit(event="error", message="unreachable")
+            return 1
+    if res is None:
+        _emit(event="error", message="busy")
         return 1
 
     session = res.get("sessionId", "")
     tokens = res.get("files", {})
     if not tokens:
-        print(json.dumps({"event": "error", "message": "the other device accepted nothing"}), flush=True)
-        return 1
+        # 204 / an empty answer: they already have all of it
+        _emit(event="done", sent=0, total=len(files))
+        return 0
+    total = sum(files[f]["size"] for f in tokens if f in files) or 1
+    sent_bytes = [0]
+
+    def progress(name, done, size):
+        _emit(event="progress", file=name, pct=int(100 * (sent_bytes[0] + done) / total))
+
     sent = 0
     for fid, token in tokens.items():
         path = by_id.get(str(fid))
         if not path:
             continue
         url = "%s/upload?sessionId=%s&fileId=%s&token=%s" % (base, session, fid, token)
-        print(json.dumps({"event": "sending", "file": os.path.basename(path)}), flush=True)
-        try:
-            with open(path, "rb") as fh:
-                req = urllib.request.Request(url, data=fh.read(),
-                                             headers={"Content-Type": "application/octet-stream"}, method="POST")
-                _open(req, 600).read()
-            sent += 1
-        except OSError as e:
-            print(json.dumps({"event": "error", "file": os.path.basename(path), "message": str(e)}), flush=True)
-    print(json.dumps({"event": "done", "sent": sent, "total": len(files)}), flush=True)
-    return 0 if sent else 1
+        name = os.path.basename(path)
+        _emit(event="sending", file=name)
+        for attempt in range(2):
+            body = _Progress(path, name, progress)
+            try:
+                req = urllib.request.Request(url, data=body, method="POST", headers={
+                    "Content-Type": "application/octet-stream", "Content-Length": str(body.size)})
+                # the timeout is per read/write, not for the whole file, so a big video is fine
+                _open(req, 60).read()
+                sent += 1
+                sent_bytes[0] += body.size
+                break
+            except urllib.error.HTTPError as e:
+                _log("upload", name, "->", e.code)
+                if e.code in (403, 409):
+                    # they cancelled on their side
+                    _emit(event="error", file=name, message="cancelled")
+                    return 1
+                if attempt == 1:
+                    _emit(event="error", file=name, message="http %d" % e.code)
+            except (OSError, ssl.SSLError) as e:
+                _log("upload", name, "failed:", repr(e))
+                if attempt == 1:
+                    _emit(event="error", file=name, message="interrupted")
+                else:
+                    time.sleep(1.0)
+            finally:
+                body.close()
+    _log("done", sent, "of", len(files))
+    if not sent:
+        _cancel(base, session)
+        return 1
+    _emit(event="done", sent=sent, total=len(files))
+    return 0
 
 
 class _Receiver(http.server.BaseHTTPRequestHandler):
@@ -389,7 +620,24 @@ class _Receiver(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         path = self.path.split("?")[0]
         if path.endswith("/register"):
+            # This is how LocalSend usually answers our hello: over HTTP, not multicast. Ignoring the body
+            # meant a device that answered this way never showed up on the radar.
+            try:
+                d = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode() or "{}")
+                if isinstance(d, dict) and d.get("fingerprint") and d.get("fingerprint") != FINGERPRINT:
+                    _report(self.client_address[0], d)
+            except (ValueError, UnicodeDecodeError):
+                pass
             self._json(200, dict(ME, announce=False))
+            return
+        if path.endswith("/cancel"):
+            # the sender gave up: drop the question if it is still on screen
+            q = dict(p.split("=", 1) for p in self.path.split("?", 1)[-1].split("&") if "=" in p)
+            sid = q.get("sessionId", "")
+            for s_ in [sid] if sid else list(SESSIONS):
+                SESSIONS.pop(s_, None)
+            print(json.dumps({"event": "cancelled", "session": sid}), flush=True)
+            self._json(200, {})
             return
         if path.endswith("/prepare-upload"):
             length = int(self.headers.get("Content-Length") or 0)
@@ -485,6 +733,24 @@ def _wait_for_answer(session, timeout=60.0):
 
 PING = threading.Event()
 ANNOUNCED = {}          # fingerprint -> address, so a device is reported once (cleared on "search")
+REPORT_LOCK = threading.Lock()
+
+
+def _report(ip, d):
+    """Put a device on the radar, once per address (a new address is reported again, so the radar follows it)."""
+    fp = d.get("fingerprint", ip)
+    with REPORT_LOCK:
+        if ANNOUNCED.get(fp) == ip:
+            return False
+        ANNOUNCED[fp] = ip
+        # sweeps report from many threads at once: one whole line at a time
+        print(json.dumps({"event": "device", "alias": d.get("alias", ip), "ip": ip,
+                          "port": d.get("port", PORT), "deviceModel": d.get("deviceModel", ""),
+                          "deviceType": d.get("deviceType", "desktop"),
+                          "protocol": d.get("protocol", "http"),
+                          "fingerprint": fp}), flush=True)
+    _log("device", d.get("alias"), ip, d.get("protocol"), d.get("deviceType"))
+    return True
 
 
 def _read_answers():
@@ -496,8 +762,11 @@ def _read_answers():
         elif parts and parts[0] == "search":
             # Searching again means "tell me about everyone", not "tell me about anyone new": without this
             # the radar stayed empty after the window was reopened, because every device was already known.
-            ANNOUNCED.clear()
+            with REPORT_LOCK:
+                ANNOUNCED.clear()
             PING.set()
+            # and ask everyone directly too, for networks that drop multicast (iPhone hotspots, guest Wi-Fi)
+            threading.Thread(target=_sweep, kwargs={"on_found": _report}, daemon=True).start()
 
 
 
@@ -564,7 +833,6 @@ def serve():
         pass
     _announce(sock)
     sock.settimeout(1.0)
-    announced = ANNOUNCED
     threading.Thread(target=_announce_on_request, args=(sock,), daemon=True).start()
     # interfaces come and go (the hotspot, a cable, a VPN): rejoin and say hello again every now and then,
     # so a device that appears on a new network still finds us without anyone pressing Search
@@ -591,21 +859,8 @@ def serve():
             continue
         if _is_self(d, addr):
             continue
-        if announced.get(d.get("fingerprint")) == addr[0]:
-            # already on the list; answering again is enough
-            if d.get("announce"):
-                try:
-                    sock.sendto(json.dumps(dict(ME, announce=False)).encode(), addr)
-                except OSError:
-                    pass
-            continue
-        announced[d.get("fingerprint")] = addr[0]
-        _register_with(addr[0], d.get("port", PORT), d.get("protocol", "http"))
-        print(json.dumps({"event": "device", "alias": d.get("alias", addr[0]), "ip": addr[0],
-                          "port": d.get("port", PORT), "deviceModel": d.get("deviceModel", ""),
-                          "deviceType": d.get("deviceType", "desktop"),
-                          "protocol": d.get("protocol", "http"),
-                          "fingerprint": d.get("fingerprint", addr[0])}), flush=True)
+        if _report(addr[0], d):         # already on the list: answering again is enough
+            _register_with(addr[0], d.get("port", PORT), d.get("protocol", "http"))
         if d.get("announce"):
             try:
                 sock.sendto(json.dumps(dict(ME, announce=False)).encode(), addr)
@@ -623,13 +878,13 @@ def main(argv):
         return discover(argv[2] if len(argv) > 2 else 3.0)
     if cmd == "send" and len(argv) >= 5:
         # send <ip> <port> [--protocol http|https] <file…>
-        rest, proto = argv[4:], None
-        if rest and rest[0] == "--protocol" and len(rest) > 1:
-            proto, rest = rest[1], rest[2:]
+        rest, opts = argv[4:], {}
+        while rest and rest[0] in ("--protocol", "--fingerprint") and len(rest) > 1:
+            opts[rest[0][2:]], rest = rest[1], rest[2:]
         if not rest:
             print(__doc__)
             return 2
-        return send(argv[2], argv[3], rest, proto)
+        return send(argv[2], argv[3], rest, opts.get("protocol"), opts.get("fingerprint"))
     if cmd == "serve":
         return serve()
     print(__doc__)

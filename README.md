@@ -121,7 +121,10 @@ drops. No setting to remember: it watches the load average and uses hysteresis s
 - **AirDrop** — the radar, the devices around you, drag-to-send. Drag files onto someone to send straight away, or
   drop them anywhere in the window and pick who gets them; Finder's menu has **Share with AirDrop** too. It speaks
   LocalSend's protocol, so phones, tablets and other desktops running LocalSend appear here, send here and receive
-  from here.
+  from here. Networks that drop multicast (phone hotspots, guest Wi-Fi) are swept directly, a device that changed
+  address is found again by its fingerprint, and a failed send says why; tap the device to try again. If a firewall
+  runs, `./install.sh airdrop` opens port 53317 in ufw or firewalld. Every attempt is logged in
+  `~/.cache/macshell/airdrop.log`.
 - **App Store** — Flathub, laid out like the real App Store: Discover, categories, screenshots, search and updates.
 - **Reminders** — the macOS window: smart lists in the sidebar, a big title, type to add, click a circle to tick it off,
   click the text to rename, × to delete. It edits the same `reminders.md` the desktop widget shows.
