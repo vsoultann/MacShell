@@ -256,16 +256,16 @@ Scope {
     readonly property string iconLookWanted: (iconStyle === "clear" || iconStyle === "tinted") && !tintAllowed ? "default" : iconStyle
     // what the icons show right now: changes half-way through the switch animation (iconSwap), never abruptly
     property string iconLook: "default"
-    property real iconSwap: 0                 // 0 resting … 1 the icons are shrunk, blurred and faded mid-switch
+    property real iconSwap: 0                 // 0 resting … 1 the icons are faded out mid-switch
     onIconLookWantedChanged: {
         if (!settingsReady) { iconLook = iconLookWanted; return; }
         if (iconLook !== iconLookWanted) iconSwitch.restart();
     }
     SequentialAnimation {
         id: iconSwitch
-        NumberAnimation { target: root; property: "iconSwap"; to: 1; duration: 150; easing.type: Easing.InCubic }
+        NumberAnimation { target: root; property: "iconSwap"; to: 1; duration: 160; easing.type: Easing.InOutQuad }
         ScriptAction { script: root.iconLook = root.iconLookWanted }
-        NumberAnimation { target: root; property: "iconSwap"; to: 0; duration: 420; easing.type: Easing.OutQuint }
+        NumberAnimation { target: root; property: "iconSwap"; to: 0; duration: 260; easing.type: Easing.InOutQuad }
     }
     readonly property bool iconsTinted: iconLook === "clear" || iconLook === "tinted"
     readonly property color iconTintColor: iconTint !== "" ? iconTint : accent
@@ -1415,10 +1415,7 @@ Scope {
                                         colorizationColor: root.iconColorizeColor
                                         brightness: root.iconBright
                                         saturation: root.iconSat
-                                        opacity: root.iconAlpha * (1 - 0.7 * root.iconSwap)
-                                        scale: 1 - 0.16 * root.iconSwap
-                                        blurEnabled: root.iconSwap > 0.001; blurMax: 24; blur: root.iconSwap
-                                        Behavior on colorization { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+                                        opacity: root.iconAlpha * (1 - root.iconSwap)
                                     }
                                 }
                             }
@@ -3294,8 +3291,10 @@ Scope {
                                           : (lua ? "Hyprland shortcut" : (b.dispatcher + (b.arg ? " " + b.arg : ""))),
                                     named: !!(b.description && b.description !== ""),
                                     dispatcher: b.dispatcher, arg: b.arg || "", lua: lua,
-                                    // what we would re-bind it to on another key (Lua actions cannot be rebuilt from here)
-                                    action: lua ? "" : ("hl.dsp." + b.dispatcher + "(" + (b.arg ? '"' + String(b.arg).replace(/"/g, '\\"') + '"' : "") + ")")
+                                    // what we would re-bind it to on another key: a Lua action is looked up by its
+                                    // description (the session keeps them in MACSHELL_ACTIONS)
+                                    action: lua ? (b.description ? "MACSHELL_ACTIONS[" + JSON.stringify(b.description) + "]" : "")
+                                                : ("hl.dsp." + b.dispatcher + "(" + (b.arg ? '"' + String(b.arg).replace(/"/g, '\\"') + '"' : "") + ")")
                                 });
                             }
                             // the ones that say what they do come first
@@ -3327,9 +3326,22 @@ Scope {
                     { id: "closewin",   name: "Close window",         def: "SUPER + W",         dsp: "hl.dsp.window.close()" },
                     { id: "zoomwin",    name: "Zoom (fullscreen)",    def: "SUPER + F",         dsp: "hl.dsp.window.fullscreen_state({ internal = 2, client = 0 })" }
                 ]
+                // a lone modifier (tapping Super) fires when it is let go
+                function relOpt(combo) { return /(SUPER_L|SUPER_R)$/.test(combo) ? ", release = true" : ""; }
+                // while listening, Hyprland's shortcuts are paused (an empty submap), or Super + W would close Settings
+                // instead of being recorded; back to normal when done, and after 15 s whatever happens
+                onCapturingChanged: {
+                    Quickshell.execDetached(["hyprctl", "dispatch", capturing !== "" ? 'hl.dsp.submap("macshell-keys")' : 'hl.dsp.submap("reset")']);
+                    if (capturing !== "") capSafety.restart(); else capSafety.stop();
+                }
+                Component.onDestruction: if (capturing !== "") Quickshell.execDetached(["hyprctl", "dispatch", 'hl.dsp.submap("reset")'])
+                Timer { id: capSafety; interval: 15000; onTriggered: scPane.capturing = "" }
+                property bool soloSuper: false
                 function keyOf(id) { var m = root.shortcuts || ({}); var d = scPane.defs; for (var i = 0; i < d.length; i++) if (d[i].id === id) return m[id] !== undefined ? m[id] : d[i].def; return ""; }
                 function setKey(id, combo) {
                     var m = {}; for (var k in (root.shortcuts || ({}))) m[k] = root.shortcuts[k];
+                    // a key belongs to one shortcut: whichever had it before gives it up (switched off)
+                    if (combo !== "") for (var i = 0; i < scPane.defs.length; i++) if (scPane.defs[i].id !== id && scPane.keyOf(scPane.defs[i].id) === combo) m[scPane.defs[i].id] = "";
                     if (combo === "") delete m[id]; else m[id] = combo;
                     root.shortcuts = m;
                     root.saveSettings();
@@ -3341,20 +3353,27 @@ Scope {
                     // first (and the key it moves to cleared), or one key press would run it twice
                     var lines = ["-- written by MacShell (Settings → Keyboard Shortcuts)",
                                  "local function free(k) for _ = 1, 4 do hl.unbind(k) end end"];
+                    // every key involved is freed first, then everything is bound: a key one shortcut gives up and
+                    // another takes is never unbound again after it has been taken
+                    var binds = [];
                     for (var i = 0; i < scPane.defs.length; i++) {
                         var d = scPane.defs[i], k = scPane.keyOf(d.id);
                         lines.push('free("' + d.def + '")');
                         if (k === "") continue;
                         if (k !== d.def) lines.push('free("' + k + '")');
                         var action = d.dsp ? d.dsp : 'hl.dsp.exec_cmd("' + mac + d.cmd + '")';
-                        lines.push('hl.bind("' + k + '", ' + action + ', { description = "MacShell: ' + d.name + '" })');
+                        binds.push('hl.bind("' + k + '", ' + action + ', { description = "MacShell: ' + d.name + '"' + scPane.relOpt(k) + ' })');
                     }
+                    lines = lines.concat(binds);
+                    // tapping Super opens Spotlight only while Spotlight keeps its default key (or is set to the tap itself)
+                    var spot = scPane.keyOf("spotlight");
+                    if (spot !== "SUPER + Space") lines.splice(2, 0, 'free("SUPER + SUPER_L")');
                     // shortcuts you moved or switched off in the Hyprland list
                     var hm = root.hyprBinds || ({});
                     for (var h in hm) {
                         lines.push('free("' + h + '")');
                         var v = hm[h];
-                        if (v && v.combo && v.action) lines.push('hl.bind("' + v.combo + '", ' + v.action + ', { description = "' + (v.desc || "Hyprland") + '" })');
+                        if (v && v.combo && v.action) lines.push('if ' + v.action + ' then free("' + v.combo + '"); hl.bind("' + v.combo + '", ' + v.action + ', { description = ' + JSON.stringify(v.desc || "Hyprland") + scPane.relOpt(v.combo) + ' }) end');
                     }
                     Quickshell.execDetached(["sh", "-c",
                         "mkdir -p \"$HOME/.config/macshell\"; printf '%s\\n' \"$1\" > \"$HOME/.config/macshell/keybinds.lua\"; hyprctl reload >/dev/null 2>&1",
@@ -3377,7 +3396,7 @@ Scope {
                                 Behavior on color { ColorAnimation { duration: 140 } }
                                 Text {
                                     anchors.centerIn: parent
-                                    text: scPane.capturing === modelData.id ? "Press keys\u2026" : scPane.keyOf(modelData.id).replace(/ \+ /g, "  ")
+                                    text: scPane.capturing === modelData.id ? "Press keys\u2026" : (scPane.keyOf(modelData.id) === "" ? "Off" : scPane.keyOf(modelData.id)).replace(/^SUPER \+ SUPER_[LR]$/, "Tap Super").replace(/ \+ /g, "  ")
                                     color: scPane.capturing === modelData.id ? "white" : pal.text
                                     font.family: pal.fam; font.pixelSize: 12
                                 }
@@ -3472,7 +3491,9 @@ Scope {
                             scPane.capturing = "";
                             return;
                         }
-                        if (event.key === Qt.Key_Control || event.key === Qt.Key_Shift || event.key === Qt.Key_Alt || event.key === Qt.Key_Meta) return;
+                        if (event.key === Qt.Key_Meta || event.key === Qt.Key_Super_L) { scPane.soloSuper = true; return; }
+                        scPane.soloSuper = false;
+                        if (event.key === Qt.Key_Control || event.key === Qt.Key_Shift || event.key === Qt.Key_Alt) return;
                         var parts = [];
                         if (event.modifiers & Qt.MetaModifier) parts.push("SUPER");
                         if (event.modifiers & Qt.ControlModifier) parts.push("CTRL");
@@ -3484,6 +3505,16 @@ Scope {
                         if (scPane.capturing.indexOf("hypr:") === 0) {
                             if (scPane.pending) scPane.moveBind(scPane.pending, parts.join(" + "));
                         } else scPane.setKey(scPane.capturing, parts.join(" + "));
+                        scPane.capturing = "";
+                    }
+                    // Super pressed and let go with nothing else: the shortcut is a tap of Super
+                    Keys.onReleased: event => {
+                        if (scPane.capturing === "" || !scPane.soloSuper) return;
+                        if (event.key !== Qt.Key_Meta && event.key !== Qt.Key_Super_L) return;
+                        event.accepted = true;
+                        scPane.soloSuper = false;
+                        if (scPane.capturing.indexOf("hypr:") === 0) { if (scPane.pending) scPane.moveBind(scPane.pending, "SUPER + SUPER_L"); }
+                        else scPane.setKey(scPane.capturing, "SUPER + SUPER_L");
                         scPane.capturing = "";
                     }
                 }
@@ -5970,12 +6001,8 @@ Scope {
                                     colorization: root.iconColorize
                                     colorizationColor: root.iconColorizeColor
                                     saturation: root.iconSat
-                                    // switching the icon style: each icon shrinks a little, blurs and dims, changes, and
-                                    // settles back — one motion (iconSwitch)
-                                    opacity: root.iconAlpha * (1 - 0.7 * root.iconSwap)
-                                    scale: 1 - 0.16 * root.iconSwap
-                                    blurEnabled: root.iconSwap > 0.001; blurMax: 24; blur: root.iconSwap
-                                    Behavior on colorization { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+                                    // switching the icon style: a simple fade out and back in (iconSwitch)
+                                    opacity: root.iconAlpha * (1 - root.iconSwap)
                                     brightness: (ma.pressed ? -0.3 : 0.0) + root.iconBright
                                 }
 

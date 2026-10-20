@@ -1,5 +1,15 @@
 -- MacShell session keys. Settings → Keyboard Shortcuts writes ~/.config/macshell/keybinds.lua, which is read
 -- after this file and re-binds MacShell's own shortcuts (Spotlight, Finder, Control Center, …) to your keys.
+-- Every described shortcut's action is kept by name, so Settings can move a shortcut to another key (a Lua action
+-- can't be rebuilt from `hyprctl binds`, but it can be looked up here by its description).
+MACSHELL_ACTIONS = {}
+do
+    local bind = hl.bind
+    hl.bind = function(keys, action, opts)
+        if type(opts) == "table" and opts.description then MACSHELL_ACTIONS[opts.description] = action end
+        return bind(keys, action, opts)
+    end
+end
 local mac = "qs -c MacShell ipc call "
 local function ipc(cmd) return hl.dsp.exec_cmd(mac .. cmd) end
 local function first(...)       -- the first of these programs that is installed
@@ -10,6 +20,7 @@ end
 
 -- ── MacShell (defaults; Settings → Keyboard Shortcuts can change these) ──
 hl.bind("SUPER + Space", ipc("spotlight toggle"), { description = "MacShell: Spotlight" })
+-- tapping Super also opens Spotlight; it moves (or goes away) with Spotlight's shortcut in Settings
 hl.bind("SUPER + SUPER_L", ipc("spotlight toggle"), { release = true })
 hl.bind("SUPER + V", ipc("spotlight clipboard"), { description = "MacShell: Clipboard history" })
 hl.bind("SUPER + Period", ipc("spotlight emoji"), { description = "MacShell: Emoji picker" })
@@ -127,4 +138,10 @@ hl.define_submap("virtual-machine", function()
         if hl.get_current_submap() == "virtual-machine" then hl.dispatch(hl.dsp.submap("reset"))
         else hl.dispatch(hl.dsp.submap("virtual-machine")) end
     end, { submap_universal = true })
+end)
+
+-- Settings → Keyboard Shortcuts switches to this (empty) submap while it listens for keys, so the keys you press
+-- reach Settings instead of running their shortcuts (Super + W used to close Settings). Super + Alt + Escape leaves.
+hl.define_submap("macshell-keys", function()
+    hl.bind("SUPER + ALT + Escape", hl.dsp.submap("reset"))
 end)
