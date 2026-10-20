@@ -45,6 +45,10 @@ Scope {
     property real blurAmt: 0.5           // blur of what's behind the widgets: 0 = clear, 1 = heavy
     property var widgets: []                 // [{ id, type, size: "s"|"m"|"l", x, y, screen, style? }]
     property bool editing: false
+    // a video wallpaper: the glass can't refract a copy of it (a copy is never in step with the real one), so the
+    // compositor blurs the real, moving wallpaper behind each card instead (the "macwidgetsbg" layer below the cards)
+    readonly property bool liveGlass: bar ? bar.wallpaperVideo !== "" : false
+    property string draggingId: ""
     property bool loaded: false
     property string selected: ""             // widget being edited (its toolbar shows)
     property var stockSymbols: ["AAPL", "NVDA", "^GSPC", "BTC-USD"]
@@ -1851,6 +1855,47 @@ Scope {
         return null;
     }
 
+    // ═════════════ VIDEO WALLPAPER: THE COMPOSITOR'S LIVE BLUR UNDER EACH CARD ═════════════
+    // One nearly clear rounded rectangle per glass card, on a layer Hyprland blurs (rules.lua: macwidgetsbg). Declared
+    // before the widgets' own layer, so it stacks under it. Hidden while editing (the layers rise above the windows
+    // and the glass refracts a snapshot then) and behind a fullscreen window.
+    Variants {
+        model: (root.loaded && root.enabled && root.liveGlass) ? Quickshell.screens : []
+        PanelWindow {
+            id: bgWin
+            required property var modelData
+            screen: modelData
+            readonly property var mine: root.widgets.filter(function (w) { return root.screenOf(w) === bgWin.modelData.name && (w.style || root.style) !== "opaque"; })
+            readonly property bool covered: root.bar ? root.bar.screenFullscreen[bgWin.modelData.name] === true : false
+            visible: mine.length > 0 && !root.editing && !covered && !root.asleep
+            anchors { top: true; bottom: true; left: true; right: true }
+            exclusionMode: ExclusionMode.Ignore
+            color: "transparent"
+            mask: Region { }
+            WlrLayershell.layer: WlrLayer.Bottom
+            WlrLayershell.namespace: "macwidgetsbg"
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+            Repeater {
+                model: bgWin.mine
+                delegate: Rectangle {
+                    required property var modelData
+                    readonly property var d: root.dims(modelData.size)
+                    x: modelData.x; y: modelData.y; width: d.w; height: d.h
+                    Behavior on x { NumberAnimation { duration: 420; easing.type: Easing.OutQuint } }
+                    Behavior on y { NumberAnimation { duration: 420; easing.type: Easing.OutQuint } }
+                    Behavior on width { NumberAnimation { duration: 420; easing.type: Easing.OutQuint } }
+                    Behavior on height { NumberAnimation { duration: 420; easing.type: Easing.OutQuint } }
+                    radius: 22
+                    // just above the layer rule's ignore_alpha, so Hyprland blurs here and nowhere else
+                    color: root.dark ? Qt.rgba(0, 0, 0, 0.07) : Qt.rgba(1, 1, 1, 0.07)
+                    // the card being dragged leaves its blur behind until it lands
+                    opacity: root.draggingId === modelData.id ? 0 : 1
+                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                }
+            }
+        }
+    }
+
     // ═════════════ ONE DESKTOP LAYER PER SCREEN ═════════════
     Variants {
         model: (root.loaded && root.enabled) ? Quickshell.screens : []
@@ -1933,7 +1978,7 @@ Scope {
                 Loader {
                     id: liveWall
                     anchors.fill: parent
-                    active: root.glassAnim !== "" && win.mine.length > 0
+                    active: false       // superseded by the compositor's live blur (macwidgetsbg)
                     sourceComponent: AnimatedImage {
                         source: "file://" + root.glassAnim
                         fillMode: Image.PreserveAspectCrop
@@ -1960,8 +2005,9 @@ Scope {
             }
             // only the copies some widget actually uses are kept (Liquid Glass → the clear one, the other styles →
             // the blurred one); the blurred copy is half resolution — it's a heavy blur, nobody can tell
-            readonly property bool needClear: win.mine.some(function (w) { return (w.style || root.style) === "glass"; })
-            readonly property bool needBlur: win.mine.some(function (w) { return (w.style || root.style) !== "glass"; })
+            readonly property bool shaderGlass: !root.liveGlass || root.editing
+            readonly property bool needClear: win.shaderGlass && win.mine.some(function (w) { return (w.style || root.style) === "glass"; })
+            readonly property bool needBlur: win.shaderGlass && win.mine.some(function (w) { return (w.style || root.style) !== "glass"; })
             MultiEffect {
                 id: wallBlurFx
                 source: win.needBlur ? wallTex : null
@@ -2098,11 +2144,11 @@ Scope {
                     ShaderEffect {
                         id: glassFx
                         readonly property real pad: 12
-                        visible: st !== "opaque" && root.shaderOk && root.shaderUrl != ""
+                        visible: st !== "opaque" && root.shaderOk && root.shaderUrl != "" && win.shaderGlass
                         x: -pad; y: -pad
                         width: wd.width + 2 * pad; height: wd.height + 2 * pad
                         fragmentShader: root.shaderUrl
-                        property variant src: st === "glass" ? wallClear : wallBlur
+                        property variant src: !win.shaderGlass ? wallTex : (st === "glass" ? wallClear : wallBlur)
                         property vector2d itemSize: Qt.vector2d(width, height)
                         property vector2d glassSize: Qt.vector2d(wd.width, wd.height)
                         property vector2d srcSize: Qt.vector2d(win.width, win.height)
@@ -2129,6 +2175,10 @@ Scope {
                         color: st === "opaque" ? (root.dark ? "#1C1C1E" : "#F2F2F7")
                              : st === "tinted" ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.42)
                              : st === "frosted" ? (root.dark ? Qt.rgba(0.10, 0.10, 0.12, 0.40) : Qt.rgba(1, 1, 1, 0.42))
+                             // video wallpaper: the blur comes from below; a held card (its blur stays put) gets a fuller fill
+                             : !win.shaderGlass ? (wd.held ? (root.dark ? Qt.rgba(0.14, 0.14, 0.16, 0.6) : Qt.rgba(1, 1, 1, 0.6))
+                                                 : st === "glass" ? (root.dark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(1, 1, 1, 0.16))
+                                                 : (root.dark ? Qt.rgba(0.10, 0.10, 0.12, 0.28) : Qt.rgba(1, 1, 1, 0.30)))
                              : (!root.shaderOk ? Qt.rgba(0.12, 0.12, 0.14, 0.5) : "transparent")
                         border.width: st === "opaque" ? 0.5 : 0
                         border.color: Qt.rgba(1, 1, 1, 0.08)
@@ -2139,6 +2189,20 @@ Scope {
                             GradientStop { position: 0; color: root.weather && root.weather.current.is_day ? "#2F7FE0" : "#1B2A4A" }
                             GradientStop { position: 1; color: root.weather && root.weather.current.is_day ? "#6CB6F5" : "#2E3B5C" }
                         }
+                    }
+
+                    // video wallpaper: the glass edge the shader would draw — a fine bright rim and a sheen across the top
+                    Rectangle {
+                        visible: !win.shaderGlass && st !== "opaque"
+                        anchors.fill: parent
+                        radius: 22
+                        gradient: Gradient {
+                            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, st === "glass" ? 0.16 : 0.08) }
+                            GradientStop { position: 0.4; color: Qt.rgba(1, 1, 1, 0.0) }
+                            GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, st === "glass" ? 0.06 : 0.0) }
+                        }
+                        border.width: 1
+                        border.color: Qt.rgba(1, 1, 1, st === "glass" ? 0.34 : 0.16)
                     }
 
                     // Music: the card takes the album's colour (close to the cover, not the same) with a subtle brighter edge
@@ -2194,6 +2258,7 @@ Scope {
                         property point grab: Qt.point(0, 0)
                         onTranslationChanged: { wd.dx = translation.x; wd.dy = translation.y; }
                         onActiveChanged: {
+                            root.draggingId = active ? wd.modelData.id : "";
                             if (active) { root.selected = wd.modelData.id; grab = centroid.pressPosition; return; }
                             dropProc.from = { dx: wd.dx, dy: wd.dy, gx: grab.x, gy: grab.y };
                             dropProc.last = ""; dropProc.tries = 0;

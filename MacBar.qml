@@ -194,6 +194,13 @@ Scope {
         powerProfile = p;
         Quickshell.execDetached(["sh", "-c", "powerprofilesctl set \"$1\" 2>/dev/null", "sh", p]);
     }
+    // the power profile can change from anywhere (powerprofilesctl, the battery saver, Game Mode): keep it current
+    Process {
+        id: ppProc
+        command: ["sh", "-c", "powerprofilesctl get 2>/dev/null"]
+        stdout: StdioCollector { onStreamFinished: { var p = text.trim(); if (p !== "" && p !== root.powerProfile) root.powerProfile = p; } }
+    }
+    Timer { interval: 5000; repeat: true; running: true; triggeredOnStart: true; onTriggered: if (!ppProc.running) ppProc.running = true }
     function toggleLowPower() { setPowerProfile(powerProfile === "power-saver" ? "balanced" : "power-saver"); }
     function toggleHotspot() {
         hotspotOn = !hotspotOn;
@@ -559,6 +566,7 @@ Scope {
     }
     // Measured from the wallpaper's top edge, not from the screen: macOS follows the desktop picture, and reading
     // the picture costs one command per wallpaper change instead of a screen grab on a timer.
+    property bool barToneLive: false
     function measureBarTone(sx, sy, sw, sh) {
         if (!autoContrast || gaming || barToneProc.running) return;
         barToneProc.command = ["sh", "-c",
@@ -566,7 +574,9 @@ Scope {
             + "-format '%[fx:0.299*mean.r+0.587*mean.g+0.114*mean.b]' info: 2>/dev/null; then exit 0; fi; "
             + "grim -s 0.06 -g \"$1,$2 $3x$4\" - 2>/dev/null | magick - -format '%[fx:0.299*mean.r+0.587*mean.g+0.114*mean.b]' info: 2>/dev/null",
             "sh", String(Math.round(sx)), String(Math.round(sy)), String(Math.max(8, Math.round(sw))), String(Math.max(8, Math.round(sh))),
-            root.wallpaperPath];
+            // a moving wallpaper has no still that stays true: measure what is really on screen
+            root.wallpaperVideo !== "" ? "" : root.wallpaperPath];
+        barToneLive = root.wallpaperVideo !== "" || root.wallpaperPath === "";
         barToneProc.running = true;
     }
     Process {
@@ -575,6 +585,11 @@ Scope {
             onStreamFinished: {
                 var v = parseFloat(text);
                 if (isNaN(v)) return;
+                // measured live, the strip includes the bar's own tint: take it back out, or the tint would keep choosing itself
+                if (root.barToneLive && root.effBarBg < 0.95) {
+                    var a = root.effBarBg, f = root.barDark ? 0.10 : 1.0;
+                    v = Math.max(0, Math.min(1, (v - a * f) / (1 - a)));
+                }
                 var L = Math.pow(Math.max(0, Math.min(1, v)), 2.2);
                 // whichever of the two text colours has the better WCAG contrast against what is behind the strip
                 root.barTone = (1.05 / (L + 0.05)) >= ((L + 0.05) / 0.062) ? -1 : 1;
@@ -1830,7 +1845,8 @@ Scope {
     readonly property string soundDir: Quickshell.env("HOME") + "/.local/share/sounds/macshell"
     property var soundLast: ({})
     function playSound(name, vol) {
-        if (!uiSounds || gaming) return;
+        // muted (or turned all the way down) means silent: interface sounds too
+        if (!uiSounds || gaming || muted || volume < 0.005) return;
         var now = Date.now(), last = soundLast[name] || 0;
         if (now - last < 90) return;                 // a burst of volume steps → one pop per step, not a buzz
         soundLast[name] = now;
@@ -1847,7 +1863,12 @@ Scope {
         osdTimer.restart();
     }
     onVolumeChanged: showOsd("volume", muted ? 0 : volume)
-    onMutedChanged: showOsd("volume", muted ? 0 : volume)
+    onMutedChanged: { showOsd("volume", muted ? 0 : volume); syncMuteLed("speaker", muted); }
+    // the laptop's mute / mic-mute key lights follow the sound card's own switches: keep those in step
+    function syncMuteLed(what, on) {
+        Quickshell.execDetached([Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-mute-led.sh", what, on ? "on" : "off"]);
+    }
+    Timer { interval: 2500; running: true; onTriggered: { root.syncMuteLed("speaker", root.muted); root.syncMuteLed("mic", root.micMuted); } }
     Timer { id: osdTimer; interval: 1500; onTriggered: root.osdVisible = false }
     Timer { interval: 1200; running: true; repeat: false; onTriggered: root.osdReady = true }
     function setVolume(v) { osdQuiet("volume", 600); if (sink && sink.audio) { sink.audio.muted = false; sink.audio.volume = Math.max(0, Math.min(1, v)); } }
@@ -1857,7 +1878,7 @@ Scope {
     readonly property bool micMuted: (micSource && micSource.audio) ? micSource.audio.muted : true
     function toggleMicMute() { osdQuiet("volume", 600); if (micSource && micSource.audio) micSource.audio.muted = !micSource.audio.muted; }
     // the mic-mute key (or Alt + mute) shows the HUD with the microphone, crossed out while muted
-    onMicMutedChanged: showOsd("mic", micMuted ? 0 : micVolume)
+    onMicMutedChanged: { showOsd("mic", micMuted ? 0 : micVolume); syncMuteLed("mic", micMuted); }
     readonly property real volLevel: muted || volume <= 0.001 ? 0 : (volume < 0.34 ? 1 : (volume < 0.67 ? 2 : 3))
     readonly property real micVolume: (micSource && micSource.audio) ? micSource.audio.volume : 0
     function setMicVolume(v) { if (micSource && micSource.audio) { micSource.audio.muted = false; micSource.audio.volume = Math.max(0, Math.min(1, v)); } }
@@ -4154,7 +4175,9 @@ Scope {
 
             Rectangle {
                 anchors.fill: parent
-                color: root.darkMode ? Qt.rgba(0.10, 0.10, 0.11, root.effBarBg) : Qt.rgba(1, 1, 1, root.effBarBg)
+                // the strip's tint follows what is behind it, like the text does: dark over a dark wallpaper, light over a light one
+                color: root.barDark ? Qt.rgba(0.10, 0.10, 0.11, root.effBarBg) : Qt.rgba(1, 1, 1, root.effBarBg)
+                Behavior on color { ColorAnimation { duration: 420; easing.type: Easing.OutCubic } }
             }
         }
 
@@ -4222,10 +4245,17 @@ Scope {
                     running: root.autoContrast && !root.gaming && ui.toastScreen
                     onTriggered: ui.sampleBar()
                 }
+                // a video wallpaper changes under the bar all the time: follow it
+                Timer {
+                    interval: 4000; repeat: true
+                    running: root.autoContrast && !root.gaming && ui.toastScreen && root.wallpaperVideo !== ""
+                    onTriggered: ui.sampleBar()
+                }
                 Connections {
                     target: root
                     function onWallpaperPathChanged() { ui.sampleBar(); }
                     function onDarkModeChanged() { ui.sampleBar(); }
+                function onWallpaperVideoChanged() { ui.sampleBar(); }
                 }
 
                 function openTray(item, x) {
@@ -5124,7 +5154,9 @@ Scope {
                                             width: Math.max(2, (parent.width - 3) * Math.min(1, root.batPct / 100))
                                             height: parent.height - 3
                                             radius: 2
-                                            color: root.charging ? "#30D158" : (root.batPct <= 15 ? "#FF453A" : bpal.fg)
+                                            // like macOS: green while charging, yellow in Low Power Mode, red when low
+                                            color: root.charging ? "#30D158" : (root.powerProfile === "power-saver" ? "#FFD60A" : (root.batPct <= 15 ? "#FF453A" : bpal.fg))
+                                            Behavior on color { ColorAnimation { duration: 320; easing.type: Easing.OutCubic } }
                                         }
                                     }
                                     Rectangle { x: 23; y: 4; width: 2; height: 4; radius: 1; color: bpal.fg2 }

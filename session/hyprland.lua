@@ -14,6 +14,7 @@ require("macshell.input")
 require("macshell.rules");    custom("rules")
 require("macshell.keybinds"); custom("keybinds")
 require("macshell.execs");    custom("execs")
+require("macshell.displays")
 
 -- displays are shared with the main session (stretchres owns these files).
 -- dofile, not require: a rewritten stretchres.lua must be read again on reload

@@ -248,17 +248,35 @@ Scope {
     // or Liquid Glass. iconTint "" = the accent colour
     property string iconStyle: "default"
     property string iconTint: ""
-    readonly property bool tintAllowed: bar ? (bar.material === "liquid" || bar.material === "frosted") : true
-    // Settings → Icons → Icon style, like macOS Tahoe: Default, Dark, Clear (frosted white glass) or Tinted (one
-    // colour). Clear and Tinted are glass looks: with Blur / Opaque they fall back to Default.
-    readonly property string iconLook: (iconStyle === "clear" || iconStyle === "tinted") && !tintAllowed ? "default" : iconStyle
+    // Clear and Tinted are glass looks: every glass material has them (Liquid Glass, Frosted, Blur, Custom); only
+    // Opaque (and Game Mode, which makes everything solid) falls back to Default
+    readonly property string glassKind: !bar ? "liquid" : (bar.material === "custom" ? (bar.barStyle === "liquid" ? "liquid" : "blur") : bar.material)
+    readonly property bool tintAllowed: bar ? (bar.material !== "opaque" && !bar.solidAll) : true
+    // Settings → Icons → Icon style, like macOS Tahoe: Default, Dark, Clear (glass) or Tinted (one colour)
+    readonly property string iconLookWanted: (iconStyle === "clear" || iconStyle === "tinted") && !tintAllowed ? "default" : iconStyle
+    // what the icons show right now: changes half-way through the switch animation (iconSwap), never abruptly
+    property string iconLook: "default"
+    property real iconSwap: 0                 // 0 resting … 1 the icons are shrunk, blurred and faded mid-switch
+    onIconLookWantedChanged: {
+        if (!settingsReady) { iconLook = iconLookWanted; return; }
+        if (iconLook !== iconLookWanted) iconSwitch.restart();
+    }
+    SequentialAnimation {
+        id: iconSwitch
+        NumberAnimation { target: root; property: "iconSwap"; to: 1; duration: 150; easing.type: Easing.InCubic }
+        ScriptAction { script: root.iconLook = root.iconLookWanted }
+        NumberAnimation { target: root; property: "iconSwap"; to: 0; duration: 420; easing.type: Easing.OutQuint }
+    }
     readonly property bool iconsTinted: iconLook === "clear" || iconLook === "tinted"
     readonly property color iconTintColor: iconTint !== "" ? iconTint : accent
-    readonly property real iconColorize: iconLook === "tinted" ? 0.9 : (iconLook === "clear" ? 0.95 : 0)
+    // Clear follows the material: Liquid Glass is the clearest (see-through, bright), Frosted a milky white,
+    // Blur a soft white that stays most solid
+    readonly property real iconColorize: iconLook === "tinted" ? 1.0 : (iconLook === "clear" ? (glassKind === "liquid" ? 0.97 : glassKind === "frosted" ? 0.92 : 0.85) : 0)
     readonly property color iconColorizeColor: iconLook === "clear" ? "#FFFFFF" : iconTintColor
-    readonly property real iconBright: iconLook === "clear" ? 0.1 : 0
-    readonly property real iconSat: 0
-    readonly property real iconAlpha: iconLook === "clear" ? 0.82 : 1
+    readonly property real iconBright: iconLook === "clear" ? (glassKind === "liquid" ? 0.18 : glassKind === "frosted" ? 0.08 : 0.02) : (iconLook === "tinted" ? 0.12 : 0)
+    // Tinted: the colour has to read clearly, not as a faint wash over grey
+    readonly property real iconSat: iconLook === "tinted" ? 0.6 : 0
+    readonly property real iconAlpha: iconLook === "clear" ? (glassKind === "liquid" ? 0.66 : glassKind === "frosted" ? 0.8 : 0.9) : 1
     property var uiByScreen: ({})          // each screen's Dock, so the minimise effect knows where to aim
     // Where a window should pour into: its own preview cell in the Dock if it has one, otherwise its app's icon.
     // Returned in global (layout) coordinates, or null when the Dock isn't on that screen.
@@ -300,6 +318,8 @@ Scope {
         function pinfolder(p: string): void { root.pinFolder(p); }
         function unpinfolder(p: string): void { root.unpinFolder(p); }
         function stack(p: string): void { root.stackRequest(p); }
+        // Settings → Icons → Icon style: default | dark | clear | tinted
+        function iconstyle(v: string): void { if (["default", "dark", "clear", "tinted"].indexOf(v) >= 0) root.iconStyle = v; }
     }
     property string stackPath: ""
     property var stackFiles: []
@@ -1395,7 +1415,9 @@ Scope {
                                         colorizationColor: root.iconColorizeColor
                                         brightness: root.iconBright
                                         saturation: root.iconSat
-                                        opacity: root.iconAlpha
+                                        opacity: root.iconAlpha * (1 - 0.7 * root.iconSwap)
+                                        scale: 1 - 0.16 * root.iconSwap
+                                        blurEnabled: root.iconSwap > 0.001; blurMax: 24; blur: root.iconSwap
                                         Behavior on colorization { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
                                     }
                                 }
@@ -1408,8 +1430,8 @@ Scope {
                     SRow {
                         t: pal
                         title: "Icon style"
-                        subtitle: root.tintAllowed ? "Like macOS Tahoe: Dark icons, Clear (frosted glass) or Tinted in one colour"
-                                                   : "Clear and Tinted need the Frosted or Liquid Glass material (Appearance \u2192 Material)"
+                        subtitle: root.tintAllowed ? "Like macOS Tahoe: Dark icons, Clear glass (follows your material) or Tinted in one colour"
+                                                   : "Clear and Tinted need a glass material: Liquid Glass, Frosted or Blur (Appearance \u2192 Material)"
                         SSegmented {
                             t: pal
                             model: ["Default", "Dark", "Clear", "Tinted"]
@@ -4598,7 +4620,7 @@ Scope {
         printErrors: false
         onLoaded: {
             try { root.applySettings(JSON.parse(text())); } catch (err) { }
-            root.settingsReady = true;
+            root.settingsReady = true; root.iconLook = root.iconLookWanted;
             floatOnce.restart();            // make sure the Lua file matches the setting at least once per session
             // always built: the widgets and Mac Hello use this shader whatever the Dock style is
             root.startGlass();
@@ -5948,9 +5970,12 @@ Scope {
                                     colorization: root.iconColorize
                                     colorizationColor: root.iconColorizeColor
                                     saturation: root.iconSat
-                                    opacity: root.iconAlpha
+                                    // switching the icon style: each icon shrinks a little, blurs and dims, changes, and
+                                    // settles back — one motion (iconSwitch)
+                                    opacity: root.iconAlpha * (1 - 0.7 * root.iconSwap)
+                                    scale: 1 - 0.16 * root.iconSwap
+                                    blurEnabled: root.iconSwap > 0.001; blurMax: 24; blur: root.iconSwap
                                     Behavior on colorization { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
-                                    Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
                                     brightness: (ma.pressed ? -0.3 : 0.0) + root.iconBright
                                 }
 
@@ -6037,7 +6062,7 @@ Scope {
                                 Rectangle {
                                     id: tip
                                     visible: opacity > 0
-                                    opacity: (root.showLabels && !cell.isSep && ma.containsMouse && !ma.pressed && !ui.menuOpen && !ui.dragging) ? 1 : 0
+                                    opacity: (root.showLabels && !cell.isSep && ma.containsMouse && !ma.pressed && !ui.menuOpen && !ui.dragging && ui.stackItem === null) ? 1 : 0
                                     Behavior on opacity { NumberAnimation { duration: 120 } }
                                     z: 10
                                     width: label.implicitWidth + 22
@@ -6212,13 +6237,13 @@ Scope {
                                 source: fanItem.modelData.isImage ? "file://" + fanItem.modelData.path
                                       : (fanItem.modelData.isDir ? root.folderIcon : root.iconSrc("text-x-generic"))
                             }
-                            // the name sits under the icon and fades in once it has arrived
+                            // the name sits under the icon and travels with it: one motion, not icons first and names after
                             Item {
                                 id: labelWrap
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 y: 42
                                 width: parent.width + 26; height: lbl.implicitHeight
-                                readonly property real lp: Math.max(0, Math.min(1, (fanItem.ease - 0.55) / 0.45))
+                                readonly property real lp: Math.min(1, fanItem.ease * 1.6)
                                 opacity: lp * (fanMa.containsMouse ? 1 : 0.82)
                                 Behavior on opacity { NumberAnimation { duration: 140 } }
                                 // the icons tilt with the arc, the names stay upright and readable

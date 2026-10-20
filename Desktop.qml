@@ -165,13 +165,16 @@ Scope {
                                   : (icon.modelData.isApp ? root.appIcon(icon.modelData.path) : Quickshell.iconPath("text-x-generic", "application-x-executable")))
                             onStatusChanged: if (status === Image.Error) source = Quickshell.iconPath("application-x-executable", true)
                             // Settings → Icons → Tinted, for app icons (pictures and folders keep their colours)
-                            layer.enabled: icon.modelData.isApp === true && root.dock !== null && root.dock.iconsTinted
+                            layer.enabled: icon.modelData.isApp === true && root.dock !== null && (root.dock.iconsTinted || root.dock.iconSwap > 0.001)
                             layer.effect: MultiEffect {
+                                blurEnabled: root.dock ? root.dock.iconSwap > 0.001 : false
+                                blurMax: 24; blur: root.dock ? root.dock.iconSwap : 0
                                 colorization: root.dock ? root.dock.iconColorize : 0
                                 colorizationColor: root.dock ? root.dock.iconColorizeColor : "white"
                                 brightness: root.dock ? root.dock.iconBright : 0
                                 saturation: root.dock ? root.dock.iconSat : 0
-                                opacity: root.dock ? root.dock.iconAlpha : 1
+                                opacity: root.dock ? root.dock.iconAlpha * (1 - 0.7 * root.dock.iconSwap) : 1
+                                scale: root.dock ? 1 - 0.16 * root.dock.iconSwap : 1
                             }
                         }
                         Text {
