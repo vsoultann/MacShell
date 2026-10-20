@@ -1291,7 +1291,8 @@ Scope {
                     thickness: header.navLook === "liquid" ? 14 : 0
                     strengthMul: header.navLook === "liquid" ? 0.6 : 0
                     liquid: root.glassLiquid
-                    rim: header.navLook === "liquid" ? Math.max(0.55, root.glassRim) : (header.navLook === "frosted" ? 0.25 : 0.08)
+                    // the edge is a subtle contour glow (below), not a drawn border
+                    rim: header.navLook === "liquid" ? 0.12 : (header.navLook === "frosted" ? 0.06 : 0.02)
                     grain: root.glassGrain
                     tint: root.glassOpacity
                     tintMul: header.navLook === "frosted" ? 1.7 : (header.navLook === "blur" ? 1.2 : 1.0)
@@ -1302,7 +1303,23 @@ Scope {
                         visible: header.navLook === "frosted"
                         anchors.fill: parent; radius: height / 2
                         color: pal.dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(1, 1, 1, 0.45)
-                        border.width: 1; border.color: Qt.rgba(1, 1, 1, pal.dark ? 0.12 : 0.6)
+                    }
+                    // contour glow: a faint light traced along the outline, brighter near the pointer while hovered
+                    HoverHandler { id: pillHover }
+                    ShaderEffect {
+                        readonly property real gpad: 8
+                        x: -gpad; y: -gpad
+                        width: navPill.width + 2 * gpad; height: navPill.height + 2 * gpad
+                        fragmentShader: Qt.resolvedUrl("contourglow.frag.qsb")
+                        property vector2d itemSize: Qt.vector2d(width, height)
+                        property vector2d mouse: pillHover.hovered ? Qt.vector2d(pillHover.point.position.x, pillHover.point.position.y)
+                                                                   : Qt.vector2d(navPill.width * 0.3, 0)
+                        property real pad: gpad
+                        property real cornerR: navPill.height / 2
+                        property real amount: pillHover.hovered ? 0.75 : (pal.dark ? 0.32 : 0.45)
+                        Behavior on amount { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+                        property real spread: 46
+                        property vector4d tint: Qt.vector4d(1, 1, 1, 1)
                     }
                     // a hair-thin divider between the two buttons
                     Rectangle {

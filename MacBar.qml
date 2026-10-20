@@ -73,6 +73,7 @@ import Quickshell.Services.SystemTray
 import Quickshell.Services.UPower
 import Quickshell.Services.Pipewire
 import Quickshell.Services.Mpris
+import QtMultimedia
 import Quickshell.Services.Notifications
 import "EmojiData.js" as EmojiData
 
@@ -190,9 +191,29 @@ Scope {
     property int keyLight: 0
     property int keyLightMax: 0
     property bool mirrorOn: false
+    // switches at once in the UI; if the system refuses, it says why and shows the real profile again
     function setPowerProfile(p) {
         powerProfile = p;
-        Quickshell.execDetached(["sh", "-c", "powerprofilesctl set \"$1\" 2>/dev/null", "sh", p]);
+        ppSet.want = p;
+        ppSet.command = ["sh", "-c", "powerprofilesctl set \"$1\" 2>&1 >/dev/null; echo \"[now $(powerprofilesctl get 2>/dev/null)]\"", "sh", p];
+        ppSet.running = true;
+    }
+    Process {
+        id: ppSet
+        property string want: ""
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var m = /\[now ([a-z-]*)\]/.exec(text), now = m ? m[1] : "";
+                if (now !== "" && now !== ppSet.want) {
+                    root.powerProfile = now;
+                    var why = text.replace(/\[now [a-z-]*\]/, "").trim();
+                    var busy = /busy|intel_pstate/i.test(why);
+                    root.notify(ppSet.want === "power-saver" ? "Low Power Mode couldn't turn on" : "The power mode couldn't change",
+                                busy ? "Something else is holding the CPU in its performance governor (max-performance on this system). Run: sudo ~/max-performance-fix.sh"
+                                     : (why || "power-profiles-daemon refused the change"));
+                }
+            }
+        }
     }
     // the power profile can change from anywhere (powerprofilesctl, the battery saver, Game Mode): keep it current
     Process {
@@ -4572,12 +4593,65 @@ Scope {
                         }
                         Image {
                             anchors.fill: parent
-                            visible: status === Image.Ready
+                            visible: status === Image.Ready && !bdVideo.showing
                             source: root.fileUrl(root.wallpaperFor(win.modelData.name))
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
                             sourceSize.width: bd.width
                             smooth: true
+                        }
+                        // ── an animated (video) wallpaper: the glass refracts the video itself, frame for frame ──
+                        // While glass is on screen, the same file mpvpaper is playing plays here too (muted, hardware
+                        // decoded), kept in step with the wallpaper through mpvpaper's control socket: its position is read
+                        // when the glass appears and every 3 s, and this copy is nudged back whenever it drifts.
+                        Item {
+                            id: bdVideo
+                            anchors.fill: parent
+                            readonly property string sock: Quickshell.env("XDG_RUNTIME_DIR") + "/macshell-mpv-" + win.modelData.name + ".sock"
+                            readonly property bool wanted: root.wallpaperVideo !== "" && !root.gaming && bd.hostShown && ui.glassOnScreen
+                            property string file: ""
+                            property real mpvPos: -1          // seconds, as of mpvAt
+                            property real mpvAt: 0
+                            readonly property bool showing: wanted && file !== "" && vplayer.playbackState === MediaPlayer.PlayingState && vplayer.position > 0
+                            onWantedChanged: { if (wanted) { mpvQ.running = false; mpvQ.running = true; } else vplayer.stop(); }
+                            Process {
+                                id: mpvQ
+                                command: ["sh", "-c", "printf '%s\\n' '{\"command\":[\"get_property\",\"path\"]}' '{\"command\":[\"get_property\",\"time-pos\"]}' | nc -U -N \"$1\" 2>/dev/null", "sh", bdVideo.sock]
+                                stdout: StdioCollector {
+                                    onStreamFinished: {
+                                        var l = text.trim().split("\n");
+                                        try {
+                                            var f = JSON.parse(l[0]).data, t = JSON.parse(l[1]).data;
+                                            if (typeof f !== "string" || typeof t !== "number") return;
+                                            bdVideo.mpvPos = t; bdVideo.mpvAt = Date.now();
+                                            if (bdVideo.file !== f) bdVideo.file = f;
+                                            bdVideo.sync();
+                                        } catch (e) {}
+                                    }
+                                }
+                            }
+                            Timer { interval: 3000; repeat: true; running: bdVideo.wanted; onTriggered: { if (!mpvQ.running) mpvQ.running = true; } }
+                            function sync() {
+                                if (!wanted || file === "") return;
+                                if (vplayer.source.toString() !== "file://" + file) vplayer.source = "file://" + file;
+                                if (vplayer.playbackState !== MediaPlayer.PlayingState) vplayer.play();
+                                var d = vplayer.duration > 0 ? vplayer.duration : 0;
+                                var want = (mpvPos + (Date.now() - mpvAt) / 1000) * 1000;
+                                if (d > 0) want = want % d;
+                                if (Math.abs(vplayer.position - want) > 120 && vplayer.seekable) vplayer.position = Math.round(want + 40);
+                            }
+                            MediaPlayer {
+                                id: vplayer
+                                loops: MediaPlayer.Infinite
+                                videoOutput: vout
+                                onMediaStatusChanged: if (mediaStatus === MediaPlayer.LoadedMedia || mediaStatus === MediaPlayer.BufferedMedia) bdVideo.sync()
+                            }
+                            VideoOutput {
+                                id: vout
+                                anchors.fill: parent
+                                fillMode: VideoOutput.PreserveAspectCrop
+                                visible: bdVideo.showing
+                            }
                         }
 
                         ListModel { id: wm }
