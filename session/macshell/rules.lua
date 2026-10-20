@@ -32,7 +32,7 @@ hl.window_rule({ match = { class = "^(steam_app).*" }, immediate = true })
 -- MacShell's own windows
 hl.window_rule({ match = { class = "^org\\.quickshell$", title = "^macshell Settings$" }, float = true, no_blur = false })
 for title, size in pairs({ Clock = "780 540", ["App Store"] = "1080 720", Photos = "1100 740", Finder = "1020 660",
-                           AirDrop = "620 500", Preview = "960 660", Player = "900 540" }) do
+                           AirDrop = "620 500", Preview = "960 660", Player = "900 540", ["Install Dependencies"] = "720 480" }) do
     hl.window_rule({ match = { class = "^org\\.quickshell$", title = "^" .. title .. "$" }, float = true, size = size, center = true })
 end
 
@@ -43,7 +43,7 @@ hl.layer_rule({ match = { namespace = ".*" }, xray = true })
 -- the menu bar strip and the Dock blur what is really behind them, live: windows too, not only the wallpaper
 hl.layer_rule({ match = { namespace = "^(macbarbg|macdock)$" }, xray = false })
 -- MacShell animates its own surfaces
-hl.layer_rule({ match = { namespace = "^(macspot|macbar|macbarbg|macdock|macshot|macwidgets|macwelcome|macshell-minimize|macdock-drag)$" }, no_anim = true })
+hl.layer_rule({ match = { namespace = "^(macspot|macbar|macbarbg|macdock|macshot|macwidgets|macwelcome|macshell-minimize|macdock-drag|macauth)$" }, no_anim = true })
 hl.layer_rule({ match = { namespace = "^macdock$" }, blur = true, ignore_alpha = 0.2 })
 hl.layer_rule({ match = { namespace = "^macbarbg$" }, blur = true, ignore_alpha = 0.05 })
 -- Spotlight draws its own Liquid Glass (compositor blur behind it stayed solid while it faded)

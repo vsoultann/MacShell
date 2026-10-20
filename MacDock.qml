@@ -4313,15 +4313,11 @@ Scope {
                     SRow {
                         t: pal
                         title: "Install dependencies"
-                        subtitle: "Installs everything MacShell uses (Quickshell, awww, mpvpaper, ffmpeg, wf-recorder, fonts, icons…) with your package manager, in a terminal"
+                        subtitle: "Shows what MacShell needs and what you already have, then installs the rest. Nothing you have is replaced or partially upgraded."
                         SButton {
                             t: pal
-                            text: "Install\u2026"
-                            onClicked: {
-                                var inst = Quickshell.env("HOME") + "/.local/share/macshell/install.sh";
-                                var term = root.bar ? root.bar.terminal : "kitty";
-                                Quickshell.execDetached(["sh", "-c", term + " -e sh -c '\"$0\" --deps-only; echo; echo Press Enter to close; read x'", inst]);
-                            }
+                            text: "Open\u2026"
+                            onClicked: { if (root.hub && root.hub.installer) { root.hideWin(prefsWindow); root.hub.installer.open(); } }
                         }
                     }
                 }

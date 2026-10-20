@@ -99,6 +99,45 @@ PKGS=(quickshell rsync qt6-shadertools qt6-multimedia qt6-svg jq curl git ffmpeg
       mpvpaper awww inter-font noto-fonts-emoji python-numpy zenity openbsd-netcat libwebp
       yt-dlp poppler python-pillow librsvg)
 
+# What --deps would do, decided once for the terminal and for the "Install Dependencies" window alike:
+# nothing you already have is replaced or upgraded behind your back.
+#   * anything already installed, or provided by another package, is left alone (pacman -T)
+#   * Quickshell is skipped when any qs is installed (noctalia-qs, quickshell-git, a private build)
+#   * a package that conflicts with one you have (tlp vs power-profiles-daemon, …) is skipped, not swapped in
+#   * DP_UPGRADES: packages you have that installing would upgrade without the rest of the system (a partial
+#     upgrade: how Arch systems break) — if there are any, nothing is installed until the system is updated
+deps_plan() {
+    DP_HAVE=(); DP_REPO=(); DP_AUR=(); DP_SKIPPED=(); DP_UPGRADES=()
+    local want=() p c
+    for p in "${PKGS[@]}"; do
+        if pacman -T "$p" >/dev/null 2>&1; then DP_HAVE+=("$p"); continue; fi
+        [ "$p" = quickshell ] && have qs && { DP_SKIPPED+=("quickshell|you already have qs"); continue; }
+        want+=("$p")
+    done
+    for p in "${want[@]}"; do
+        if pacman -Si "$p" >/dev/null 2>&1; then
+            for c in $(pacman -Si "$p" 2>/dev/null | sed -n 's/^Conflicts With *: *//p' | tr -s ' ' '\n' | sed 's/[<>=].*//' | grep -v '^None$'); do
+                if pacman -Qq "$c" >/dev/null 2>&1; then DP_SKIPPED+=("$p|conflicts with your $c"); continue 2; fi
+            done
+            DP_REPO+=("$p")
+        else
+            DP_AUR+=("$p")
+        fi
+    done
+    if [ ${#DP_REPO[@]} -gt 0 ]; then
+        mapfile -t DP_UPGRADES < <(pacman -Sp --print-format '%n' "${DP_REPO[@]}" 2>/dev/null | while read -r n; do pacman -Qq "$n" >/dev/null 2>&1 && echo "$n"; done)
+    fi
+}
+
+# the plan as JSON, for the window
+do_deps_plan() {
+    have pacman || { printf '{"pacman":false,"all":%s}\n' "$(printf '%s\n' "${PKGS[@]}" | jq -R . | jq -sc .)"; return 0; }
+    deps_plan
+    local j; j() { printf '%s\n' "$@" | sed '/^$/d' | jq -R . | jq -sc .; }
+    printf '{"pacman":true,"have":%s,"repo":%s,"aur":%s,"skipped":%s,"upgrades":%s}\n' \
+        "$(j "${DP_HAVE[@]}")" "$(j "${DP_REPO[@]}")" "$(j "${DP_AUR[@]}")" "$(j "${DP_SKIPPED[@]}")" "$(j "${DP_UPGRADES[@]}")"
+}
+
 do_deps() {
     say "Installing dependencies"
     if ! have pacman; then
@@ -106,46 +145,22 @@ do_deps() {
         printf '    %s\n' "${PKGS[@]}"
         return 0
     fi
-    # Nothing you already have is replaced or upgraded behind your back:
-    #   * anything already installed, or provided by another package, is left alone (pacman -T)
-    #   * Quickshell is skipped when any qs is installed (noctalia-qs, quickshell-git, a private build)
-    #   * a package that conflicts with one you have (tlp vs power-profiles-daemon, …) is skipped, not swapped in
-    #   * if installing would upgrade packages you already have (a partial upgrade: how Arch systems break),
-    #     nothing is installed and you are asked to update the system first
-    local want=() repo=() aur=() skipped=() p c
-    for p in "${PKGS[@]}"; do
-        pacman -T "$p" >/dev/null 2>&1 && continue
-        [ "$p" = quickshell ] && have qs && { skipped+=("quickshell (you already have qs)"); continue; }
-        want+=("$p")
-    done
-    [ ${#want[@]} -eq 0 ] && { note "everything is already installed"; return 0; }
-    for p in "${want[@]}"; do
-        if pacman -Si "$p" >/dev/null 2>&1; then
-            for c in $(pacman -Si "$p" 2>/dev/null | sed -n 's/^Conflicts With *: *//p' | tr -s ' ' '\n' | sed 's/[<>=].*//' | grep -v '^None$'); do
-                if pacman -Qq "$c" >/dev/null 2>&1; then skipped+=("$p (conflicts with your $c)"); continue 2; fi
-            done
-            repo+=("$p")
-        else
-            aur+=("$p")
-        fi
-    done
-    if [ ${#repo[@]} -gt 0 ]; then
-        # what pacman would touch: anything already installed in that list would be upgraded
-        local upgrades
-        upgrades=$(pacman -Sp --print-format '%n' "${repo[@]}" 2>/dev/null | while read -r n; do pacman -Qq "$n" >/dev/null 2>&1 && echo "$n"; done | tr '\n' ' ')
-        if [ -n "$upgrades" ]; then
-            warn "Installing these would also upgrade packages you already have ($upgrades) without updating the rest of"
+    deps_plan
+    if [ ${#DP_REPO[@]} -eq 0 ] && [ ${#DP_AUR[@]} -eq 0 ]; then note "everything is already installed"; fi
+    if [ ${#DP_REPO[@]} -gt 0 ]; then
+        if [ ${#DP_UPGRADES[@]} -gt 0 ]; then
+            warn "Installing these would also upgrade packages you already have (${DP_UPGRADES[*]}) without updating the rest of"
             warn "your system, which can break it. Update first (sudo pacman -Syu), then run ./install.sh --deps again."
             return 0
         fi
-        sudo pacman -S --needed --noconfirm "${repo[@]}" || warn "pacman didn't install everything; nothing was removed"
+        sudo pacman -S --needed --noconfirm "${DP_REPO[@]}" || warn "pacman didn't install everything; nothing was removed"
     fi
-    if [ ${#aur[@]} -gt 0 ]; then
+    if [ ${#DP_AUR[@]} -gt 0 ]; then
         local helper=""; have paru && helper=paru; [ -z "$helper" ] && have yay && helper=yay
-        if [ -n "$helper" ]; then "$helper" -S --needed "${aur[@]}" || warn "$helper didn't install: ${aur[*]}"
-        else warn "These come from the AUR; install paru or yay, then: ${aur[*]}"; fi
+        if [ -n "$helper" ]; then "$helper" -S --needed "${DP_AUR[@]}" || warn "$helper didn't install: ${DP_AUR[*]}"
+        else warn "These come from the AUR; install paru or yay, then: ${DP_AUR[*]}"; fi
     fi
-    [ ${#skipped[@]} -gt 0 ] && { note "left alone:"; printf '      %s\n' "${skipped[@]}"; }
+    if [ ${#DP_SKIPPED[@]} -gt 0 ]; then note "left alone:"; printf '      %s\n' "${DP_SKIPPED[@]/|/ — }"; fi
     # a Quickshell built against an older Qt crashes; the repo package is rebuilt with Qt
     if have qs && qs --version 2>&1 | grep -q 'built against'; then warn "Quickshell was built against an older Qt — reinstall it (sudo pacman -S quickshell)"; fi
 }
@@ -681,6 +696,7 @@ while [ $i -lt ${#args[@]} ]; do
         -y|--yes) YES=1 ;;
         --all) todo+=(deps shell menubar spotlight controlcenter notifications dock widgets clock lock config session icons fonts apply wallpapers sounds) ;;
         --deps-only) do_deps; exit 0 ;;
+        --deps-plan) do_deps_plan; exit 0 ;;
         --only) i=$((i + 1)); IFS=',' read -r -a parts <<< "${args[$i]:-}"; for p in "${parts[@]}"; do known "$p" || die "unknown feature: $p"; todo+=("$p"); done ;;
         --update) mode=update ;;
         --update-here) mode=update-here ;;

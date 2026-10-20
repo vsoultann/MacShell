@@ -198,6 +198,7 @@ ShellRoot {
         property var airdrop: airDrop
         property var preview: previewApp
         property var reminders: remindersApp
+        property var installer: depsInstaller
         function openSettings(pane) { macDock.openPrefs(pane); }
 
         // set by MacBar / MacDock (Binding elements) when their glass needs live data
@@ -427,6 +428,14 @@ ShellRoot {
     Reminders { id: remindersApp; hub: sharedHub }
     MinimizeFx { id: minFx; hub: sharedHub; effect: macDock.minimizeEffect; speed: macDock.minimizeSecs }
     WindowBar { id: windowBar; hub: sharedHub }
+    // the password sheet: MacShell is the session's polkit agent (nothing else asks for administrator rights here)
+    Polkit { id: polkitAgent; hub: sharedHub }
+    Installer { id: depsInstaller; hub: sharedHub }
+    // qs -c MacShell ipc call deps open
+    IpcHandler {
+        target: "deps"
+        function open(): void { depsInstaller.open(); }
+    }
 
     // reopen settings even when both the Dock and the Menu Bar are disabled:
     //   qs -c macbar ipc call settings open
