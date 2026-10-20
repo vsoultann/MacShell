@@ -126,7 +126,15 @@ ShellRoot {
             else { lock.locked = false; quitTimer.start(); }
         }
     }
-    Timer { id: quitTimer; interval: 150; onTriggered: Qt.quit() }
+    Timer { id: quitTimer; interval: 150; onTriggered: { Qt.quit(); quitGuard.running = true; } }
+    // if quitting doesn't end the process within a second (it was seen to linger, holding maclock.sh's one-locker
+    // guard so that every later lock did nothing), it ends itself: this child's parent is this process
+    Process { id: quitGuard; command: ["sh", "-c", "sleep 1; kill -9 $PPID"] }
+    // maclock.sh asks this before trusting a running instance: "locked" only while it really holds the session lock
+    IpcHandler {
+        target: "maclock"
+        function state(): string { return (lock.locked && lock.secure) ? "locked" : "idle"; }
+    }
 
     PamContext {
         id: pam

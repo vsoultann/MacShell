@@ -2,8 +2,18 @@
 # Lock the session with MacLock (~/.config/quickshell/MacLock). Called by hypridle's lock_cmd.
 # One locker at a time. If it crashes while locked, start it again: Hyprland keeps the session locked and
 # misc:allow_session_lock_restore lets the new instance take over. After 5 crashes in a row, fall back to hyprlock.
-exec 9>"${XDG_RUNTIME_DIR:-/tmp}/maclock.lock"
-flock -n 9 || exit 0
+LOCKFILE="${XDG_RUNTIME_DIR:-/tmp}/maclock.lock"
+exec 9>"$LOCKFILE"
+if ! flock -n 9; then
+    # Another maclock.sh holds the guard. Trust it only if its MacLock really holds the session lock right now;
+    # a leftover (it lost the lock, or was relaunched after a crash) used to block every lock from then on.
+    if [ "$(qs -c MacLock ipc call maclock state 2>/dev/null)" = locked ]; then exit 0; fi
+    for p in $(fuser "$LOCKFILE" 2>/dev/null); do [ "$p" != "$$" ] && kill "$p" 2>/dev/null; done
+    pkill -x -f 'qs -c MacLock' 2>/dev/null
+    flock -w 3 9 || exit 1
+fi
+# Quickshell's own crash handler would relaunch a crashed lock by itself; this script does that (below)
+export QS_DISABLE_CRASH_HANDLER=1
 pidof hyprlock >/dev/null && exit 0
 # the lock plays the animated wallpaper with Qt Multimedia: decode it on the Intel iGPU (VA-API), never wake the NVIDIA dGPU
 export QT_FFMPEG_DECODING_HW_DEVICE_TYPES=vaapi
@@ -16,7 +26,8 @@ export QSG_USE_SIMPLE_ANIMATION_DRIVER=1
 export MALLOC_ARENA_MAX=2
 # A leftover MacLock that is no longer holding the session lock would keep this script from ever showing one
 # (it answers the flock, then exits instantly). Clear it out before starting.
-for p in $(pgrep -f 'qs -c MacLock' 2>/dev/null); do
+# (exact command line only: a loose match also killed any terminal that merely mentioned it)
+for p in $(pgrep -x -f 'qs -c MacLock' 2>/dev/null); do
     [ "$p" = "$$" ] && continue
     kill "$p" 2>/dev/null
 done
