@@ -78,7 +78,8 @@ Scope {
         discProc.command = ["python3", "-I", helper, "discover", "6"];
         discProc.running = true;
     }
-    Timer { id: scanDone; interval: 6000; onTriggered: root.scanning = false }
+    // (the receiver's search never exits, so pruning happens here too; before, gone devices stayed for ever)
+    Timer { id: scanDone; interval: 6000; onTriggered: { root.scanning = false; root.prune(); } }
     function addPeer(d) {
         var f = root.peers.slice();
         for (var i = 0; i < f.length; i++)
@@ -109,13 +110,14 @@ Scope {
         // A finished search used to replace the list with only what this one search found, which wiped the
         // devices the receiver had already heard from. Searching only ever adds now; a device drops off when
         // it has not been heard from for two minutes.
-        onExited: {
-            root.scanning = false;
-            var keep = [], now = Date.now();
-            for (var i = 0; i < root.peers.length; i++)
-                if (!root.peers[i].seen || now - root.peers[i].seen < 120000) keep.push(root.peers[i]);
-            if (keep.length !== root.peers.length) root.peers = keep;
-        }
+        onExited: { root.scanning = false; root.prune(); }
+    }
+    // a device drops off when it has not been heard from for two minutes (one that is busy with us stays)
+    function prune() {
+        var keep = [], now = Date.now();
+        for (var i = 0; i < peers.length; i++)
+            if (!peers[i].seen || now - peers[i].seen < 120000 || peers[i].state === "sending") keep.push(peers[i]);
+        if (keep.length !== peers.length) peers = keep;
     }
 
     function peerIndex(fp) { for (var i = 0; i < peers.length; i++) if (peers[i].fingerprint === fp) return i; return -1; }
