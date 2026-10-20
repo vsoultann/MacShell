@@ -803,7 +803,7 @@ Scope {
             fwdStack = f;
             cur = p;
         }
-        onCurChanged: flick.contentY = 0
+        onCurChanged: flick.contentY = -flick.topMargin
 
         Shortcut { sequences: ["Escape", "Ctrl+W"]; onActivated: root.hideWin(prefsWindow) }
 
@@ -1218,80 +1218,97 @@ Scope {
             // ───────── toolbar ─────────
             Item {
                 id: header
+                z: 6
                 x: sidebar.x + sidebar.width + 1
                 width: parent.width - sidebar.x - sidebar.width - 2
                 height: 52
 
-                // back / forward: on Liquid Glass and Frosted they sit in a glass pill, like the macOS Tahoe toolbar;
-                // Blur and Opaque keep the plain chevrons
+                // Liquid Glass, Frosted and Blur: the page scrolls UNDER the toolbar (macOS Tahoe), the toolbar blurs what
+                // passes beneath it, and back / forward sit in a live glass pill — the Control Center's own liquid glass
+                // shader (GlassSlab), refracting the page under it as it moves, over the window's own live blur.
+                // Opaque (and Game Mode): the classic solid toolbar with plain chevrons.
                 readonly property string navLook: root.solidLook ? "plain"
                     : (root.bar && (root.bar.material === "liquid" || (root.bar.material === "custom" && root.bar.barStyle === "liquid"))) ? "liquid"
-                    : (root.bar && root.bar.material === "frosted") ? "frosted" : "plain"
+                    : (root.bar && root.bar.material === "frosted") ? "frosted"
+                    : (root.bar && root.bar.material === "opaque") ? "plain" : "blur"
+                readonly property bool layered: navLook !== "plain"
+                // the toolbar still moves the window (the page under it must not take the drag)
+                DragHandler { target: null; onActiveChanged: if (active) prefsWindow.startSystemMove() }
+                // what the toolbar sees: the strip of the page under it right now, over the window's own tint (live)
                 Item {
+                    id: tbBackdrop
+                    width: header.width; height: header.height + 24
+                    Rectangle { anchors.fill: parent; color: pal.content }
+                    ShaderEffectSource {
+                        anchors.fill: parent
+                        sourceItem: header.layered ? paneLoader : null
+                        live: true
+                        sourceRect: Qt.rect(-paneLoader.x, flick.contentY - paneLoader.y, width, height)
+                    }
+                }
+                ShaderEffectSource { id: tbSrc; sourceItem: header.layered ? tbBackdrop : null; hideSource: true; live: true; mipmap: true; visible: false }
+                // the toolbar's edge: the page goes soft as it slides under (shows once something is under it)
+                Item {
+                    id: tbFade
+                    width: tbBackdrop.width; height: tbBackdrop.height
+                    visible: false
+                    layer.enabled: true
+                    Rectangle {
+                        anchors.fill: parent
+                        gradient: Gradient {
+                            GradientStop { position: 0.0; color: "white" }
+                            GradientStop { position: 0.74; color: "white" }
+                            GradientStop { position: 1.0; color: "transparent" }
+                        }
+                    }
+                }
+                MultiEffect {
+                    visible: header.layered && opacity > 0.01
+                    width: tbBackdrop.width; height: tbBackdrop.height
+                    source: tbSrc
+                    blurEnabled: true; blurMax: 32
+                    blur: header.navLook === "liquid" ? 0.7 : 1.0
+                    saturation: 0.2
+                    autoPaddingEnabled: false
+                    maskEnabled: true; maskSource: tbFade
+                    opacity: (flick.contentY + flick.topMargin) > 1 ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                }
+                GlassSlab {
                     id: navPill
+                    visible: header.layered
                     x: 10
-                    anchors.verticalCenter: parent.verticalCenter
+                    y: (header.height - height) / 2
                     width: 66; height: 34
-                    opacity: header.navLook === "plain" ? 0 : 1
-                    visible: opacity > 0.01
-                    Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
-                    // soft shadow under the glass
+                    cornerR: 17
+                    src: tbSrc
+                    srcSize: Qt.size(tbBackdrop.width, tbBackdrop.height)
+                    origin: Qt.point(x, y)
+                    glass: root.glassState === "ready"
+                    shaderUrl: root.glassShaderUrl
+                    dark: pal.dark
+                    // Liquid Glass bends the page at its rim; Frosted is a milky pane over it; Blur a plain soft pane
+                    thickness: header.navLook === "liquid" ? 14 : 0
+                    strengthMul: header.navLook === "liquid" ? 0.6 : 0
+                    liquid: root.glassLiquid
+                    rim: header.navLook === "liquid" ? Math.max(0.55, root.glassRim) : (header.navLook === "frosted" ? 0.25 : 0.08)
+                    grain: root.glassGrain
+                    tint: root.glassOpacity
+                    tintMul: header.navLook === "frosted" ? 1.7 : (header.navLook === "blur" ? 1.2 : 1.0)
+                    blurPx: header.navLook === "liquid" ? 1.5 : (header.navLook === "frosted" ? 10 : 6)
+                    shadowAmt: 0
+                    // Frosted: the milky white layer of frosted glass over the live blur
                     Rectangle {
-                        anchors.fill: parent; anchors.topMargin: 2; anchors.bottomMargin: -2
-                        radius: height / 2
-                        color: Qt.rgba(0, 0, 0, pal.dark ? 0.35 : 0.12)
-                        layer.enabled: true
-                        layer.effect: MultiEffect { blurEnabled: true; blurMax: 12; blur: 0.8; autoPaddingEnabled: true }
-                    }
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: height / 2
-                        // Liquid Glass: nearly clear, the window shows through; Frosted: milky
-                        color: header.navLook === "liquid" ? (pal.dark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(1, 1, 1, 0.35))
-                                                           : (pal.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.65))
-                        // light across the top, a faint glow along the bottom (light passing through)
-                        Rectangle {
-                            anchors.fill: parent; radius: parent.radius
-                            gradient: Gradient {
-                                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, header.navLook === "liquid" ? 0.16 : 0.10) }
-                                GradientStop { position: 0.45; color: Qt.rgba(1, 1, 1, 0.0) }
-                                GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, header.navLook === "liquid" ? 0.07 : 0.03) }
-                            }
-                        }
-                    }
-                    // the rim: bright at the top-left and bottom-right, fading along the sides, like glass catching light
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: height / 2
-                        color: "transparent"
-                        border.width: 1
-                        border.color: "white"
-                        opacity: header.navLook === "liquid" ? 0.55 : 0.3
-                        layer.enabled: true
-                        layer.effect: MultiEffect {
-                            maskEnabled: true; maskSource: rimMask
-                        }
-                    }
-                    Item {
-                        id: rimMask
-                        anchors.fill: parent
-                        visible: false
-                        layer.enabled: true
-                        Rectangle {
-                            anchors.fill: parent
-                            gradient: Gradient {
-                                orientation: Gradient.Horizontal
-                                GradientStop { position: 0.0; color: "white" }
-                                GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.35) }
-                                GradientStop { position: 1.0; color: "white" }
-                            }
-                        }
+                        visible: header.navLook === "frosted"
+                        anchors.fill: parent; radius: height / 2
+                        color: pal.dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(1, 1, 1, 0.45)
+                        border.width: 1; border.color: Qt.rgba(1, 1, 1, pal.dark ? 0.12 : 0.6)
                     }
                     // a hair-thin divider between the two buttons
                     Rectangle {
                         anchors.centerIn: parent
                         width: 1; height: parent.height - 14
-                        color: pal.dark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
+                        color: pal.dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)
                     }
                 }
                 Row {
@@ -1352,7 +1369,7 @@ Scope {
                     width: parent.width
                     height: 1
                     color: pal.sep
-                    opacity: flick.contentY > 4 ? 1 : 0
+                    opacity: (flick.contentY + flick.topMargin) > 4 ? 1 : 0
                     Behavior on opacity { NumberAnimation { duration: 120 } }
                 }
             }
@@ -1361,9 +1378,13 @@ Scope {
             Flickable {
                 id: flick
                 x: sidebar.x + sidebar.width + 1
-                y: 52
+                y: header.layered ? 0 : 52
                 width: parent.width - sidebar.x - sidebar.width - 2
-                height: parent.height - 52 - 1
+                height: parent.height - y - 1
+                topMargin: header.layered ? 52 : 0
+                // the sharp page fades out as it slides under the toolbar; the toolbar shows it blurred instead
+                layer.enabled: header.layered
+                layer.effect: MultiEffect { maskEnabled: true; maskSource: flickFade }
                 contentWidth: width
                 contentHeight: paneLoader.height + 36
                 clip: true
@@ -1388,10 +1409,25 @@ Scope {
                     onLoaded: fadeIn.restart()
                 }
             }
+            Item {
+                id: flickFade
+                width: flick.width; height: flick.height
+                visible: false
+                layer.enabled: true
+                Rectangle {
+                    anchors.fill: parent
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: "transparent" }
+                        GradientStop { position: 42 / Math.max(1, flickFade.height); color: "transparent" }
+                        GradientStop { position: 58 / Math.max(1, flickFade.height); color: "white" }
+                        GradientStop { position: 1.0; color: "white" }
+                    }
+                }
+            }
             Rectangle {   // thin overlay scrollbar
                 visible: flick.contentHeight > flick.height + 1
                 x: frame.width - 8
-                y: 52 + flick.visibleArea.yPosition * flick.height
+                y: 52 + Math.max(0, flick.visibleArea.yPosition) * (flick.height - flick.topMargin)
                 width: 4
                 height: Math.max(28, flick.visibleArea.heightRatio * flick.height)
                 radius: 2
