@@ -69,3 +69,22 @@ hl.on("monitor.added", function(m)
         end)
     end, { timeout = 1200, type = "oneshot" })
 end)
+
+-- A display left on its own moves to 0x0. Monitor rules written for two displays (stretchres, nwg-displays) can park
+-- it beside a display that is unplugged, and apps that measure the desktop from 0,0 (Flameshot) then stretch their
+-- capture across the empty space. Plugging the other display back in re-reads the shared display files.
+local displayFiles = { "monitors.lua", "stretchres.lua" }
+local function alone()
+    local ms = hl.get_monitors()
+    if #ms ~= 1 or (ms[1].x == 0 and ms[1].y == 0) then return end
+    local m = ms[1]
+    hl.monitor({ output = m.name, mode = string.format("%dx%d@%.2f", m.width, m.height, m.refresh_rate),
+                 position = "0x0", scale = m.scale or 1 })
+end
+local function later(fn) hl.timer(function() pcall(fn) end, { timeout = 300, type = "oneshot" }) end
+later(alone)
+hl.on("config.reloaded", function() later(alone) end)
+hl.on("monitor.removed", function() later(alone) end)
+hl.on("monitor.added", function()
+    for _, f in ipairs(displayFiles) do pcall(dofile, (os.getenv("HOME") or "") .. "/.config/hypr/" .. f) end
+end)
