@@ -71,7 +71,11 @@ hl.bind("SUPER + ALT + M", hl.dsp.exec_cmd("wpctl set-mute " .. source .. " togg
 -- ── Screenshots ──
 local shotDir = "\"$(xdg-user-dir PICTURES)/Screenshots\""
 local grimOut = "grim -o \"$(hyprctl activeworkspace -j | jq -r '.monitor')\""
-hl.bind("Print", hl.dsp.exec_cmd(grimOut .. " - | wl-copy"), { locked = true, description = "Screenshot: Screen to clipboard" })
+-- Flameshot when it is installed (macshell-flameshot.sh falls back to MacShell's own picker / grim otherwise)
+local flameshot = os.getenv("HOME") .. "/.config/hypr-macshell/scripts/macshell-flameshot.sh"
+hl.bind("Print", hl.dsp.exec_cmd(flameshot .. " gui"), { description = "Screenshot: Pick an area (Flameshot)" })
+hl.bind("SHIFT + Print", hl.dsp.exec_cmd("mkdir -p " .. shotDir .. " && " .. flameshot .. " full -c -p " .. shotDir),
+        { description = "Screenshot: All displays to file and clipboard" })
 hl.bind("CTRL + Print", hl.dsp.exec_cmd("mkdir -p " .. shotDir .. " && " .. grimOut .. " " .. shotDir .. "/Screenshot_\"$(date '+%Y-%m-%d_%H.%M.%S')\".png && wl-copy < \"$(ls -t " .. shotDir .. "/*.png | head -n1)\""),
         { locked = true, description = "Screenshot: Screen to file and clipboard" })
 hl.bind("SUPER + SHIFT + C", hl.dsp.exec_cmd("hyprpicker -a"), { description = "Utilities: Pick a colour" })

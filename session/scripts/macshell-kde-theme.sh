@@ -198,6 +198,19 @@ if [ -f /usr/share/applications/vlc.desktop ]; then
 fi
 printf '%s\n' "$hex" > "$Q/accent"
 
+# Flameshot (screenshots) draws its selection and buttons in the accent too; its other settings are left alone
+fs="$HOME/.config/flameshot/flameshot.ini"
+if [ -f "$fs" ] || command -v flameshot >/dev/null 2>&1; then
+    mkdir -p "${fs%/*}"
+    [ -f "$fs" ] || printf '[General]\n' > "$fs"
+    grep -q '^\[General\]' "$fs" || printf '[General]\n' >> "$fs"
+    fs_set() {
+        if grep -q "^$1=" "$fs"; then sed -i "s|^$1=.*|$1=$2|" "$fs"; else sed -i "/^\[General\]/a $1=$2" "$fs"; fi
+    }
+    fs_set uiColor "#$hex"
+    fs_set contrastUiColor "#$(printf '%02x%02x%02x' $((r * 35 / 100)) $((g * 35 / 100)) $((b * 35 / 100)))"
+fi
+
 # tell running KDE apps: colours and icons changed (only apps in this session listen on this bus). Not "style
 # changed": Dolphin rebuilds its style on it and drops Finder's stylesheet with it; new Finder windows pick up
 # the other style half anyway.

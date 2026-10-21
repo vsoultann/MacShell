@@ -228,7 +228,7 @@ Keep all five files in the same folder.
 
 | Feature | Tool(s) |
 |---|---|
-| Screenshots (Print key) | `grim`, `wl-clipboard` (clipboard copy), `libnotify` (`notify-send`) |
+| Screenshots (Print key) | `flameshot` (pick an area, draw, blur, pin, upload; Shift+Print = every display), else the built-in picker: `grim`, `wl-clipboard` (clipboard copy), `libnotify` (`notify-send`). Flameshot follows the accent colour and never shows in the Dock |
 | Clipboard history + Emoji (Spotlight) | `wl-clipboard`, `cliphist` (the shell starts the `wl-paste --watch cliphist store` watchers itself) |
 | Screen recording | `wf-recorder` |
 | Color picker | `hyprpicker` |
@@ -322,7 +322,7 @@ Also make sure **blur is enabled** in your Hyprland `decoration` settings, or th
 | Target | Functions |
 |---|---|
 | `spotlight` | `toggle`, `clipboard`, `emoji`, `apps` |
-| `screenshot` | `region`, `screen`, `window` |
+| `screenshot` | `region` (Flameshot when installed), `screen`, `window` |
 | `wallpapers` | `toggle`, `open`, `close` |
 | `switcher` | `next`, `prev`, `commit`, `cancel` |
 | `settings` | `open` (works even if both the bar and the Dock are disabled) |

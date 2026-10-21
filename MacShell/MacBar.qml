@@ -2560,8 +2560,20 @@ Scope {
         return "";
     }
     function shot(region) {      // "" = whole screen, "sel" = pick an area (frozen-screen picker), otherwise "x,y WxH"
-        if (region === "sel") shotStart();
+        if (region === "sel") shotRegion();
         else shotFinish(region, "");
+    }
+    // Picking an area goes to Flameshot when it is installed (draw, blur, pin, upload…), otherwise to the built-in picker
+    readonly property string flameshotCmd: Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-flameshot.sh"
+    property bool useFlameshot: false
+    Process {
+        running: true
+        command: ["sh", "-c", "[ -x \"$1\" ] && exec \"$1\" --check", "sh", root.flameshotCmd]
+        onExited: (code, status) => root.useFlameshot = code === 0
+    }
+    function shotRegion() {
+        if (useFlameshot) Quickshell.execDetached([flameshotCmd, "gui"]);
+        else shotStart();
     }
     function shotWindow(aw) {
         if (!aw || !aw.at || !aw.size) return;
@@ -3300,7 +3312,7 @@ Scope {
     }
     IpcHandler {
         target: "screenshot"
-        function region(): void { root.shotStart(); }
+        function region(): void { root.shotRegion(); }
         function screen(): void { root.shotFinish("", ""); }
         function window(): void { root.shotWindow(root.activeWin); }
     }
@@ -4157,7 +4169,7 @@ Scope {
         var seen = {}, apps = [];
         for (var k = 0; k < order.length; k++) {
             var t = order[k], id = t.appId || "";
-            if (id === "") continue;
+            if (id === "" || (hub && hub.dock && hub.dock.hiddenApps[id.toLowerCase()])) continue;
             // MacShell's own windows (all "org.quickshell") are separate apps: Clock, System Settings
             if (id === "org.quickshell") id = t.title === "Photos" ? "macshell-photos"
                                              : t.title === "Clock" ? "macshell-clock"

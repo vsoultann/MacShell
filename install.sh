@@ -97,7 +97,7 @@ ask()  { [ "$YES" = 1 ] && return 0; local a; read -r -p "$1 [Y/n] " a; [ -z "$a
 have() { command -v "$1" >/dev/null 2>&1; }
 known() { local f; for f in "${ORDER[@]}"; do [ "$f" = "$1" ] && return 0; done; return 1; }
 
-PKGS=(quickshell rsync qt6-shadertools qt6-multimedia qt6-svg jq curl git ffmpeg imagemagick libnotify grim slurp wl-clipboard cliphist
+PKGS=(quickshell rsync qt6-shadertools qt6-multimedia qt6-svg jq curl git ffmpeg imagemagick libnotify grim slurp flameshot wl-clipboard cliphist
       playerctl brightnessctl bluez-utils networkmanager power-profiles-daemon hypridle hyprlock hyprsunset wf-recorder
       mpvpaper awww inter-font noto-fonts-emoji python-numpy zenity openbsd-netcat libwebp
       yt-dlp poppler python-pillow librsvg

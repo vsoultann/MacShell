@@ -4944,7 +4944,10 @@ Scope {
     // apps that stand in for one of MacShell's: their windows join that app's Dock icon and take its name
     // (Apple Music is Cider when it is installed, otherwise Swift)
     readonly property var appAliases: ({ "swift": "macshell-applemusic", "swiftapp": "macshell-applemusic", "sh.cider.cider": "macshell-applemusic", "cider": "macshell-applemusic" })
+    // windows that aren't apps: they never get a Dock icon (or an Alt+Tab entry), e.g. Flameshot's capture overlay
+    readonly property var hiddenApps: ({ "flameshot": true })
     function appOf(tl) {
+        if (hiddenApps[String(tl.appId).toLowerCase()]) return "";
         if (tl.appId !== "org.quickshell") return appAliases[String(tl.appId).toLowerCase()] || tl.appId;
         var a = ownApps[tl.title];
         return a ? a : tl.appId;

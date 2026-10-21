@@ -60,3 +60,26 @@ for _, ns in ipairs({ "selection", "hyprpicker", "noanim", "gtk4-layer-shell" })
 end
 hl.layer_rule({ match = { namespace = "gtk-layer-shell" }, blur = true, ignore_alpha = 0 })
 hl.layer_rule({ match = { namespace = "logout_dialog" }, blur = true })    -- wlogout
+
+-- Flameshot (screenshots): pinned floats, no animation, never fullscreen (going fullscreen fades every other window
+-- out and back in). It gets no position on Wayland, so it is placed when it opens, before its first frame:
+--   * a window the size of one display (stock Flameshot's capture overlay, after its monitor picker) goes on that display
+--   * anything else (the monitor picker, or a build whose overlay spans every display) covers the whole desktop
+-- Placed in window.open: window.open_early is too soon (resizing a window that isn't laid out yet aborts Hyprland).
+hl.window_rule({ match = { class = "^(flameshot)$", title = "^(flameshot)$" }, float = true, pin = true,
+                 no_anim = true, no_shadow = true })
+local function placeFlameshot(w)
+    local target = "address:" .. w.address
+    local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
+    for _, m in ipairs(hl.get_monitors()) do
+        local mw, mh = math.floor(m.width / m.scale + 0.5), math.floor(m.height / m.scale + 0.5)
+        if w.size and w.size.x == mw and w.size.y == mh and #hl.get_monitors() > 1 then
+            hl.dispatch(hl.dsp.window.move({ x = m.x, y = m.y, "exact", window = target }))
+            return
+        end
+        x0, y0, x1, y1 = math.min(x0, m.x), math.min(y0, m.y), math.max(x1, m.x + mw), math.max(y1, m.y + mh)
+    end
+    hl.dispatch(hl.dsp.window.resize({ x = x1 - x0, y = y1 - y0, "exact", window = target }))
+    hl.dispatch(hl.dsp.window.move({ x = x0, y = y0, "exact", window = target }))
+end
+hl.on("window.open", function(w) if w and w.class == "flameshot" then pcall(placeFlameshot, w) end end)
