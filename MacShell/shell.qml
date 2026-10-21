@@ -26,6 +26,10 @@ ShellRoot {
     // Quickshell (wl_proxy_marshal on a destroyed object). Updates restart the shell instead (Settings →
     // Software Update, or Settings → About → Restart the shell).
     settings.watchFiles: false
+
+    // The "Open Runde" UI font ships with MacShell (upstream 0-ss/MacShell): registered here, first, so Settings →
+    // Appearance can offer it without installing anything.
+    FontLoader { id: uiFontLoader; source: Qt.resolvedUrl("assets/fonts/OpenRunde-Regular.otf") }
     Scope {
         id: sharedHub
 
@@ -192,13 +196,13 @@ ShellRoot {
             var ts = Hyprland.toplevels.values;
             for (var i = ts.length - 1; i >= 0; i--) if (ts[i].wayland && isMinimized(ts[i])) { restoreHyprWin(ts[i]); return; }
         }
-        property var welcome: welcomeApp
         property var player: filesApp.player
         property var desktop: desktopIcons
         property var airdrop: airDrop
         property var preview: previewApp
         property var reminders: remindersApp
         property var installer: depsInstaller
+        property var about: aboutApp
         function openSettings(pane) { macDock.openPrefs(pane); }
 
         // set by MacBar / MacDock (Binding elements) when their glass needs live data
@@ -422,7 +426,6 @@ ShellRoot {
     Photos { id: photosApp; hub: sharedHub }
     // Finder (Dolphin) and VLC are real apps; this is how the shell reaches them
     Files { id: filesApp; hub: sharedHub }
-    Welcome { id: welcomeApp; hub: sharedHub }
     Desktop { id: desktopIcons; hub: sharedHub }
     AirDrop { id: airDrop; hub: sharedHub }
     Preview { id: previewApp; hub: sharedHub }
@@ -437,6 +440,7 @@ ShellRoot {
         target: "deps"
         function open(): void { depsInstaller.open(); }
     }
+    AboutApp { id: aboutApp; hub: sharedHub }
 
     // reopen settings even when both the Dock and the Menu Bar are disabled:
     //   qs -c macbar ipc call settings open
@@ -457,7 +461,6 @@ ShellRoot {
     // qs -c MacShell ipc call appstore open | page discover|updates | search <text>
     // qs -c MacShell ipc call photos open | folder <path>
     // qs -c MacShell ipc call finder open | folder <path>
-    // qs -c MacShell ipc call welcome open
     // qs -c MacShell ipc call player play <path|url>
     // qs -c MacShell ipc call desktop toggle | refresh
     // qs -c MacShell ipc call airdrop open
@@ -502,13 +505,6 @@ ShellRoot {
         function restorelast(): void { sharedHub.restoreLast(); }
     }
     IpcHandler {
-        target: "welcome"
-        function open(): void { welcomeApp.open(); }
-        // jump straight to a page (0 hello · 1 you · 2 look · 3 welcome)
-        function step(n: int): void { if (n < 0) { welcomeApp.shown = false; return; } welcomeApp.shown = true; welcomeApp.step = n; }
-        function close(): void { welcomeApp.shown = false; }
-    }
-    IpcHandler {
         target: "finder"
         function open(): void { filesApp.open(""); }
         function folder(p: string): void { filesApp.open(p); }
@@ -523,6 +519,13 @@ ShellRoot {
         function open(): void { appStore.open(); }
         function page(p: string): void { appStore.open(p); }
         function search(q: string): void { appStore.open("search"); appStore.query = q; }
+    }
+    // qs -c MacShell ipc call about open | close | toggle      (the Apple menu's "About This Computer")
+    IpcHandler {
+        target: "about"
+        function open(): void { aboutApp.open(); }
+        function close(): void { aboutApp.close(); }
+        function toggle(): void { aboutApp.toggle(); }
     }
     IpcHandler {
         target: "notifications"

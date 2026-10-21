@@ -30,9 +30,9 @@ Spotlight, desktop widgets, notifications and a full lock screen. This is a fork
 |---|
 | ![Reminders](docs/reminders.png) |
 
-| Mac Hello explains what you just installed | Internet Sharing remembers its name and password |
-|---|---|
-| ![Mac Hello](docs/machello-tour.png) | ![Internet Sharing](docs/internet-sharing.png) |
+| Internet Sharing remembers its name and password |
+|---|
+| ![Internet Sharing](docs/internet-sharing.png) |
 
 ![Lock screen clock settings](docs/settings-clock.png)
 
@@ -129,9 +129,6 @@ drops. No setting to remember: it watches the load average and uses hysteresis s
 - **App Store** — Flathub, laid out like the real App Store: Discover, categories, screenshots, search and updates.
 - **Reminders** — the macOS window: smart lists in the sidebar, a big title, type to add, click a circle to tick it off,
   click the text to rename, × to delete. It edits the same `reminders.md` the desktop widget shows.
-- **Welcome** — runs once after installing: hello in thirty-odd languages, your name and picture, then the material
-  (Liquid Glass, Frosted, Blur, Opaque) over a page you can actually scroll, so you see the effect on moving content,
-  with the System Settings slider underneath.
 - **Desktop icons** — everything in ~/Desktop, drag and snap to the grid, double-click to open, drop one onto another
   to make a folder, rename and trash from the menu.
 - **VLC** — still VLC (its name, icon and layout), dressed like the rest of the session by `macshell-vlc.sh`: the
@@ -335,7 +332,6 @@ Also make sure **blur is enabled** in your Hyprland `decoration` settings, or th
 | `airdrop` | `open` |
 | `appstore` | `open`, `search <query>`, `page <id>` |
 | `player` | `play <path\|url>`, `youtube <url>` |
-| `welcome` | `open` (the first-run screen; it runs itself once unless `~/.config/macshell/welcome-done` exists) |
 | `desktop` | `toggle`, `refresh` (icons on the desktop) |
 | `dock` | `pinfolder <path>`, `unpinfolder <path>`, `stack <path>` |
 | `controlcenter` | `toggle`, `open`, `close` |

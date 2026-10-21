@@ -47,7 +47,7 @@ hl.layer_rule({ match = { namespace = ".*" }, xray = true })
 -- the menu bar strip and the Dock blur what is really behind them, live: windows too, not only the wallpaper
 hl.layer_rule({ match = { namespace = "^(macbarbg|macdock)$" }, xray = false })
 -- MacShell animates its own surfaces
-hl.layer_rule({ match = { namespace = "^(macspot|macbar|macbarbg|macdock|macshot|macwidgets|macwelcome|macshell-minimize|macdock-drag|macauth|macwidgetsbg)$" }, no_anim = true })
+hl.layer_rule({ match = { namespace = "^(macspot|macbar|macbarbg|macdock|macshot|macwidgets|macshell-minimize|macdock-drag|macauth|macwidgetsbg)$" }, no_anim = true })
 hl.layer_rule({ match = { namespace = "^macdock$" }, blur = true, ignore_alpha = 0.2 })
 hl.layer_rule({ match = { namespace = "^macbarbg$" }, blur = true, ignore_alpha = 0.05 })
 -- glass widgets over a video wallpaper: the real, moving wallpaper blurred behind each card (MacWidgets.qml)
@@ -55,8 +55,6 @@ hl.layer_rule({ match = { namespace = "^macbarbg$" }, blur = true, ignore_alpha 
 hl.layer_rule({ match = { namespace = "^macwidgetsbg$" }, blur = true, ignore_alpha = 0.05, order = 1 })
 -- Spotlight draws its own Liquid Glass (compositor blur behind it stayed solid while it faded)
 hl.layer_rule({ match = { namespace = "^macspot$" }, blur = false })
--- the welcome screen sits above the bar and the Dock
-hl.layer_rule({ match = { namespace = "^macwelcome$" }, order = 10 })
 for _, ns in ipairs({ "selection", "hyprpicker", "noanim", "gtk4-layer-shell" }) do
     hl.layer_rule({ match = { namespace = ns }, no_anim = true })
 end

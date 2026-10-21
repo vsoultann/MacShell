@@ -2164,6 +2164,9 @@ Scope {
                         property real grain: 0.003
                         property real blurPx: st === "glass" ? 1.0 + Math.max(0, root.blurAmt - 0.5) * 8 : 7
                         property real tintMix: st === "glass" ? 0.05 : 0
+                        property real rimTint: 0
+                        property real ringW: 0
+                        property real flatInner: 0
                         property real saturation: 1.3
                         property real dark: root.dark ? 1 : 0
                         property real debug: 0

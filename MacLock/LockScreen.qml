@@ -7,6 +7,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Mpris
 import Quickshell.Services.UPower
+import "I18n.js" as I18n
 
 Item {
     id: ls
@@ -46,7 +47,8 @@ Item {
             asynchronous: true
             cache: true
             smooth: true
-            sourceSize: Qt.size(ls.width * 1.15, ls.height * 1.15)
+            // A 2.5K decode is plenty for a blurred full-screen background and avoids decoding huge 4K/8K originals.
+            sourceSize.width: Math.max(1, Math.min(ls.width * 1.15, 2560))
             // slow settle-in zoom, and a gentle zoom-out as the lock lifts
             scale: ls.leaving ? 1.06 : (ls.shown ? 1.0 : 1.09)
             Behavior on scale { NumberAnimation { duration: ls.leaving ? 520 : 650; easing.type: Easing.OutQuint } }
@@ -321,7 +323,7 @@ Item {
                 x: 78 * ls.u; y: 14 * ls.u
                 width: parent.width - x - 16 * ls.u
                 Text {
-                    text: ls.liveKind === "timer" && liveCard.tm ? (liveCard.tm.label || "Timer") + (liveCard.tm.state === "paused" ? " · Paused" : "")
+                    text: ls.liveKind === "timer" && liveCard.tm ? (liveCard.tm.label || I18n.tr("Timer")) + (liveCard.tm.state === "paused" ? I18n.tr(" · Paused") : "")
                         : (ls.liveKind === "sw" ? "Stopwatch" : (ls.liveKind === "ring" && ls.clockSt.ringing ? (ls.clockSt.ringing.kind === "timer" ? "Timer" : "Alarm") : ""))
                     color: "#FF9F0A"; font.family: ls.fam; font.pixelSize: 13 * ls.u; font.weight: Font.DemiBold
                 }
@@ -398,7 +400,7 @@ Item {
                     x: 60 * ls.u; anchors.verticalCenter: parent.verticalCenter
                     width: parent.width - x - 70 * ls.u
                     Text { width: parent.width; elide: Text.ElideRight; text: nc.app; color: "white"; font.family: ls.fam; font.pixelSize: 14 * ls.u; font.weight: Font.DemiBold }
-                    Text { text: "Notification"; color: Qt.rgba(1, 1, 1, 0.72); font.family: ls.fam; font.pixelSize: 13 * ls.u }
+                    Text { text: I18n.tr("Notification"); color: Qt.rgba(1, 1, 1, 0.72); font.family: ls.fam; font.pixelSize: 13 * ls.u }
                 }
                 Text {
                     anchors.right: parent.right; anchors.rightMargin: 14 * ls.u; y: 13 * ls.u
@@ -450,7 +452,7 @@ Item {
             width: parent.width; height: 26 * ls.u
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter; anchors.verticalCenter: parent.verticalCenter
-                text: (ls.lockNotifs.length - 4) + " more notification" + (ls.lockNotifs.length - 4 === 1 ? "" : "s")
+                text: (ls.lockNotifs.length - 4) + I18n.tr(" more notification") + (ls.lockNotifs.length - 4 === 1 ? "" : "s")
                 color: Qt.rgba(1, 1, 1, 0.75); font.family: ls.fam; font.pixelSize: 12 * ls.u; font.weight: Font.Medium
             }
             MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: ls.askPassword() }
@@ -487,7 +489,7 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             renderType: Text.NativeRendering
             anchors.horizontalCenter: parent.horizontalCenter
-            text: Qt.formatDate(ls.st.now, ls.ckShortDate ? "ddd MMM d" : "dddd, MMMM d")
+            text: I18n.locale().toString(ls.st.now, ls.ckShortDate ? I18n.tr("ddd MMM d") : I18n.tr("dddd, MMMM d"))
             color: Qt.rgba(1, 1, 1, 0.92)
             font.family: ls.ckFont === "serif" && ls.ckFontOk ? "Noto Serif Display" : ls.fam
             font.pixelSize: (ls.ckShortDate ? 23 : 25) * ls.u; font.weight: Font.DemiBold
@@ -518,7 +520,7 @@ Item {
                 scaleIn: 1.03; scaleOut: 0.97
                 // 12- or 24-hour, as set in MacShell (no AM/PM, like the macOS / iOS lock screen)
                 // (Qt's "h" only goes 12-hour together with AP, so the hour is computed here)
-                text: ls.st.use24h ? Qt.formatTime(ls.st.now, "H:mm") : ((ls.st.now.getHours() % 12) || 12) + Qt.formatTime(ls.st.now, ":mm")
+                text: ls.st.use24h ? Qt.formatTime(ls.st.now, I18n.tr("H:mm")) : ((ls.st.now.getHours() % 12) || 12) + Qt.formatTime(ls.st.now, ":mm")
                 color: "white"
                 font.family: ls.ckFamily; font.pixelSize: ls.clockPx; font.weight: Font.Bold
                 font.variableAxes: ls.ckFamily === "Roboto Flex"
@@ -1316,7 +1318,7 @@ Item {
             anchors.centerIn: parent
             horizontalAlignment: Text.AlignHCenter
             visible: ls.lyrStatus === "loading" || ls.lyrStatus === "none" || ls.lyrStatus === "instrumental" || ls.lyrStatus === "offline"
-            text: ls.lyrStatus === "loading" ? "Loading lyrics…" : (ls.lyrStatus === "instrumental" ? "Instrumental"
+            text: ls.lyrStatus === "loading" ? I18n.tr("Loading lyrics…") : (ls.lyrStatus === "instrumental" ? I18n.tr("Instrumental")
                   : (ls.lyrStatus === "offline" ? "Lyrics are unavailable right now" : "No lyrics for this song"))
             color: Qt.rgba(1, 1, 1, 0.55)
             font.family: ls.fam; font.pixelSize: 20 * ls.u; font.weight: Font.DemiBold
@@ -1467,7 +1469,7 @@ Item {
             Text {
                 anchors.left: parent.left; anchors.leftMargin: 16 * ls.u
                 anchors.verticalCenter: parent.verticalCenter
-                text: "Enter Password"
+                text: I18n.tr("Enter Password")
                 color: Qt.rgba(1, 1, 1, 0.62)
                 font.family: ls.fam; font.pixelSize: 14 * ls.u
                 opacity: ls.st.pass.length === 0 ? 1 : 0
@@ -1607,7 +1609,7 @@ Item {
         MorphText {
             horizontalAlignment: Text.AlignHCenter
             anchors.horizontalCenter: parent.horizontalCenter
-            text: ls.st.message !== "" ? ls.st.message : "Enter your password to unlock"
+            text: ls.st.message !== "" ? ls.st.message : I18n.tr("Enter your password to unlock")
             color: ls.st.message !== "" ? Qt.rgba(1, 0.78, 0.76, 0.95) : Qt.rgba(1, 1, 1, 0.55)
             font.family: ls.fam; font.pixelSize: 12 * ls.u
             opacity: ls.st.engaged || ls.st.message !== "" ? 1 : 0

@@ -8,6 +8,7 @@ import QtQuick
 import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
+import "I18n.js" as I18n
 
 Scope {
     id: root
@@ -212,7 +213,7 @@ Scope {
 
                 Text {
                     id: title
-                    text: ["Welcome to the MacShell Installer", "Components", root.running ? "Installing…" : "Installation", "The installation was successful."][root.step]
+                    text: ["Welcome to the MacShell Installer", I18n.tr("Components"), root.running ? I18n.tr("Installing…") : I18n.tr("Installation"), "The installation was successful."][root.step]
                     color: pal.text; font.family: root.fam; font.pixelSize: 18; font.weight: Font.DemiBold
                 }
 
@@ -221,7 +222,7 @@ Scope {
                     visible: root.step === 0
                     y: 44; width: page.width; wrapMode: Text.WordWrap
                     lineHeight: 1.25
-                    text: "This installs the programs MacShell needs: the shell itself, wallpapers and video, screenshots, the system controls and its fonts.\n\n"
+                    text: I18n.tr("This installs the programs MacShell needs: the shell itself, wallpapers and video, screenshots, the system controls and its fonts.\n\n")
                         + "Nothing you already have is replaced: packages you already have stay as they are, and nothing is upgraded on its own. "
                         + "If installing would require newer versions of what you have, you'll be asked to update your system first.\n\n"
                         + "You'll be asked for your password once, when installing."
@@ -238,7 +239,7 @@ Scope {
                     Text {
                         visible: root.planning || !root.plan
                         anchors.centerIn: parent
-                        text: root.planning ? "Checking what is installed…" : "Couldn't read the installer (" + root.installer + ")."
+                        text: root.planning ? I18n.tr("Checking what is installed…") : I18n.tr("Couldn't read the installer (") + root.installer + ")."
                         color: pal.text2; font.family: root.fam; font.pixelSize: 13
                     }
                     Flickable {
@@ -338,7 +339,7 @@ Scope {
                     }
                     Text {
                         visible: root.result === "cancelled" || root.result === "failed"
-                        text: root.result === "cancelled" ? "Cancelled: nothing was installed." : "Something went wrong (see above). Nothing you had was removed."
+                        text: root.result === "cancelled" ? I18n.tr("Cancelled: nothing was installed.") : I18n.tr("Something went wrong (see above). Nothing you had was removed.")
                         color: root.result === "failed" ? "#FF453A" : pal.text2; font.family: root.fam; font.pixelSize: 12
                     }
                 }
@@ -354,7 +355,7 @@ Scope {
                     }
                     Text {
                         width: parent.width; wrapMode: Text.WordWrap
-                        text: "Everything MacShell needs is installed." + (root.plan && root.plan.aur && root.plan.aur.length > 0 ? " From the AUR, still to install: " + root.plan.aur.join(", ") + "." : "")
+                        text: I18n.tr("Everything MacShell needs is installed.") + (root.plan && root.plan.aur && root.plan.aur.length > 0 ? I18n.tr(" From the AUR, still to install: ") + root.plan.aur.join(", ") + "." : "")
                         color: pal.text2; font.family: root.fam; font.pixelSize: 13
                     }
                 }
@@ -365,11 +366,11 @@ Scope {
                 anchors.right: parent.right; anchors.rightMargin: 24
                 anchors.bottom: parent.bottom; anchors.bottomMargin: 20
                 spacing: 10
-                Btn { visible: root.step > 0 && root.step < 3; text: "Go Back"; enabled: !root.running; onClicked: root.step-- }
+                Btn { visible: root.step > 0 && root.step < 3; text: I18n.tr("Go Back"); enabled: !root.running; onClicked: root.step-- }
                 Btn {
                     main: true
                     enabled: !root.running && (root.step !== 1 || root.plan !== null)
-                    text: root.step === 0 || root.step === 1 ? "Continue"
+                    text: root.step === 0 || root.step === 1 ? I18n.tr("Continue")
                         : root.step === 3 ? "Close"
                         : root.running ? "Installing…"
                         : (root.needsUpdate ? "Update System" : (root.toInstall > 0 ? "Install" : "Done"))

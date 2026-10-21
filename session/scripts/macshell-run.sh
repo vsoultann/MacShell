@@ -9,7 +9,7 @@ CFG="${MACSHELL_CONFIG:-MacShell}"
 QS_DIR="$HOME/.config/quickshell"
 GOOD="$CFG.lastgood"
 export QSG_USE_SIMPLE_ANIMATION_DRIVER=1 MALLOC_ARENA_MAX=2
-# videos (Mac Hello, previews) decode on the integrated GPU via VA-API: probing CUDA first woke the NVIDIA card
+# videos (previews, video wallpapers) decode on the integrated GPU via VA-API: probing CUDA first woke the NVIDIA card
 export QT_FFMPEG_DECODING_HW_DEVICE_TYPES=vaapi
 # one shell at a time: Quickshell's own crash handler would relaunch a crashed shell by itself while this loop
 # starts another one, leaving two bars / Docks fighting each other. This loop is the only thing that restarts it.

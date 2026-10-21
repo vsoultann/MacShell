@@ -1,4 +1,3 @@
-// From github.com/0-ss/macshell (MIT, © 2026 Rickky).
 import QtQuick
 
 // A small Liquid Glass slab that refracts a LOCAL picture instead of the shared backdrop texture of a popover.

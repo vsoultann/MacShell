@@ -1,4 +1,4 @@
-// WIcon — the little white symbols on the Mac Hello tour cards.
+// WIcon — little white symbols (the desktop widgets use them).
 import QtQuick
 
 Canvas {

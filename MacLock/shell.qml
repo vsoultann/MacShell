@@ -174,7 +174,8 @@ ShellRoot {
             + "jq -r '.lockArtBackground' \"$HOME/.config/macbar/settings.json\" 2>/dev/null || echo true; "
             + "jq -r '.use24h' \"$HOME/.config/macbar/settings.json\" 2>/dev/null || echo true; "
             + "jq -c '{f: .lockClockFont, w: .lockClockWeight, m: .lockClockMaterial, t: .lockClockTall, d: .lockClockDate, i: .lockClockIntensity, c: .lockClockTint}' \"$HOME/.config/macbar/settings.json\" 2>/dev/null || echo '{}'; "
-            + "jq -r '.material // \"liquid\"' \"$HOME/.config/macbar/settings.json\" 2>/dev/null || echo liquid"]
+            + "jq -r '.material // \"liquid\"' \"$HOME/.config/macbar/settings.json\" 2>/dev/null || echo liquid; "
+            + "jq -r '.language // \"auto\"' \"$HOME/.config/macbar/settings.json\" 2>/dev/null || echo auto"]
         stdout: StdioCollector {
             onStreamFinished: {
                 var l = text.split("\n");
@@ -193,6 +194,9 @@ ShellRoot {
                 // the system-wide material (Settings → Appearance) reaches the lock screen too
                 var mt = (l[11] || "liquid").trim();
                 lockState.material = (["liquid", "frosted", "blur", "opaque"].indexOf(mt) >= 0) ? mt : "liquid";
+                // the language from Settings → General (I18n.js)
+                var lang = (l[12] || "auto").trim();
+                Qt.uiLanguage = (lang === "auto" || lang === "null") ? "" : lang;
                 if (!root.preview) lockState.sound("lock");
             }
         }

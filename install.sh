@@ -573,15 +573,6 @@ do_wallpapers() {
     local d="$HOME/Pictures/Wallpapers"; mkdir -p "$d"
     curl -fsSL -A 'Mozilla/5.0' -o "$d/macos-27-GoldenGate-Dark.png"  https://9to5mac.com/wp-content/uploads/sites/6/2026/06/Gold-Gate-wallpaper-dark.png || warn "dark version failed"
     curl -fsSL -A 'Mozilla/5.0' -o "$d/macos-27-GoldenGate-Light.png" https://9to5mac.com/wp-content/uploads/sites/6/2026/06/Gold-Gate-wallpaper.png || warn "light version failed"
-    # Mac Hello greets you over one of Apple's aerials (a nature scene): a 40 s clip cut straight from Apple's server
-    local a="$d/Apple Aerials"; mkdir -p "$a"
-    if [ ! -s "$a/Greenland Icebergs.mp4" ] && have ffmpeg; then
-        say "Downloading an Apple aerial for Mac Hello (Greenland Icebergs, ~30 MB)"
-        ffmpeg -loglevel error -y -tls_verify 0 -ss 40 -t 40 \
-            -i "https://sylvan.apple.com/Videos/comp_GL_G002_C002_PSNK_v03_SDR_PS_20180925_SDR_2K_AVC.mov" \
-            -an -vf "scale=1920:-2" -c:v libx264 -preset veryfast -crf 24 "$a/Greenland Icebergs.mp4" \
-            || { rm -f "$a/Greenland Icebergs.mp4"; warn "couldn't fetch the aerial: Mac Hello uses the Golden Gate picture"; }
-    fi
     note "Apple's wallpapers are Apple's: they're downloaded from the web, not shipped in this repo."
     mkdir -p "$HOME/.config/macbar"
     [ -s "$HOME/.config/macbar/settings.json" ] || printf '{ "wallpaperPath": "%s" }\n' "$d/macos-27-GoldenGate-Dark.png" > "$HOME/.config/macbar/settings.json"

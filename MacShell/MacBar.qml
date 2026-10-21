@@ -76,6 +76,7 @@ import Quickshell.Services.Mpris
 import QtMultimedia
 import Quickshell.Services.Notifications
 import "EmojiData.js" as EmojiData
+import "I18n.js" as I18n
 
 Scope {
     id: root
@@ -183,7 +184,7 @@ Scope {
     property bool tintAccent: false        // glass picks up the accent colour instead of neutral grey
     property bool windowBar: false         // Apple-style window controls floating on every window (off: see WindowBar.qml)
     property bool windowBarTitle: true     // …with the app's icon and name beside them
-    property string userDisplayName: ""    // what the welcome screen was told to call you
+    property string userDisplayName: ""    // the name you go by (kept from older versions' first-run screen)
     // Control Center: battery, Internet Sharing, screen mirroring and the keyboard backlight
     property string powerProfile: "balanced"
     property bool hotspotOn: false
@@ -235,6 +236,14 @@ Scope {
             Quickshell.execDetached([s, "start", d ? d.hotspotSsid : "", d ? d.hotspotPass : "", d ? d.hotspotBand : "bg"]);
         } else Quickshell.execDetached([s, "stop", d ? d.hotspotPrevWifi : ""]);
     }
+    // the thin border around the desktop widgets and the Clock window: a soft shade of the accent
+    readonly property color menuBorderColor: {
+        var c = Qt.color(accent);
+        var h = c.hslHue < 0 ? 0 : c.hslHue, sat = Math.max(0.28, Math.min(0.75, c.hslSaturation));
+        return darkMode ? Qt.hsla(h, sat, 0.74, 1) : Qt.hsla(h, sat * 0.8, 0.42, 1);
+    }
+    property string language: "auto"        // "auto" = the system language, or a code with a table in lang/ (I18n.js)
+    onLanguageChanged: Qt.uiLanguage = language === "auto" ? "" : language
     function toggleAirDrop() {
         if (hub && hub.airdrop) { hub.airdrop.open(); return; }
         Quickshell.execDetached(["sh", "-c", "notify-send 'AirDrop' 'AirDrop is unavailable.'"]);
@@ -461,7 +470,7 @@ Scope {
     property var fileHits: []
 
     readonly property var settingKeys: ["barEnabled", "darkMode", "accent", "fontFamily", "barHeight", "glassOpacity",
-        "barStyle", "barGlass", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "barBgOpacity", "glassRealtime", "glassDebug", "wallpaperPath", "use24h", "showDate",
+        "barStyle", "barGlass", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "barBgOpacity", "glassRealtime", "glassDebug", "wallpaperPath", "use24h", "language", "showDate",
         "showSeconds", "showBatteryPercent", "showTray", "showSearch",
         "spotlightEnabled", "ccEnabled", "notificationsEnabled", "clockAppEnabled", "ccStyle", "userDisplayName", "ccAnimate", "material", "tlAlwaysSymbols", "tlColorOnHover", "tintAccent", "windowBar", "windowBarTitle", "barLogoMode", "barCustomLogoPath", "barWidgets", "weekStartsMonday", "terminal", "launcher",
         "filesCmd", "clipboardCmd", "appUsage", "clipHistory", "clipAutoPaste", "emojiRecent", "screenshotDir", "screenshotSave", "screenshotClipboard", "screenshotNotify", "nightTemp", "ccControls", "ccMigRec", "wallpaperDir", "wallpaperFavs", "wallpaperCmd", "wallpaperVideo", "uiSounds", "gamingMode", "gamingAuto", "ccMigGame", "ccMigTahoe", "lockArtBackground",
@@ -489,34 +498,34 @@ Scope {
         barWidgets = next;
     }
     readonly property var accentChoices: [
-        { name: "Blue", c: "#0a84ff" }, { name: "Purple", c: "#bf5af2" }, { name: "Pink", c: "#ff375f" },
-        { name: "Red", c: "#ff453a" }, { name: "Orange", c: "#ff9f0a" }, { name: "Yellow", c: "#ffd60a" },
-        { name: "Green", c: "#30d158" }, { name: "Graphite", c: "#8e8e93" }
+        { name: I18n.tr("Blue"), c: "#0a84ff" }, { name: I18n.tr("Purple"), c: "#bf5af2" }, { name: I18n.tr("Pink"), c: "#ff375f" },
+        { name: I18n.tr("Red"), c: "#ff453a" }, { name: I18n.tr("Orange"), c: "#ff9f0a" }, { name: I18n.tr("Yellow"), c: "#ffd60a" },
+        { name: I18n.tr("Green"), c: "#30d158" }, { name: I18n.tr("Graphite"), c: "#8e8e93" }
     ]
 
     // ═════════════ CONTROL CENTER LAYOUT ═════════════
     // The Control Center is a 4-column grid. Every control has a size in grid cells; the enabled ones are packed
     // first-fit in the order of `ccControls`, so dragging a control onto another one simply reorders the list.
     readonly property var ccCatalog: [
-        { id: "wifi",       label: "Wi-Fi",         glyph: "wifi",       w: 2, h: 1 },
-        { id: "bluetooth",  label: "Bluetooth",     glyph: "bluetooth",  w: 1, h: 1 },
-        { id: "airplane",   label: "Airplane Mode", glyph: "airplane",   w: 1, h: 1 },
-        { id: "focus",      label: "Focus",         glyph: "moon",       w: 2, h: 1 },
-        { id: "nightshift", label: "Night Shift",   glyph: "nightshift", w: 1, h: 1 },
-        { id: "keepawake",  label: "Keep Awake",    glyph: "coffee",     w: 1, h: 1 },
-        { id: "darkmode",   label: "Dark Mode",     glyph: "contrast",   w: 1, h: 1 },
-        { id: "gaming",     label: "Game Mode",     glyph: "gamepad",    w: 2, h: 1 },
-        { id: "record",     label: "Screen Recording", glyph: "record",  w: 2, h: 1 },
-        { id: "nowplaying", label: "Now Playing",   glyph: "note",       w: 2, h: 2 },
-        { id: "display",    label: "Display",       glyph: "sun",        w: 4, h: 1 },
-        { id: "sound",      label: "Sound",         glyph: "speaker",    w: 4, h: 1 },
-        { id: "battery",    label: "Battery",       glyph: "battery",    w: 2, h: 1 },
-        { id: "hotspot",    label: "Internet Sharing", glyph: "hotspot", w: 2, h: 1 },
+        { id: "wifi",       label: I18n.tr("Wi-Fi"),         glyph: "wifi",       w: 2, h: 1 },
+        { id: "bluetooth",  label: I18n.tr("Bluetooth"),     glyph: "bluetooth",  w: 1, h: 1 },
+        { id: "airplane",   label: I18n.tr("Airplane Mode"), glyph: "airplane",   w: 1, h: 1 },
+        { id: "focus",      label: I18n.tr("Focus"),         glyph: "moon",       w: 2, h: 1 },
+        { id: "nightshift", label: I18n.tr("Night Shift"),   glyph: "nightshift", w: 1, h: 1 },
+        { id: "keepawake",  label: I18n.tr("Keep Awake"),    glyph: "coffee",     w: 1, h: 1 },
+        { id: "darkmode",   label: I18n.tr("Dark Mode"),     glyph: "contrast",   w: 1, h: 1 },
+        { id: "gaming",     label: I18n.tr("Game Mode"),     glyph: "gamepad",    w: 2, h: 1 },
+        { id: "record",     label: I18n.tr("Screen Recording"), glyph: "record",  w: 2, h: 1 },
+        { id: "nowplaying", label: I18n.tr("Now Playing"),   glyph: "note",       w: 2, h: 2 },
+        { id: "display",    label: I18n.tr("Display"),       glyph: "sun",        w: 4, h: 1 },
+        { id: "sound",      label: I18n.tr("Sound"),         glyph: "speaker",    w: 4, h: 1 },
+        { id: "battery",    label: I18n.tr("Battery"),       glyph: "battery",    w: 2, h: 1 },
+        { id: "hotspot",    label: I18n.tr("Internet Sharing"), glyph: "hotspot", w: 2, h: 1 },
         { id: "airdrop",    label: "AirDrop",       glyph: "airdrop",    w: 1, h: 1 },
-        { id: "lockscreen", label: "Lock Screen",   glyph: "lock",       w: 1, h: 1 },
-        { id: "sleep",      label: "Sleep",         glyph: "power",      w: 1, h: 1 },
-        { id: "mirror",     label: "Screen Mirroring", glyph: "mirror",  w: 2, h: 1 },
-        { id: "keylight",   label: "Keyboard Brightness", glyph: "keyboard", w: 4, h: 1 }
+        { id: "lockscreen", label: I18n.tr("Lock Screen"),   glyph: "lock",       w: 1, h: 1 },
+        { id: "sleep",      label: I18n.tr("Sleep"),         glyph: "power",      w: 1, h: 1 },
+        { id: "mirror",     label: I18n.tr("Screen Mirroring"), glyph: "mirror",  w: 2, h: 1 },
+        { id: "keylight",   label: I18n.tr("Keyboard Brightness"), glyph: "keyboard", w: 4, h: 1 }
     ]
     readonly property var ccDefault: ["wifi", "nowplaying", "bluetooth", "airplane", "focus", "record", "nightshift", "keepawake",
                                       "battery", "hotspot", "airdrop", "mirror", "lockscreen", "sleep", "display", "sound"]
@@ -554,7 +563,7 @@ Scope {
     }
     // controls for hardware this computer doesn't have are left out, here and in Edit Controls (a keyboard
     // brightness slider on a keyboard with no backlight did nothing)
-    function ccUsable(id) { return id !== "keylight" || keyLightMax > 0; }
+    function ccUsable(id) { return ccDef(id) !== null && (id !== "keylight" || keyLightMax > 0); }
     readonly property var ccPlan: ccLayout(ccControls.filter(ccUsable))
     function ccAdd(id) {
         if (ccControls.indexOf(id) < 0) ccControls = ccControls.concat([id]);
@@ -1204,6 +1213,9 @@ Scope {
                     property real grain: g.grain * 0.2
                     property real blurPx: 1.5
                     property real tintMix: g.tint * 0.55
+                    property real rimTint: 0
+                    property real ringW: 0
+                    property real flatInner: 0
                     property real saturation: 1.25
                     property real dark: g.dark ? 1 : 0
                     property real debug: g.debug ? 1 : 0
@@ -1313,6 +1325,9 @@ Scope {
                     property real grain: gg.gx.grain * 0.2
                     property real blurPx: 1.5
                     property real tintMix: gg.gx.tint * 0.55 * gg.tintMul
+                    property real rimTint: 0
+                    property real ringW: 0
+                    property real flatInner: 0
                     property real saturation: 1.25
                     property real dark: gg.gx.dark ? 1 : 0
                     property real debug: gg.gx.debug ? 1 : 0
@@ -1681,7 +1696,7 @@ Scope {
             spacing: 1
             Text {
                 width: parent.width
-                text: nb.urgency === 2 ? "TIME SENSITIVE" : nb.app
+                text: nb.urgency === 2 ? I18n.tr("TIME SENSITIVE") : nb.app
                 horizontalAlignment: /[\u0590-\u08ff]/.test(text) ? Text.AlignRight : Text.AlignLeft
                 visible: text !== ""
                 color: nb.urgency === 2 ? nb.t.fg2 : nb.t.fg
@@ -1860,11 +1875,11 @@ Scope {
     readonly property var menuTitles: [
         { id: "apple", label: "" },
         { id: "app", label: appName, bold: true },
-        { id: "file", label: "File" },
-        { id: "edit", label: "Edit" },
-        { id: "view", label: "View" },
-        { id: "window", label: "Window" },
-        { id: "help", label: "Help" }
+        { id: "file", label: I18n.tr("File") },
+        { id: "edit", label: I18n.tr("Edit") },
+        { id: "view", label: I18n.tr("View") },
+        { id: "window", label: I18n.tr("Window") },
+        { id: "help", label: I18n.tr("Help") }
     ]
 
     // audio
@@ -2276,6 +2291,25 @@ Scope {
         }
     }
     Timer { interval: root.backlightDev === "" ? 850 : 5000; repeat: true; running: true; onTriggered: root.refreshBrightness() }
+    // hardware keys: like the sliders, but the on-screen display is shown (no quiet window)
+    function hwVolume(d) {
+        if (!sink || !sink.audio) return;
+        var v = Math.max(0, Math.min(1, Math.round((sink.audio.volume + d) * 100) / 100));
+        if (d > 0) sink.audio.muted = false;
+        sink.audio.volume = v;
+        showOsd("volume", sink.audio.muted ? 0 : v);
+    }
+    function hwMute() {
+        if (!sink || !sink.audio) return;
+        sink.audio.muted = !sink.audio.muted;
+        showOsd("volume", sink.audio.muted ? 0 : sink.audio.volume);
+    }
+    function hwMicMute() { if (micSource && micSource.audio) micSource.audio.muted = !micSource.audio.muted; }
+    function hwBrightness(d) {
+        brightness = Math.max(0.01, Math.min(1, Math.round((brightness + d) * 100) / 100));
+        brightApply.restart();
+        showOsd("brightness", brightness);
+    }
     // ═════════════ KEYBOARD LAYOUT ═════════════
     // Hyprland announces every change with an `activelayout` event, so the label updates immediately (no polling).
     // `hyprctl devices` is only read at start-up and after a config reload, to learn which layouts are configured.
@@ -2384,10 +2418,10 @@ Scope {
     }
     readonly property var privacyRows: {
         var a = [];
-        if (privacy.mic.length > 0) a.push({ k: "mic", glyph: "mic", c: "#FF9F0A", title: "Microphone", sub: privacy.mic.join(", ") });
-        if (privacy.cam.length > 0) a.push({ k: "cam", glyph: "camera", c: "#30D158", title: "Camera", sub: privacy.cam.join(", ") });
-        if (privacy.share.length > 0) a.push({ k: "share", glyph: "monitor", c: "#BF5AF2", title: "Screen Sharing", sub: privacy.share.join(", ") });
-        if (recording) a.push({ k: "rec", glyph: "monitor", c: "#BF5AF2", title: "Screen Recording", sub: "Recording " + recTime() });
+        if (privacy.mic.length > 0) a.push({ k: "mic", glyph: "mic", c: "#FF9F0A", title: I18n.tr("Microphone"), sub: privacy.mic.join(", ") });
+        if (privacy.cam.length > 0) a.push({ k: "cam", glyph: "camera", c: "#30D158", title: I18n.tr("Camera"), sub: privacy.cam.join(", ") });
+        if (privacy.share.length > 0) a.push({ k: "share", glyph: "monitor", c: "#BF5AF2", title: I18n.tr("Screen Sharing"), sub: privacy.share.join(", ") });
+        if (recording) a.push({ k: "rec", glyph: "monitor", c: "#BF5AF2", title: I18n.tr("Screen Recording"), sub: "Recording " + recTime() });
         return a;
     }
     // ── screen recording ──
@@ -2603,6 +2637,18 @@ Scope {
         function realtime(on: bool): void { root.glassRealtime = on; }
         function barglass(on: bool): void { root.barGlass = on; }
     }
+    // Laptop / keyboard hardware keys (volume, mute, brightness). The compositor must bind the keys (the installer's
+    // macshell.lua does); the shell then does the work itself, so the numbers, the on-screen display and the UI sounds
+    // all stay in step.   qs -c MacShell ipc call hardware volumeUp | volumeDown | mute | micMute | brightnessUp | brightnessDown
+    IpcHandler {
+        target: "hardware"
+        function volumeUp(): void { root.hwVolume(0.05); }
+        function volumeDown(): void { root.hwVolume(-0.05); }
+        function mute(): void { root.hwMute(); }
+        function micMute(): void { root.hwMicMute(); }
+        function brightnessUp(): void { root.hwBrightness(0.05); }
+        function brightnessDown(): void { root.hwBrightness(-0.05); }
+    }
     IpcHandler {
         target: "spotlight"
         function toggle(): void { root.search(); }
@@ -2697,7 +2743,7 @@ Scope {
         return "Copied " + Qt.formatDateTime(d, "d MMM") + ", " + tm;
     }
     function clipEntry(id, txt, ts) {
-        var en = { id: id, text: txt, kind: "text", title: txt, label: "Text", host: "", thumb: "", color: "" };
+        var en = { id: id, text: txt, kind: "text", title: txt, label: I18n.tr("Text"), host: "", thumb: "", color: "" };
         var m = /^\[\[ binary data ([\d.]+ \w+) (\w+) (\d+x\d+) \]\]$/.exec(txt);
         if (m) {
             en.kind = "image";
@@ -2878,6 +2924,8 @@ Scope {
         if (clipAutoPaste) pasteSoon();
     }
 
+    // the MacShell logo: the icon of MacShell's own windows in the Alt+Tab switcher
+    readonly property string logoPath: decodeURIComponent(String(Qt.resolvedUrl("assets/macshell-logo.png")).replace(/^file:\/\//, ""))
     // ── applications for Spotlight ──
     function iconSrc(name) {
         var fb = Quickshell.iconPath("application-x-executable", true);
@@ -2924,7 +2972,7 @@ Scope {
             if (!map[cat]) map[cat] = [];
             map[cat].push(list[i]);
         }
-        var secs = [{ name: "Suggestions", apps: sug }];
+        var secs = [{ name: I18n.tr("Suggestions"), apps: sug }];
         for (i = 0; i < catOrder.length; i++) if (map[catOrder[i]]) secs.push({ name: catOrder[i], apps: map[catOrder[i]] });
         return secs;
     }
@@ -2951,7 +2999,7 @@ Scope {
     }
     function appSearchSection(q) {
         var r = searchApps(q);
-        return r.length > 0 ? [{ name: "Top Hits", apps: r }] : [];
+        return r.length > 0 ? [{ name: I18n.tr("Top Hits"), apps: r }] : [];
     }
     function launchApp(e) {
         var u = {};
@@ -2971,12 +3019,12 @@ Scope {
     }
     function actionItems(q) {
         var all = [
-            { title: "Lock Screen", glyph: "lock", run: function () { sh("loginctl lock-session"); } },
-            { title: "Sleep", glyph: "moon", run: function () { sh("systemctl suspend"); } },
-            { title: "System Settings\u2026", glyph: "gear", run: function () { openSettings(); } },
-            { title: "Log Out", glyph: "logout", confirm: true, run: function () { root.logOut(); } },
-            { title: "Restart", glyph: "restart", confirm: true, run: function () { sh("systemctl reboot"); } },
-            { title: "Shut Down", glyph: "power", confirm: true, run: function () { sh("systemctl poweroff"); } }
+            { title: I18n.tr("Lock Screen"), glyph: "lock", run: function () { sh("loginctl lock-session"); } },
+            { title: I18n.tr("Sleep"), glyph: "moon", run: function () { sh("systemctl suspend"); } },
+            { title: I18n.tr("System Settings\u2026"), glyph: "gear", run: function () { openSettings(); } },
+            { title: I18n.tr("Log Out"), glyph: "logout", confirm: true, run: function () { root.logOut(); } },
+            { title: I18n.tr("Restart"), glyph: "restart", confirm: true, run: function () { sh("systemctl reboot"); } },
+            { title: I18n.tr("Shut Down"), glyph: "power", confirm: true, run: function () { sh("systemctl poweroff"); } }
         ];
         var s = (q || "").trim().toLowerCase(), out = [];
         for (var i = 0; i < all.length; i++) {
@@ -3024,7 +3072,7 @@ Scope {
         var out = [], s = (q || "").trim().toLowerCase();
         if (s.indexOf("file ") === 0 || s.indexOf("find ") === 0) {
             var fq=s.replace(/^(file|find)\s+/,"").trim(); if(fq!=="" && fileQuery!==fq) updateFileSearch(fq);
-            out=fileItems(fq); if(out.length===0) out.push({title:fileSearchPending?"Searching files…":"No matching files",sub:"Files",glyph:"folder",run:function(){}});
+            out=fileItems(fq); if(out.length===0) out.push({title:fileSearchPending?I18n.tr("Searching files…"):I18n.tr("No matching files"),sub:"Files",glyph:"folder",run:function(){}});
             return out;
         }
         if(s.length>0) out=appItems(q,4);
@@ -3039,13 +3087,16 @@ Scope {
     function menuModelFor(name) {
         var m = [], i;
         if (name === "apple") {
-            m.push(mi("About This Computer", "", function () { root.openSettings("about"); }));
+            m.push(mi(I18n.tr("About This Computer"), "", function () {
+                if (hub && hub.about) hub.about.open();
+                else root.openSettings("about");
+            }));
             m.push(msep());
-            m.push(mi("System Settings\u2026", "", function () { root.openSettings("general"); }));
+            m.push(mi(I18n.tr("System Settings\u2026"), "", function () { root.openSettings("general"); }));
             m.push(mi("App Store\u2026", "", function () { if (hub && hub.appstore) hub.appstore.open(); }));
             m.push(msep());
-            m.push(mi("Lock Screen", "", function () { sh("loginctl lock-session"); }));
-            m.push(mi("Sleep", "", function () { sh("systemctl suspend"); }));
+            m.push(mi(I18n.tr("Lock Screen"), "", function () { sh("loginctl lock-session"); }));
+            m.push(mi(I18n.tr("Sleep"), "", function () { sh("systemctl suspend"); }));
             m.push(msep());
             m.push(mc("Restart\u2026", function () { sh("systemctl reboot"); }));
             m.push(mc("Shut Down\u2026", function () { sh("systemctl poweroff"); }));
@@ -3060,93 +3111,93 @@ Scope {
 
             if (name === "app") {
                 if (!has) {
-                    m.push(mi("New Terminal", "", function () { sh(terminal); }));
-                    m.push(mi("Open Home Folder", "", function () { if (hub && hub.openFolder) hub.openFolder(Quickshell.env("HOME")); else sh(filesCmd); }));
+                    m.push(mi(I18n.tr("New Terminal"), "", function () { sh(terminal); }));
+                    m.push(mi(I18n.tr("Open Home Folder"), "", function () { if (hub && hub.openFolder) hub.openFolder(Quickshell.env("HOME")); else sh(filesCmd); }));
                     m.push(msep());
-                    m.push(mi("Search\u2026", "", function () { root.search(); }));
+                    m.push(mi(I18n.tr("Search\u2026"), "", function () { root.search(); }));
                 } else {
-                    m.push(mi("About " + n, "", function () { root.aboutActive(aw, n); }));
+                    m.push(mi(I18n.tr("About ") + n, "", function () { root.aboutActive(aw, n); }));
                     if (editor || files) {
                         m.push(msep());
-                        m.push(mi("Preferences\u2026", "Ctrl+,", keys(["ctrl"], "comma")));
+                        m.push(mi(I18n.tr("Preferences\u2026"), "Ctrl+,", keys(["ctrl"], "comma")));
                     }
                     m.push(msep());
-                    m.push(mi("Hide " + n, "", disp('hl.dsp.window.move({ workspace = "special:hidden", follow = false })')));
-                    m.push(mi("Show Hidden Windows", "", disp('hl.dsp.workspace.toggle_special("hidden")')));
+                    m.push(mi(I18n.tr("Hide ") + n, "", disp('hl.dsp.window.move({ workspace = "special:hidden", follow = false })')));
+                    m.push(mi(I18n.tr("Show Hidden Windows"), "", disp('hl.dsp.workspace.toggle_special("hidden")')));
                     m.push(msep());
-                    m.push(mi("Quit " + n, "Ctrl+Q", function () { root.quitActive(); }));
+                    m.push(mi(I18n.tr("Quit ") + n, "Ctrl+Q", function () { root.quitActive(); }));
                     m.push(mc("Force Quit " + n, function () { root.forceQuitActive(aw); }));
                 }
             } else if (name === "file") {
                 if (!has) {
-                    m.push(mi("New Terminal", "", function () { sh(terminal); }));
-                    m.push(mi("New Finder Window", "", function () { if (hub && hub.openFolder) hub.openFolder(Quickshell.env("HOME")); else sh(filesCmd); }));
+                    m.push(mi(I18n.tr("New Terminal"), "", function () { sh(terminal); }));
+                    m.push(mi(I18n.tr("New Finder Window"), "", function () { if (hub && hub.openFolder) hub.openFolder(Quickshell.env("HOME")); else sh(filesCmd); }));
                 } else {
-                    m.push(mi("New Window", "", function () { root.launchActive(); }));
+                    m.push(mi(I18n.tr("New Window"), "", function () { root.launchActive(); }));
                     if (browser) {
                         var ff = /firefox|librewolf|floorp|zen|waterfox/.test(id);
-                        m.push(mi("New Private Window", ff ? "Ctrl+Shift+P" : "Ctrl+Shift+N", keys(["ctrl", "shift"], ff ? "p" : "n")));
+                        m.push(mi(I18n.tr("New Private Window"), ff ? "Ctrl+Shift+P" : "Ctrl+Shift+N", keys(["ctrl", "shift"], ff ? "p" : "n")));
                     }
-                    if (browser || files) m.push(mi("New Tab", "Ctrl+T", keys(["ctrl"], "t")));
-                    if (term) m.push(mi("New Tab", "Ctrl+Shift+T", keys(["ctrl", "shift"], "t")));
-                    if (browser) m.push(mi("Reopen Closed Tab", "Ctrl+Shift+T", keys(["ctrl", "shift"], "t")));
-                    if (!term && !files) m.push(mi("Open\u2026", "Ctrl+O", keys(["ctrl"], "o")));
+                    if (browser || files) m.push(mi(I18n.tr("New Tab"), "Ctrl+T", keys(["ctrl"], "t")));
+                    if (term) m.push(mi(I18n.tr("New Tab"), "Ctrl+Shift+T", keys(["ctrl", "shift"], "t")));
+                    if (browser) m.push(mi(I18n.tr("Reopen Closed Tab"), "Ctrl+Shift+T", keys(["ctrl", "shift"], "t")));
+                    if (!term && !files) m.push(mi(I18n.tr("Open\u2026"), "Ctrl+O", keys(["ctrl"], "o")));
                     if (!term && !files) {
                         m.push(msep());
                         m.push(mi(browser ? "Save Page As\u2026" : "Save", "Ctrl+S", keys(["ctrl"], "s")));
-                        if (!browser) m.push(mi("Save As\u2026", "Ctrl+Shift+S", keys(["ctrl", "shift"], "s")));
-                        m.push(mi("Print\u2026", "Ctrl+P", keys(["ctrl"], "p")));
+                        if (!browser) m.push(mi(I18n.tr("Save As\u2026"), "Ctrl+Shift+S", keys(["ctrl", "shift"], "s")));
+                        m.push(mi(I18n.tr("Print\u2026"), "Ctrl+P", keys(["ctrl"], "p")));
                     }
                     m.push(msep());
-                    if (browser || files || editor) m.push(mi("Close Tab", "Ctrl+W", keys(["ctrl"], "w")));
-                    if (term) m.push(mi("Close Tab", "Ctrl+Shift+W", keys(["ctrl", "shift"], "w")));
-                    m.push(mi("Close Window", "", disp('hl.dsp.window.close()')));
+                    if (browser || files || editor) m.push(mi(I18n.tr("Close Tab"), "Ctrl+W", keys(["ctrl"], "w")));
+                    if (term) m.push(mi(I18n.tr("Close Tab"), "Ctrl+Shift+W", keys(["ctrl", "shift"], "w")));
+                    m.push(mi(I18n.tr("Close Window"), "", disp('hl.dsp.window.close()')));
                 }
                 m.push(msep());
-                if (aw) m.push(mi("Screenshot Window", "", function () { root.shotWindow(aw); }));
-                m.push(mi("Screenshot Selection\u2026", "", function () { root.shot("sel"); }));
-                m.push(mi("Screenshot Screen", "", function () { root.shot(""); }));
+                if (aw) m.push(mi(I18n.tr("Screenshot Window"), "", function () { root.shotWindow(aw); }));
+                m.push(mi(I18n.tr("Screenshot Selection\u2026"), "", function () { root.shot("sel"); }));
+                m.push(mi(I18n.tr("Screenshot Screen"), "", function () { root.shot(""); }));
                 m.push(mi(root.recording ? "Stop Screen Recording" : "Start Screen Recording", "", function () { root.toggleRecording(); }));
-                m.push(mi("Pick Color", "", function () { root.pickColor(); }));
+                m.push(mi(I18n.tr("Pick Color"), "", function () { root.pickColor(); }));
             } else if (name === "edit") {
                 if (has && term) {
-                    m.push(mi("Copy", "Ctrl+Shift+C", keys(["ctrl", "shift"], "c")));
-                    m.push(mi("Paste", "Ctrl+Shift+V", keys(["ctrl", "shift"], "v")));
+                    m.push(mi(I18n.tr("Copy"), "Ctrl+Shift+C", keys(["ctrl", "shift"], "c")));
+                    m.push(mi(I18n.tr("Paste"), "Ctrl+Shift+V", keys(["ctrl", "shift"], "v")));
                 } else if (has) {
-                    m.push(mi("Undo", "Ctrl+Z", keys(["ctrl"], "z")));
-                    m.push(mi("Redo", "Ctrl+Shift+Z", keys(["ctrl", "shift"], "z")));
+                    m.push(mi(I18n.tr("Undo"), "Ctrl+Z", keys(["ctrl"], "z")));
+                    m.push(mi(I18n.tr("Redo"), "Ctrl+Shift+Z", keys(["ctrl", "shift"], "z")));
                     m.push(msep());
-                    m.push(mi("Cut", "Ctrl+X", keys(["ctrl"], "x")));
-                    m.push(mi("Copy", "Ctrl+C", keys(["ctrl"], "c")));
-                    m.push(mi("Paste", "Ctrl+V", keys(["ctrl"], "v")));
-                    if (browser || editor) m.push(mi("Paste and Match Style", "Ctrl+Shift+V", keys(["ctrl", "shift"], "v")));
-                    m.push(mi("Select All", "Ctrl+A", keys(["ctrl"], "a")));
+                    m.push(mi(I18n.tr("Cut"), "Ctrl+X", keys(["ctrl"], "x")));
+                    m.push(mi(I18n.tr("Copy"), "Ctrl+C", keys(["ctrl"], "c")));
+                    m.push(mi(I18n.tr("Paste"), "Ctrl+V", keys(["ctrl"], "v")));
+                    if (browser || editor) m.push(mi(I18n.tr("Paste and Match Style"), "Ctrl+Shift+V", keys(["ctrl", "shift"], "v")));
+                    m.push(mi(I18n.tr("Select All"), "Ctrl+A", keys(["ctrl"], "a")));
                     m.push(msep());
-                    m.push(mi("Find\u2026", "Ctrl+F", keys(["ctrl"], "f")));
+                    m.push(mi(I18n.tr("Find\u2026"), "Ctrl+F", keys(["ctrl"], "f")));
                 }
                 if (has) m.push(msep());
-                m.push(mi("Clipboard History\u2026", "", function () { root.spotOpen("clip"); }));
-                m.push(mi("Emoji & Symbols", "", function () { root.spotOpen("emoji"); }));
+                m.push(mi(I18n.tr("Clipboard History\u2026"), "", function () { root.spotOpen("clip"); }));
+                m.push(mi(I18n.tr("Emoji & Symbols"), "", function () { root.spotOpen("emoji"); }));
             } else if (name === "view") {
                 if (has) {
                     m.push(mi(fsMode === 2 ? "Exit Full Screen" : "Enter Full Screen", "", disp('hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" })')));
                     m.push(msep());
                     m.push(mchk("Floating", "", floating, disp('hl.dsp.window.float({ action = "toggle" })')));
                     m.push(dis(mchk("Pin to All Workspaces", "", aw && aw.pinned === true, disp('hl.dsp.window.pin({ action = "toggle" })')), !floating));
-                    m.push(dis(mi("Center Window", "", disp('hl.dsp.window.center()')), !floating));
-                    m.push(dis(mi("Toggle Split Direction", "", disp('hl.dsp.layout("togglesplit")')), floating));
+                    m.push(dis(mi(I18n.tr("Center Window"), "", disp('hl.dsp.window.center()')), !floating));
+                    m.push(dis(mi(I18n.tr("Toggle Split Direction"), "", disp('hl.dsp.layout("togglesplit")')), floating));
                     if (!term) {
                         m.push(msep());
-                        m.push(mi("Actual Size", "Ctrl+0", keys(["ctrl"], "0")));
-                        m.push(mi("Zoom In", "Ctrl+=", keys(["ctrl"], "equal")));
-                        m.push(mi("Zoom Out", "Ctrl+-", keys(["ctrl"], "minus")));
+                        m.push(mi(I18n.tr("Actual Size"), "Ctrl+0", keys(["ctrl"], "0")));
+                        m.push(mi(I18n.tr("Zoom In"), "Ctrl+=", keys(["ctrl"], "equal")));
+                        m.push(mi(I18n.tr("Zoom Out"), "Ctrl+-", keys(["ctrl"], "minus")));
                     }
                     if (browser || files) {
                         m.push(msep());
-                        m.push(mi("Reload", "F5", keys([], "F5")));
+                        m.push(mi(I18n.tr("Reload"), "F5", keys([], "F5")));
                         if (browser) {
-                            m.push(mi("Reload Ignoring Cache", "Ctrl+Shift+R", keys(["ctrl", "shift"], "r")));
-                            m.push(mi("Developer Tools", "F12", keys([], "F12")));
+                            m.push(mi(I18n.tr("Reload Ignoring Cache"), "Ctrl+Shift+R", keys(["ctrl", "shift"], "r")));
+                            m.push(mi(I18n.tr("Developer Tools"), "F12", keys([], "F12")));
                         }
                     }
                     m.push(msep());
@@ -3154,21 +3205,21 @@ Scope {
                 m.push(mchk("Dark Mode", "", root.darkMode, function () { root.setDark(!root.darkMode); }));
             } else if (name === "window") {
                 if (has) {
-                    m.push(mi("Minimize", "\u2318M", function () { if (root.hub && root.hub.minimizeActive) root.hub.minimizeActive(); }));
+                    m.push(mi(I18n.tr("Minimize"), "\u2318M", function () { if (root.hub && root.hub.minimizeActive) root.hub.minimizeActive(); }));
                     m.push(mchk("Zoom", "", fsMode === 1, disp('hl.dsp.window.fullscreen({ mode = "maximized", action = "toggle" })')));
                     m.push(mi(floating ? "Tile Window" : "Float Window", "", disp('hl.dsp.window.float({ action = "toggle" })')));
                     m.push(msep());
-                    m.push(mi("Move Window Left", "", disp('hl.dsp.window.move({ direction = "left" })')));
-                    m.push(mi("Move Window Right", "", disp('hl.dsp.window.move({ direction = "right" })')));
-                    m.push(mi("Make Wider", "", disp('hl.dsp.window.resize({ x = 100, y = 0, relative = true })')));
-                    m.push(mi("Make Narrower", "", disp('hl.dsp.window.resize({ x = -100, y = 0, relative = true })')));
-                    if (Quickshell.screens.length > 1) m.push(mi("Move to Next Monitor", "", disp('hl.dsp.window.move({ monitor = "+1" })')));
-                    m.push(mi("Move to Next Workspace", "", disp('hl.dsp.window.move({ workspace = "+1" })')));
-                    m.push(mi("Move to Previous Workspace", "", disp('hl.dsp.window.move({ workspace = "-1" })')));
+                    m.push(mi(I18n.tr("Move Window Left"), "", disp('hl.dsp.window.move({ direction = "left" })')));
+                    m.push(mi(I18n.tr("Move Window Right"), "", disp('hl.dsp.window.move({ direction = "right" })')));
+                    m.push(mi(I18n.tr("Make Wider"), "", disp('hl.dsp.window.resize({ x = 100, y = 0, relative = true })')));
+                    m.push(mi(I18n.tr("Make Narrower"), "", disp('hl.dsp.window.resize({ x = -100, y = 0, relative = true })')));
+                    if (Quickshell.screens.length > 1) m.push(mi(I18n.tr("Move to Next Monitor"), "", disp('hl.dsp.window.move({ monitor = "+1" })')));
+                    m.push(mi(I18n.tr("Move to Next Workspace"), "", disp('hl.dsp.window.move({ workspace = "+1" })')));
+                    m.push(mi(I18n.tr("Move to Previous Workspace"), "", disp('hl.dsp.window.move({ workspace = "-1" })')));
                     m.push(msep());
                 }
-                m.push(mi("Show Hidden Windows", "", disp('hl.dsp.workspace.toggle_special("hidden")')));
-                m.push(mi("Bring Back Minimized Window", "\u21E7\u2318M", function () { if (root.hub && root.hub.restoreLast) root.hub.restoreLast(); }));
+                m.push(mi(I18n.tr("Show Hidden Windows"), "", disp('hl.dsp.workspace.toggle_special("hidden")')));
+                m.push(mi(I18n.tr("Bring Back Minimized Window"), "\u21E7\u2318M", function () { if (root.hub && root.hub.restoreLast) root.hub.restoreLast(); }));
                 var tls = ToplevelManager.toplevels.values;
                 if (tls.length > 0) m.push(msep());
                 for (i = 0; i < tls.length && i < 8; i++) {
@@ -3178,10 +3229,10 @@ Scope {
                     })(tls[i]);
                 }
             } else if (name === "help") {
-                m.push(mi("Search\u2026", "", function () { root.search(); }));
+                m.push(mi(I18n.tr("Search\u2026"), "", function () { root.search(); }));
                 if (has) m.push(mi(n + " Help", "", function () { root.helpFor(id, n); }));
                 m.push(msep());
-                m.push(mi("Hyprland Keybinds", "", function () { sh(terminal + " -e sh -c 'hyprctl binds | less'"); }));
+                m.push(mi(I18n.tr("Hyprland Keybinds"), "", function () { sh(terminal + " -e sh -c 'hyprctl binds | less'"); }));
                 m.push(mi("Reload Hyprland Config", "", function () { Quickshell.execDetached(["hyprctl", "reload"]); }));
                 m.push(msep());
                 m.push(mi("Hyprland Wiki", "", function () { Quickshell.execDetached(["xdg-open", "https://wiki.hypr.land"]); }));
@@ -3359,7 +3410,7 @@ Scope {
                     Text {
                         id: hintTxt
                         anchors.centerIn: parent
-                        text: "Drag to select an area   \u2022   Return: whole screen   \u2022   Esc: cancel"
+                        text: I18n.tr("Drag to select an area   \u2022   Return: whole screen   \u2022   Esc: cancel")
                         color: "white"
                         font.family: root.fontFamily; font.pixelSize: 13
                     }
@@ -4115,8 +4166,8 @@ Scope {
             if (seen[id] !== undefined) { apps[seen[id]].count++; continue; }
             var e = root.lookup(id);
             seen[id] = apps.length;
-            apps.push({ appId: id, cls: t.appId, name: id === "systemsettings" ? "System Settings" : (e ? e.name : id),
-                        icon: id === "systemsettings" ? "preferences-system" : (e ? e.icon : ""), win: t, count: 1 });
+            apps.push({ appId: id, cls: t.appId, name: id === "systemsettings" ? I18n.tr("System Settings") : (id === "org.quickshell" ? "MacShell" : (e ? e.name : id)),
+                        icon: id === "systemsettings" ? "preferences-system" : (id === "org.quickshell" ? root.logoPath : (e ? e.icon : "")), win: t, count: 1 });
         }
         return apps;
     }
@@ -5478,7 +5529,7 @@ Scope {
                             width: volFlick.width - 28
                             spacing: 3
 
-                            Text { x: 4; text: "Output"; color: pal.fg2; font.family: pal.fam; font.pixelSize: 12; font.weight: Font.DemiBold; bottomPadding: 3 }
+                            Text { x: 4; text: I18n.tr("Output"); color: pal.fg2; font.family: pal.fam; font.pixelSize: 12; font.weight: Font.DemiBold; bottomPadding: 3 }
                             Item {
                                 width: parent.width; height: 32
                                 CCSlider {
@@ -5505,9 +5556,9 @@ Scope {
                                     onClicked: root.chooseAudio(modelData)
                                 }
                             }
-                            Text { visible: root.audioOutputs.length === 0; x: 4; text: "No output devices"; color: pal.fg2; font.family: pal.fam; font.pixelSize: 12; topPadding: 4; bottomPadding: 4 }
+                            Text { visible: root.audioOutputs.length === 0; x: 4; text: I18n.tr("No output devices"); color: pal.fg2; font.family: pal.fam; font.pixelSize: 12; topPadding: 4; bottomPadding: 4 }
                             Item { width: 1; height: 5 }
-                            Text { x: 4; text: "Apps"; color: pal.fg2; font.family: pal.fam; font.pixelSize: 12; font.weight: Font.DemiBold; bottomPadding: 2 }
+                            Text { x: 4; text: I18n.tr("Apps"); color: pal.fg2; font.family: pal.fam; font.pixelSize: 12; font.weight: Font.DemiBold; bottomPadding: 2 }
                             Repeater {
                                 model: root.appAudioStreams
                                 delegate: Item {
@@ -5528,13 +5579,13 @@ Scope {
                                     }
                                 }
                             }
-                            Text { visible: root.appAudioStreams.length === 0; x: 4; text: "No apps are playing audio"; color: pal.fg2; font.family: pal.fam; font.pixelSize: 11; topPadding: 2; bottomPadding: 4 }
+                            Text { visible: root.appAudioStreams.length === 0; x: 4; text: I18n.tr("No apps are playing audio"); color: pal.fg2; font.family: pal.fam; font.pixelSize: 11; topPadding: 2; bottomPadding: 4 }
                             Item { width: 1; height: 5 }
                             Rectangle { width: parent.width; height: 1; color: pal.sep }
                             Item { width: 1; height: 5 }
                             Item {
                                 width: parent.width; height: 32
-                                Text { x: 4; anchors.verticalCenter: parent.verticalCenter; text: "Input"; color: pal.fg2; font.family: pal.fam; font.pixelSize: 12; font.weight: Font.DemiBold }
+                                Text { x: 4; anchors.verticalCenter: parent.verticalCenter; text: I18n.tr("Input"); color: pal.fg2; font.family: pal.fam; font.pixelSize: 12; font.weight: Font.DemiBold }
                                 Rectangle {
                                     anchors.right: parent.right
                                     anchors.verticalCenter: parent.verticalCenter
@@ -5569,7 +5620,7 @@ Scope {
                                     onClicked: root.chooseAudio(modelData)
                                 }
                             }
-                            Text { visible: root.audioInputs.length === 0; x: 4; text: "No input devices"; color: pal.fg2; font.family: pal.fam; font.pixelSize: 12; topPadding: 4; bottomPadding: 4 }
+                            Text { visible: root.audioInputs.length === 0; x: 4; text: I18n.tr("No input devices"); color: pal.fg2; font.family: pal.fam; font.pixelSize: 12; topPadding: 4; bottomPadding: 4 }
                         }
                     }
                 }
@@ -5848,7 +5899,7 @@ Scope {
                         opacity: notifPop.chrome
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "Notification system"
+                            text: I18n.tr("Notification system")
                             color: pal.fg
                             font.family: pal.fam; font.pixelSize: 17; font.weight: Font.DemiBold
                         }
@@ -5860,7 +5911,7 @@ Scope {
                             Text {
                                 id: clrText
                                 anchors.centerIn: parent
-                                text: "Clear All"
+                                text: I18n.tr("Clear All")
                                 color: pal.fg
                                 font.family: pal.fam; font.pixelSize: 12; font.weight: Font.Medium
                             }
@@ -5874,7 +5925,7 @@ Scope {
                         Glyph { x: 12; anchors.verticalCenter: parent.verticalCenter; width: 15; height: 15; kind: "moon"; color: pal.fg }
                         Text {
                             x: 36; anchors.verticalCenter: parent.verticalCenter
-                            text: "Do Not Disturb"
+                            text: I18n.tr("Do Not Disturb")
                             color: pal.fg
                             font.family: pal.fam; font.pixelSize: 13
                         }
@@ -5892,7 +5943,7 @@ Scope {
                         Behavior on opacity { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
                         x: 0; y: 96; width: parent.width; height: 60
                         horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                        text: "No Notifications"
+                        text: I18n.tr("No Notifications")
                         color: pal.fg2
                         font.family: pal.fam; font.pixelSize: 14
                     }
@@ -6119,7 +6170,7 @@ Scope {
                                     anchors.verticalCenter: parent.verticalCenter
                                     width: parent.width - x - 12 - (sc.visible ? sc.implicitWidth + 12 : 0)
                                     elide: Text.ElideRight
-                                    text: it.isSep ? "" : (it.armedNow ? "Click again to confirm" : it.modelData.label)
+                                    text: it.isSep ? "" : (it.armedNow ? I18n.tr("Click again to confirm") : it.modelData.label)
                                     color: it.hot ? "white" : (it.off ? pal.fg2 : pal.fg)
                                     font.family: pal.fam
                                     font.pixelSize: 13
@@ -6288,7 +6339,7 @@ Scope {
                                         visible: !te.isSep && te.modelData.buttonType !== QsMenuButtonType.None && te.modelData.checkState === Qt.Checked
                                         x: 10
                                         anchors.verticalCenter: parent.verticalCenter
-                                        text: te.modelData.buttonType === QsMenuButtonType.RadioButton ? "\u25CF" : "\u2713"
+                                        text: te.modelData.buttonType === QsMenuButtonType.RadioButton ? I18n.tr("\u25CF") : "\u2713"
                                         color: te.hot ? "white" : (te.live ? pal.fg : pal.fg2)
                                         font.family: pal.fam
                                         font.pixelSize: te.modelData.buttonType === QsMenuButtonType.RadioButton ? 8 : 13
@@ -6397,7 +6448,7 @@ Scope {
                             width: parent.width; height: 32
                             Text {
                                 x: 6; anchors.verticalCenter: parent.verticalCenter
-                                text: "Wi-Fi"
+                                text: I18n.tr("Wi-Fi")
                                 color: pal.fg
                                 font.family: pal.fam; font.pixelSize: 15; font.weight: Font.DemiBold
                             }
@@ -6410,7 +6461,7 @@ Scope {
                             }
                         }
                         Rectangle { width: parent.width; height: 1; color: pal.sep }
-                        Text { visible: root.otherConnections.length>0; width:parent.width; leftPadding:6; text:"Ethernet & VPN"; color:pal.fg2; font.family:pal.fam; font.pixelSize:11; font.weight:Font.DemiBold }
+                        Text { visible: root.otherConnections.length>0; width:parent.width; leftPadding:6; text:I18n.tr("Ethernet & VPN"); color:pal.fg2; font.family:pal.fam; font.pixelSize:11; font.weight:Font.DemiBold }
                         Column {
                             width: parent.width
                             Repeater {
@@ -6420,7 +6471,7 @@ Scope {
                                     width: parent.width; height: 30
                                     Rectangle { anchors.fill:parent; radius:8; color:connMa.containsMouse?pal.hover:"transparent" }
                                     Glyph { x:8; anchors.verticalCenter:parent.verticalCenter; width:14; height:14; kind:modelData.type==="vpn"?"lock":(modelData.type==="wifi"?"wifi":"ethernet"); color:pal.fg }
-                                    Text { x:30; anchors.verticalCenter:parent.verticalCenter; width:parent.width-42; elide:Text.ElideRight; text:modelData.name+(modelData.active?" · Connected":""); color:pal.fg; font.family:pal.fam; font.pixelSize:12 }
+                                    Text { x:30; anchors.verticalCenter:parent.verticalCenter; width:parent.width-42; elide:Text.ElideRight; text:modelData.name+(modelData.active?I18n.tr(" · Connected"):""); color:pal.fg; font.family:pal.fam; font.pixelSize:12 }
                                     MouseArea { id:connMa; anchors.fill:parent; hoverEnabled:true; onClicked:root.toggleConnection(modelData) }
                                 }
                             }
@@ -6430,7 +6481,7 @@ Scope {
                             visible: !root.wifiOn
                             width: parent.width; height: 56
                             horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                            text: "Wi-Fi is turned off"
+                            text: I18n.tr("Wi-Fi is turned off")
                             color: pal.fg2
                             font.family: pal.fam; font.pixelSize: 13
                         }
@@ -6438,14 +6489,14 @@ Scope {
                             visible: root.wifiOn && root.wifiNets.length === 0
                             width: parent.width; height: 56
                             horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                            text: root.wifiScanning ? "Searching\u2026" : "No networks found"
+                            text: root.wifiScanning ? I18n.tr("Searching\u2026") : I18n.tr("No networks found")
                             color: pal.fg2
                             font.family: pal.fam; font.pixelSize: 13
                         }
                         Text {
                             visible: root.wifiOn && root.wifiNets.length > 0
                             leftPadding: 6
-                            text: "Networks"
+                            text: I18n.tr("Networks")
                             color: pal.fg2
                             font.family: pal.fam; font.pixelSize: 11; font.weight: Font.DemiBold
                         }
@@ -6455,7 +6506,7 @@ Scope {
                             leftPadding: 6; rightPadding: 6
                             width: parent.width
                             wrapMode: Text.WordWrap
-                            text: "This adapter can't share and stay connected at once, so Internet Sharing has it."
+                            text: I18n.tr("This adapter can't share and stay connected at once, so Internet Sharing has it.")
                             color: pal.fg2
                             font.family: pal.fam; font.pixelSize: 11
                         }
@@ -6512,7 +6563,7 @@ Scope {
                                                 visible: nr.busy
                                                 anchors.right: parent.right; anchors.rightMargin: 12
                                                 anchors.verticalCenter: parent.verticalCenter
-                                                text: "Connecting\u2026"
+                                                text: I18n.tr("Connecting\u2026")
                                                 color: pal.fg2
                                                 font.family: pal.fam; font.pixelSize: 12
                                             }
@@ -6520,7 +6571,7 @@ Scope {
                                                 visible: !nr.busy && nr.modelData.inUse && wma.containsMouse
                                                 anchors.right: parent.right; anchors.rightMargin: 12
                                                 anchors.verticalCenter: parent.verticalCenter
-                                                text: "Disconnect"
+                                                text: I18n.tr("Disconnect")
                                                 color: "white"
                                                 font.family: pal.fam; font.pixelSize: 12
                                             }
@@ -6565,7 +6616,7 @@ Scope {
                                                 x: 42; y: 3; height: 32
                                                 verticalAlignment: Text.AlignVCenter
                                                 visible: pw.text === ""
-                                                text: "Password"
+                                                text: I18n.tr("Password")
                                                 color: pal.fg3
                                                 font.family: pal.fam; font.pixelSize: 13
                                             }
@@ -6592,7 +6643,7 @@ Scope {
                                                 anchors.right: parent.right; anchors.rightMargin: 16
                                                 y: 3; height: 32
                                                 verticalAlignment: Text.AlignVCenter
-                                                text: "Join"
+                                                text: I18n.tr("Join")
                                                 color: pw.text.length > 0 ? root.accent : pal.fg3
                                                 font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold
                                                 MouseArea {
@@ -6626,7 +6677,7 @@ Scope {
                             }
                             Text {
                                 x: 10; anchors.verticalCenter: parent.verticalCenter
-                                text: "Wi-Fi Settings\u2026"
+                                text: I18n.tr("Wi-Fi Settings\u2026")
                                 color: wsa.containsMouse ? "white" : pal.fg
                                 font.family: pal.fam; font.pixelSize: 13
                             }
@@ -6693,7 +6744,7 @@ Scope {
                             font.family: pal.fam; font.pixelSize: 12; font.weight: Font.DemiBold
                         }
                         Text {
-                            text: Qt.formatDateTime(clock.date, "d MMMM yyyy")
+                            text: Qt.formatDateTime(clock.date, I18n.tr("d MMMM yyyy"))
                             color: pal.fg
                             font.family: pal.fam; font.pixelSize: 22; font.weight: Font.DemiBold
                         }
@@ -6904,11 +6955,11 @@ Scope {
                                 x: 62; anchors.verticalCenter: parent.verticalCenter
                                 width: parent.width - 62 - 24
                                 spacing: 1
-                                Text { text: "Wi-Fi"; color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                Text { text: I18n.tr("Wi-Fi"); color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
                                 MorphText {
                                     animateWidth: false; duration: 420
                                     width: parent.width; elide: Text.ElideRight
-                                    text: !root.wifiOn ? "Off" : (root.wifiSsid !== "" ? root.wifiSsid : "Not Connected")
+                                    text: !root.wifiOn ? I18n.tr("Off") : (root.wifiSsid !== "" ? root.wifiSsid : I18n.tr("Not Connected"))
                                     color: pal.fg2; font.family: pal.fam; font.pixelSize: 12
                                 }
                             }
@@ -6949,8 +7000,8 @@ Scope {
                             Column {
                                 x: 62; anchors.verticalCenter: parent.verticalCenter
                                 spacing: 1
-                                Text { text: "Focus"; color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                MorphText { animateWidth: false; duration: 420; text: root.dnd ? "Do Not Disturb" : "Off"; color: pal.fg2; font.family: pal.fam; font.pixelSize: 12 }
+                                Text { text: I18n.tr("Focus"); color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                MorphText { animateWidth: false; duration: 420; text: root.dnd ? I18n.tr("Do Not Disturb") : I18n.tr("Off"); color: pal.fg2; font.family: pal.fam; font.pixelSize: 12 }
                             }
                         }
                     }
@@ -6968,8 +7019,8 @@ Scope {
                                 x: 62; anchors.verticalCenter: parent.verticalCenter
                                 width: parent.width - 62 - 10
                                 spacing: 1
-                                Text { width: parent.width; elide: Text.ElideRight; text: "Game Mode"; color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                MorphText { animateWidth: false; duration: 420; width: parent.width; elide: Text.ElideRight; text: root.gamingAutoActive && !root.gamingMode ? "On (game detected)" : (root.gaming ? "On" : (root.gamingAuto ? "Auto" : "Off"))
+                                Text { width: parent.width; elide: Text.ElideRight; text: I18n.tr("Game Mode"); color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                MorphText { animateWidth: false; duration: 420; width: parent.width; elide: Text.ElideRight; text: root.gamingAutoActive && !root.gamingMode ? I18n.tr("On (game detected)") : (root.gaming ? I18n.tr("On") : (root.gamingAuto ? I18n.tr("Auto") : I18n.tr("Off")))
                                        color: root.gaming ? "#30D158" : pal.fg2; font.family: pal.fam; font.pixelSize: 12 }
                             }
                         }
@@ -6988,8 +7039,8 @@ Scope {
                                 x: 62; anchors.verticalCenter: parent.verticalCenter
                                 width: parent.width - 62 - 10
                                 spacing: 1
-                                MorphText { animateWidth: false; duration: 420; width: parent.width; elide: Text.ElideRight; text: root.recording ? "Stop" : "Record"; color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                MorphText { animateWidth: false; duration: 420; width: parent.width; elide: Text.ElideRight; text: root.recording ? root.recTime() : "Screen"; color: root.recording ? "#FF453A" : pal.fg2; font.family: pal.fam; font.pixelSize: 12 }
+                                MorphText { animateWidth: false; duration: 420; width: parent.width; elide: Text.ElideRight; text: root.recording ? I18n.tr("Stop") : I18n.tr("Record"); color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                MorphText { animateWidth: false; duration: 420; width: parent.width; elide: Text.ElideRight; text: root.recording ? root.recTime() : I18n.tr("Screen"); color: root.recording ? "#FF453A" : pal.fg2; font.family: pal.fam; font.pixelSize: 12 }
                             }
                         }
                     }
@@ -7029,10 +7080,10 @@ Scope {
                                 x: 62; anchors.verticalCenter: parent.verticalCenter
                                 width: parent.width - 72
                                 spacing: 1
-                                Text { width: parent.width; wrapMode: Text.WordWrap; maximumLineCount: 2; lineHeight: 0.92; text: "Battery"; color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                Text { width: parent.width; wrapMode: Text.WordWrap; maximumLineCount: 2; lineHeight: 0.92; text: I18n.tr("Battery"); color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
                                 MorphText {
                                     animateWidth: false; duration: 420; width: parent.width; elide: Text.ElideRight
-                                    text: root.powerProfile === "power-saver" ? "Low Power Mode" : (root.powerProfile === "performance" ? "High Power" : "Balanced")
+                                    text: root.powerProfile === "power-saver" ? I18n.tr("Low Power Mode") : (root.powerProfile === "performance" ? I18n.tr("High Power") : I18n.tr("Balanced"))
                                     color: root.powerProfile === "power-saver" ? "#FFD60A" : pal.fg2; font.family: pal.fam; font.pixelSize: 12
                                 }
                             }
@@ -7052,8 +7103,8 @@ Scope {
                                 x: 62; anchors.verticalCenter: parent.verticalCenter
                                 width: parent.width - 72
                                 spacing: 1
-                                Text { width: parent.width; wrapMode: Text.WordWrap; maximumLineCount: 2; lineHeight: 0.92; text: "Internet Sharing"; color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                MorphText { animateWidth: false; duration: 420; width: parent.width; elide: Text.ElideRight; text: root.hotspotOn ? "On" : "Off"
+                                Text { width: parent.width; wrapMode: Text.WordWrap; maximumLineCount: 2; lineHeight: 0.92; text: I18n.tr("Internet Sharing"); color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                MorphText { animateWidth: false; duration: 420; width: parent.width; elide: Text.ElideRight; text: root.hotspotOn ? I18n.tr("On") : I18n.tr("Off")
                                        color: root.hotspotOn ? root.accent : pal.fg2; font.family: pal.fam; font.pixelSize: 12 }
                             }
                         }
@@ -7105,8 +7156,8 @@ Scope {
                                 x: 62; anchors.verticalCenter: parent.verticalCenter
                                 width: parent.width - 72
                                 spacing: 1
-                                Text { width: parent.width; wrapMode: Text.WordWrap; maximumLineCount: 2; lineHeight: 0.92; text: "Screen Mirroring"; color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                MorphText { animateWidth: false; duration: 420; width: parent.width; elide: Text.ElideRight; text: root.mirrorOn ? "Mirroring" : (root.displayCount < 2 ? "No other display" : "Off")
+                                Text { width: parent.width; wrapMode: Text.WordWrap; maximumLineCount: 2; lineHeight: 0.92; text: I18n.tr("Screen Mirroring"); color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                MorphText { animateWidth: false; duration: 420; width: parent.width; elide: Text.ElideRight; text: root.mirrorOn ? I18n.tr("Mirroring") : (root.displayCount < 2 ? I18n.tr("No other display") : I18n.tr("Off"))
                                        color: root.mirrorOn ? root.accent : pal.fg2; font.family: pal.fam; font.pixelSize: 12 }
                             }
                         }
@@ -7118,7 +7169,7 @@ Scope {
                             Column {
                                 anchors.fill: parent; anchors.margins: 12
                                 spacing: 6
-                                Text { text: "Keyboard Brightness"; color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                Text { text: I18n.tr("Keyboard Brightness"); color: pal.fg; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
                                 CCSlider {
                                     t: pal; gx: ccg; glassMul: root.ccStyle === "macos" ? 3 : 1
                                     width: parent.width
@@ -7195,7 +7246,7 @@ Scope {
                                 spacing: 1
                                 Text {
                                     width: parent.width; elide: Text.ElideRight
-                                    text: np.pl && np.pl.trackTitle ? np.pl.trackTitle : "Now Playing"
+                                    text: np.pl && np.pl.trackTitle ? np.pl.trackTitle : I18n.tr("Now Playing")
                                     color: np.pl ? pal.fg : pal.fg2
                                     font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold
                                 }
@@ -7247,7 +7298,7 @@ Scope {
                             radius: 26
                             Text {
                                 x: 14; y: 8
-                                text: "Display"
+                                text: I18n.tr("Display")
                                 color: pal.fg; font.family: pal.fam; font.pixelSize: 12; font.weight: Font.DemiBold
                             }
                             CCSlider {
@@ -7268,7 +7319,7 @@ Scope {
                             radius: 26
                             Text {
                                 x: 14; y: 8
-                                text: "Sound"
+                                text: I18n.tr("Sound")
                                 color: pal.fg; font.family: pal.fam; font.pixelSize: 12; font.weight: Font.DemiBold
                             }
                             CCSlider {
@@ -7345,7 +7396,7 @@ Scope {
                                             anchors.verticalCenter: parent.verticalCenter
                                             width: 54; height: 24; radius: 12
                                             color: "#FF453A"
-                                            Text { anchors.centerIn: parent; text: "Stop"; color: "white"; font.family: pal.fam; font.pixelSize: 12; font.weight: Font.DemiBold }
+                                            Text { anchors.centerIn: parent; text: I18n.tr("Stop"); color: "white"; font.family: pal.fam; font.pixelSize: 12; font.weight: Font.DemiBold }
                                             MouseArea { anchors.fill: parent; onClicked: root.toggleRecording() }
                                         }
                                     }
@@ -7364,7 +7415,7 @@ Scope {
                             Text {
                                 visible: root.ccPlan.items.length === 0
                                 anchors.centerIn: parent
-                                text: "No controls. Use Edit Controls to add some."
+                                text: I18n.tr("No controls. Use Edit Controls to add some.")
                                 color: pal.fg2; font.family: pal.fam; font.pixelSize: 12
                             }
 
@@ -7468,7 +7519,7 @@ Scope {
                             spacing: 8
                             Text {
                                 leftPadding: 4
-                                text: "Add Controls"
+                                text: I18n.tr("Add Controls")
                                 color: pal.fg2
                                 font.family: pal.fam; font.pixelSize: 12; font.weight: Font.DemiBold
                             }
@@ -7534,12 +7585,12 @@ Scope {
                                 CCPill {
                                     visible: ui.ccEdit
                                     t: pal; gx: ccg
-                                    text: "Reset"
+                                    text: I18n.tr("Reset")
                                     onClicked: root.ccControls = root.ccDefault.slice()
                                 }
                                 CCPill {
                                     t: pal; gx: ccg
-                                    text: ui.ccEdit ? "Done" : "Edit Controls"
+                                    text: ui.ccEdit ? I18n.tr("Done") : I18n.tr("Edit Controls")
                                     strong: ui.ccEdit
                                     onClicked: ui.ccEdit = !ui.ccEdit
                                 }
@@ -7796,7 +7847,7 @@ Scope {
                         Text {
                             id: wpTitle
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "Wallpapers"
+                            text: I18n.tr("Wallpapers")
                             color: pal.fg
                             font.family: pal.fam; font.pixelSize: 15; font.weight: Font.DemiBold
                         }
@@ -7806,7 +7857,7 @@ Scope {
                             anchors.verticalCenter: parent.verticalCenter
                             width: 84; height: 30; radius: 10
                             color: wpChooseMa.containsMouse ? pal.btnHover : pal.btnOff
-                            Text { anchors.centerIn: parent; text: "Choose\u2026"; color: pal.fg; font.family: pal.fam; font.pixelSize: 12; font.weight: Font.Medium }
+                            Text { anchors.centerIn: parent; text: I18n.tr("Choose\u2026"); color: pal.fg; font.family: pal.fam; font.pixelSize: 12; font.weight: Font.Medium }
                             MouseArea { id: wpChooseMa; anchors.fill: parent; hoverEnabled: true; onClicked: root.wpPickFolder() }
                         }
                         Rectangle {
@@ -7860,7 +7911,7 @@ Scope {
                             Text {
                                 visible: wpSearch.text === "" && !wpSearch.activeFocus
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: "Search"
+                                text: I18n.tr("Search")
                                 color: pal.fg3
                                 font.family: pal.fam; font.pixelSize: 12
                             }
@@ -7996,7 +8047,7 @@ Scope {
                                         Text {
                                             id: wcBadge
                                             anchors.centerIn: parent
-                                            text: "\u25B6  Animated"
+                                            text: I18n.tr("\u25B6  Animated")
                                             color: "white"
                                             font.family: pal.fam; font.pixelSize: 10; font.weight: Font.DemiBold
                                         }
@@ -8090,7 +8141,7 @@ Scope {
                         width: parent.width - 80
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.WordWrap
-                        text: root.wpQuery !== "" ? "No wallpapers match \u201c" + root.wpQuery + "\u201d"
+                        text: root.wpQuery !== "" ? I18n.tr("No wallpapers match \u201c") + root.wpQuery + "\u201d"
                               : "No images in " + root.wpDirEff + "\nDrop some in, or pick another folder with Choose\u2026"
                         color: pal.fg2
                         font.family: pal.fam; font.pixelSize: 13
@@ -8346,7 +8397,7 @@ Scope {
                                 animateWidth: false
                                 duration: 460
                                 blurMax: 48
-                                text: ui.spHoverLabel !== "" ? ui.spHoverLabel : "Spotlight Search"
+                                text: ui.spHoverLabel !== "" ? ui.spHoverLabel : I18n.tr("Spotlight Search")
                                 color: pal.fg2
                                 font.family: pal.fam; font.pixelSize: 17
                                 elide: Text.ElideRight
@@ -8368,8 +8419,8 @@ Scope {
                         }
                         Repeater {
                             model: [
-                                { k: "appstore", id: "apps", label: "Apps" }, { k: "folder", id: "files", label: "Files" },
-                                { k: "layers", id: "actions", label: "Actions" }, { k: "clipboard", id: "clip", label: "Clipboard" }, { k: "smile", id: "emoji", label: "Emoji" }
+                                { k: "appstore", id: "apps", label: I18n.tr("Apps") }, { k: "folder", id: "files", label: I18n.tr("Files") },
+                                { k: "layers", id: "actions", label: I18n.tr("Actions") }, { k: "clipboard", id: "clip", label: I18n.tr("Clipboard") }, { k: "smile", id: "emoji", label: I18n.tr("Emoji") }
                             ]
                             delegate: CCBtn {
                                 required property var modelData
@@ -8467,7 +8518,7 @@ Scope {
                                         anchors.verticalCenter: parent.verticalCenter
                                         width: parent.width - 54 - 140
                                         elide: Text.ElideRight
-                                        text: rr.armedNow ? "Press Return again to confirm" : (rr.modelData ? rr.modelData.title : "")
+                                        text: rr.armedNow ? I18n.tr("Press Return again to confirm") : (rr.modelData ? rr.modelData.title : "")
                                         color: rr.sel ? "white" : pal.fg
                                         font.family: pal.fam; font.pixelSize: 14
                                     }
@@ -8531,7 +8582,7 @@ Scope {
                                 id: clipLabel
                                 x: 46
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: "Clipboard"
+                                text: I18n.tr("Clipboard")
                                 color: pal.fg
                                 font.family: pal.fam; font.pixelSize: 24; font.weight: Font.Medium
                             }
@@ -8751,7 +8802,7 @@ Scope {
                                         Text {
                                             x: 38
                                             anchors.verticalCenter: parent.verticalCenter
-                                            text: cm.modelData === "auto" ? "Paste Automatically"
+                                            text: cm.modelData === "auto" ? I18n.tr("Paste Automatically")
                                                   : (cm.modelData === "del" ? "Delete Selected"
                                                   : (cm.armedNow ? "Click again to confirm" : "Clear History"))
                                             color: cmMa.containsMouse ? "white" : ((cm.modelData === "clear") ? "#FF453A" : pal.fg)
@@ -8811,7 +8862,7 @@ Scope {
                                 id: emojiLabel
                                 x: 46
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: "Emoji"
+                                text: I18n.tr("Emoji")
                                 color: pal.fg
                                 font.family: pal.fam; font.pixelSize: 24; font.weight: Font.Medium
                             }
@@ -8918,7 +8969,7 @@ Scope {
                             height: emojiPanel.gridRows * emojiPanel.cell
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
-                            text: ui.spQuery.trim() !== "" ? "No Results" : "No recently used emoji"
+                            text: ui.spQuery.trim() !== "" ? I18n.tr("No Results") : I18n.tr("No recently used emoji")
                             color: pal.fg2
                             font.family: pal.fam; font.pixelSize: 14
                         }
@@ -8941,7 +8992,7 @@ Scope {
                                 anchors.right: parent.right
                                 anchors.rightMargin: 4
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: root.clipAutoPaste ? "Return to insert" : "Return to copy"
+                                text: root.clipAutoPaste ? I18n.tr("Return to insert") : I18n.tr("Return to copy")
                                 color: pal.fg3
                                 font.family: pal.fam; font.pixelSize: 12
                             }
@@ -8975,7 +9026,7 @@ Scope {
                                 x: 40 + 3
                                 anchors.verticalCenter: parent.verticalCenter
                                 visible: appsInput.text === ""
-                                text: "Applications"
+                                text: I18n.tr("Applications")
                                 color: pal.fg3
                                 font.family: pal.fam; font.pixelSize: 24
                             }
@@ -9052,7 +9103,7 @@ Scope {
                                                 visible: !sec.searching && sec.modelData.apps.length > 5
                                                 anchors.right: parent.right
                                                 anchors.verticalCenter: parent.verticalCenter
-                                                text: sec.expanded ? "Show Less" : "Show More"
+                                                text: sec.expanded ? I18n.tr("Show Less") : I18n.tr("Show More")
                                                 color: root.accent
                                                 font.family: pal.fam; font.pixelSize: 12; font.weight: Font.Bold
                                                 MouseArea {
@@ -9116,7 +9167,7 @@ Scope {
                                     height: 90
                                     horizontalAlignment: Text.AlignHCenter
                                     verticalAlignment: Text.AlignVCenter
-                                    text: "No Results"
+                                    text: I18n.tr("No Results")
                                     color: pal.fg2
                                     font.family: pal.fam; font.pixelSize: 14
                                 }
