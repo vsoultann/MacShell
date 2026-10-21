@@ -210,14 +210,13 @@ compile_shaders() {
 do_shell() {
     [ "$(installed_kind)" = original ] && backup_original
     # never install from a folder that isn't a MacShell checkout: the copy below replaces the whole shell
-    [ -f "$REPO/shell.qml" ] && [ -f "$REPO/MacBar.qml" ] || die "$REPO doesn't contain MacShell (run the installer from the repository)"
+    [ -f "$REPO/MacShell/shell.qml" ] && [ -f "$REPO/MacShell/MacBar.qml" ] || die "$REPO doesn't contain MacShell (run the installer from the repository)"
     say "Installing the shell"
     mkdir -p "$QS" "$SHARE"
     # built next to the running shell, then swapped in with one rename: a running shell never sees half-copied files,
     # and the version you had stays in MacShell.prev
     rm -rf "$QS/MacShell.new"
-    rsync -a --exclude '.git' --exclude 'MacLock' --exclude 'session' --exclude 'install.sh' --exclude 'README*' \
-          --exclude 'docs' --exclude '*.qsb' "$REPO"/ "$QS/MacShell.new"/
+    rsync -a --exclude '*.qsb' "$REPO/MacShell"/ "$QS/MacShell.new"/
     compile_shaders "$QS/MacShell.new"
     if [ -d "$QS/MacShell" ]; then rm -rf "$QS/MacShell.prev"; mv "$QS/MacShell" "$QS/MacShell.prev"; fi
     mv "$QS/MacShell.new" "$QS/MacShell"
@@ -402,8 +401,7 @@ do_sandbox() {
 
     rm -rf "$qsdir"
     mkdir -p "$qsdir"
-    rsync -a --exclude '.git' --exclude 'MacLock' --exclude 'session' --exclude 'docs' \
-          --exclude 'install.sh' --exclude '*.qsb' "$REPO"/ "$qsdir"/
+    rsync -a --exclude '*.qsb' "$REPO/MacShell"/ "$qsdir"/
     mkdir -p "$qsdir/MacLock"
     rsync -a --exclude '*.qsb' "$REPO/MacLock"/ "$qsdir/MacLock"/
 
